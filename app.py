@@ -27,6 +27,11 @@ if st.button("Enviar"):
             st.subheader("Fuentes:")
             for source in data["sources"]:
                 st.write(f"- {source['source']}")
+
+            st.subheader("Bloques de texto:")
+            for i, block in enumerate(data["text_blocks"], 1):
+                with st.expander(f"Bloque de texto {i}"):
+                    st.write(block)
         else:
             st.error("Error al procesar la pregunta. Inténtalo de nuevo.")
     else:
