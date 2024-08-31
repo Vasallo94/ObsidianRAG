@@ -1,0 +1,22 @@
+/* Aumentar el ancho del contenedor principal */
+.block-container {
+    max-width: 90%; /* Expande el contenedor a 90% del ancho de la pantalla */
+    margin: auto; /* Centrar el contenido */
+    padding-top: 2rem;
+    padding-right: 2rem;
+    padding-left: 2rem;
+    padding-bottom: 2rem;
+}
+
+/* Cambiar tamaño de fuente para mejorar legibilidad */
+.stMarkdown, .stTextInput, .stButton > button {
+    font-size: 20px; /* Aumentar el tamaño de la fuente */
+}
+
+.stMarkdown h1 {
+    font-size: 36px; /* Aumentar el tamaño de los encabezados */
+}
+
+.stMarkdown p {
+    font-size: 18px; /* Aumentar el tamaño del texto del párrafo */
+}
