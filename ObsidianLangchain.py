@@ -3,6 +3,7 @@ import os
 import warnings
 
 from langchain.chains import RetrievalQA
+from langchain.prompts import PromptTemplate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import ObsidianLoader
 from langchain_community.llms import Ollama
@@ -36,7 +37,7 @@ def load_or_create_db():
         chunk_size=500,
         chunk_overlap=50,
         length_function=len,
-        separators=["\n\n", "\n", " ", ""]
+        separators=["#", "##", "###", "####"]
     )
     texts = text_splitter.split_documents(documents)
     logger.info(f"Se crearon {len(texts)} chunks de texto")
@@ -59,17 +60,40 @@ def load_or_create_db():
 # Cargar o crear la base de datos
 db = load_or_create_db()
 
+
+# Definir el prompt de sistema
+system_prompt = """Eres un asistente AI especializado en analizar y responder preguntas sobre mis notas de Obsidian. Tu tarea es interpretar la información proporcionada en el contexto de las mis notas y ofrecer respuestas precisas, concisas y relevantes a la pregunta que se te haga.
+
+Instrucciones específicas:
+1. Analiza cuidadosamente el contexto proporcionado de las notas de Obsidian.
+2. Relaciona la pregunta del usuario con la información relevante en las notas.
+3. Proporciona respuestas que sean directamente relevantes para el contenido de mis notas.
+4. Si la información en las notas es insuficiente para responder completamente, indícalo claramente sin inventar una respuesta.
+5. Mantén un tono profesional y objetivo en tus respuestas.
+6. Cita o haz referencia a partes específicas de las notas cuando sea apropiado.
+7. Si detectas patrones o temas recurrentes en las notas, menciónalo si es relevante para la pregunta.
+8. Estructura la información en markdown para que sea legible y bien formateada.
+
+Recuerda, tu objetivo es ayudarme a comprender mejor y utilizar la información de mis propias notas de Obsidian."""
+
+# Crear el template del prompt
+prompt_template = PromptTemplate(
+    input_variables=["context", "question"],
+    template=system_prompt + "\n\nContext: {context}\n\nQuestion: {question}\nAnswer:"
+)
+
 # Inicializar Ollama
 logger.info("Inicializando modelo Ollama")
 llm = Ollama(model="llama3.1")
 
 # Crear una cadena de recuperación y respuesta
-logger.info("Creando cadena de recuperación y respuesta")
+logger.info("Creando cadena de recuperación y respuesta con prompt personalizado")
 qa_chain = RetrievalQA.from_chain_type(
     llm=llm,
     chain_type="stuff",
-    retriever=db.as_retriever(search_kwargs={"k": 3}),
-    return_source_documents=True
+    retriever=db.as_retriever(search_kwargs={"k": 5}),
+    return_source_documents=True,
+    chain_type_kwargs={"prompt": prompt_template}
 )
 
 # Función para hacer preguntas
@@ -79,10 +103,10 @@ def ask_question(question):
     logger.info("Respuesta generada")
     return result["result"], result["source_documents"]
 
-# Ejemplo de uso
+# Este bloque solo se ejecutará si el script se ejecuta directamente
 if __name__ == "__main__":
-    logger.info("Iniciando ejemplo de uso")
-    question = "¿Cuál es el tema principal de mis notas sobre inteligencia artificial?"
+    logger.info("Modo de prueba: ejecutando ejemplo de uso")
+    question = "QUé opino sobre el infinito?"
     answer, sources = ask_question(question)
     print(f"Respuesta: {answer}\n")
     print("Fuentes:")
