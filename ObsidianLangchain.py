@@ -2,6 +2,7 @@ import logging
 import os
 import warnings
 
+from dotenv import load_dotenv
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -9,6 +10,9 @@ from langchain_community.document_loaders import ObsidianLoader
 from langchain_community.llms import Ollama
 from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
+
+# Cargar variables de entorno desde el archivo .env
+load_dotenv()
 
 # Configuración del logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -27,7 +31,8 @@ def load_or_create_db():
     
     # Cargar documentos de Obsidian
     logger.info("Cargando documentos de Obsidian")
-    loader = ObsidianLoader('/Users/enriquebook/Library/Mobile Documents/com~apple~CloudDocs/Obsidian/Secundo Selebro')
+    obsidian_path = os.getenv('OBSIDIAN_PATH')
+    loader = ObsidianLoader(obsidian_path)
     documents = loader.load()
     logger.info(f"Se cargaron {len(documents)} documentos")
 
@@ -60,9 +65,8 @@ def load_or_create_db():
 # Cargar o crear la base de datos
 db = load_or_create_db()
 
-
 # Definir el prompt de sistema
-system_prompt = """Eres un asistente AI especializado en analizar y responder preguntas sobre mis notas de Obsidian. Tu tarea es interpretar la información proporcionada en el contexto de las mis notas y ofrecer respuestas precisas, concisas y relevantes a la pregunta que se te haga.
+system_prompt = """Eres un asistente AI especializado en analizar y responder preguntas en español sobre mis notas de Obsidian. Tu tarea es interpretar la información proporcionada en el contexto de las mis notas y ofrecer respuestas precisas, concisas y relevantes extrícamente de la pregunta que te haga y con la información de mis notas.
 
 Instrucciones específicas:
 1. Analiza cuidadosamente el contexto proporcionado de las notas de Obsidian.
@@ -106,7 +110,7 @@ def ask_question(question):
 # Este bloque solo se ejecutará si el script se ejecuta directamente
 if __name__ == "__main__":
     logger.info("Modo de prueba: ejecutando ejemplo de uso")
-    question = "QUé opino sobre el infinito?"
+    question = "¿Qué opino sobre el infinito?"
     answer, sources = ask_question(question) 
     print(f"Respuesta: {answer}\n")
     print("Fuentes:")
