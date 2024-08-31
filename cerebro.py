@@ -22,6 +22,7 @@ class Answer(BaseModel):
     question: str = Field(..., description="La pregunta que se hizo")
     result: str = Field(..., description="La respuesta generada")
     sources: List[Source] = Field(..., description="Las fuentes de la información")
+    text_blocks: List[str] = Field(..., description="Los bloques de texto utilizados para construir la respuesta")
 
 @app.post("/ask", response_model=Answer, summary="Haz una pregunta", description="Este endpoint permite hacer una pregunta y obtener una respuesta con contexto.")
 async def ask(question: Question):
@@ -33,10 +34,12 @@ async def ask(question: Question):
         logger.info(f"Recibida pregunta: {question.text}")
         result, sources = ask_question(question.text)
         logger.info("Respuesta generada exitosamente")
+        text_blocks = [source.page_content for source in sources]
         return Answer(
             question=question.text,
             result=result,
-            sources=[Source(source=source.metadata['source']) for source in sources]
+            sources=[Source(source=source.metadata['source']) for source in sources],
+            text_blocks=text_blocks
         )
     except Exception as e:
         logger.error(f"Error al procesar la pregunta: {str(e)}")
