@@ -1,0 +1,39 @@
+# Ignorar archivos y directorios generados por el sistema operativo
+.DS_Store
+Thumbs.db
+
+# Ignorar archivos de respaldo
+*~
+
+# Ignorar archivos de compilación y ejecutables
+*.o
+*.out
+*.exe
+
+# Ignorar directorios de dependencias y entornos virtuales
+/node_modules
+/venv
+/.venv
+
+# Ignorar archivos de configuración local
+.env
+.env.local
+.env.*.local
+
+# Ignorar archivos de registro y caché
+/log
+/cache
+
+# Ignorar archivos de credenciales y secretos
+*.key
+*.pem
+*.p12
+*.pfx
+*.password
+
+# Ignorar archivos de configuración de IDEs
+.idea/
+.vscode/
+
+# Ignorar archivos de base de datos
+/db
