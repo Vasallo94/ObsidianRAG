@@ -79,7 +79,7 @@ Recuerda, tu objetivo es ayudarme a comprender mejor y utilizar la información 
 # Crear el template del prompt
 prompt_template = PromptTemplate(
     input_variables=["context", "question"],
-    template=system_prompt + "\n\nContext: {context}\n\nQuestion: {question}\nAnswer:"
+    template=system_prompt + "\n\nQuestion: {question}\n\nContext: {context}\nAnswer:"
 )
 
 # Inicializar Ollama
@@ -91,7 +91,7 @@ logger.info("Creando cadena de recuperación y respuesta con prompt personalizad
 qa_chain = RetrievalQA.from_chain_type(
     llm=llm,
     chain_type="stuff",
-    retriever=db.as_retriever(search_kwargs={"k": 5}),
+    retriever=db.as_retriever(search_kwargs={"k": 4}),
     return_source_documents=True,
     chain_type_kwargs={"prompt": prompt_template}
 )
@@ -107,7 +107,7 @@ def ask_question(question):
 if __name__ == "__main__":
     logger.info("Modo de prueba: ejecutando ejemplo de uso")
     question = "QUé opino sobre el infinito?"
-    answer, sources = ask_question(question)
+    answer, sources = ask_question(question) 
     print(f"Respuesta: {answer}\n")
     print("Fuentes:")
     for source in sources:
