@@ -11,7 +11,7 @@ def load_css(file_name):
 
 load_css("styles.css")
 
-# Colocar el título y el ícono en la parte superior izquierda
+# Colocar el título y el ícono 
 col1, col2 = st.columns([1, 9])
 
 with col1:
@@ -29,11 +29,13 @@ question = st.text_input("Haz una pregunta:")
 # Botón para enviar la pregunta
 if st.button("Enviar"):
     if question:
-        # Llamada a la API
-        response = requests.post(
-            "http://localhost:8000/ask",
-            json={"text": question}
-        )
+        # Mostrar el spinner mientras se realiza la llamada a la API
+        with st.spinner("Cargando..."):
+            # Llamada a la API
+            response = requests.post(
+                "http://localhost:8000/ask",
+                json={"text": question}
+            )
 
         if response.status_code == 200:
             data = response.json()
