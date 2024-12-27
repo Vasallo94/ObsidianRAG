@@ -1,22 +1,26 @@
-/* Aumentar el ancho del contenedor principal */
+/* Aumentar el ancho del contenedor principal y quitar el margen superior */
 .block-container {
     max-width: 90%; /* Expande el contenedor a 90% del ancho de la pantalla */
-    margin: auto; /* Centrar el contenido */
-    padding-top: 2rem;
+    margin: 0 auto; /* Centrar el contenido y quitar margen superior */
+    padding-top: 5rem; /* Quitar el margen superior */
     padding-right: 2rem;
     padding-left: 2rem;
     padding-bottom: 2rem;
+    font-family: 'Latin Modern Roman', serif; /* Usar la fuente importada */
 }
 
 /* Cambiar tamaño de fuente para mejorar legibilidad */
 .stMarkdown, .stTextInput, .stButton > button {
     font-size: 20px; /* Aumentar el tamaño de la fuente */
+    font-family: 'Latin Modern Roman', serif; /* Aplicar la fuente */
 }
 
 .stMarkdown h1 {
     font-size: 36px; /* Aumentar el tamaño de los encabezados */
+    font-family: 'Latin Modern Roman', serif;
 }
 
 .stMarkdown p {
     font-size: 18px; /* Aumentar el tamaño del texto del párrafo */
+    font-family: 'Latin Modern Roman', serif;
 }
