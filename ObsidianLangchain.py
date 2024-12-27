@@ -24,7 +24,6 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # Directorio para guardar la base de datos vectorial
 persist_directory = 'db'
-
 # Función para cargar o crear la base de datos vectorial
 def load_or_create_db():
     logger.info("Iniciando carga o creación de la base de datos vectorial")
@@ -50,7 +49,8 @@ def load_or_create_db():
     # Inicializar el modelo de embeddings de Hugging Face
     logger.info("Inicializando modelo de embeddings")
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-
+    logger.info("Modelo de embeddings cargado correctamente.")
+    
     # Crear o cargar la base de datos vectorial con Chroma
     if os.path.exists(persist_directory):
         logger.info("Cargando base de datos vectorial existente")
@@ -88,7 +88,7 @@ prompt_template = PromptTemplate(
 
 # Inicializar Ollama
 logger.info("Inicializando modelo Ollama")
-llm = Ollama(model="llama3.1")
+llm = Ollama(model="llama3.2")
 
 # Crear una cadena de recuperación y respuesta
 logger.info("Creando cadena de recuperación y respuesta con prompt personalizado")
