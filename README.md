@@ -1,73 +1,131 @@
 # Obsidian RAG Project
-## Descripción
-El proyecto Obsidian RAG (Retrieval-Augmented Generation) proporciona una solución para consultar notas almacenadas en Obsidian mediante un modelo de lenguaje (LLAMA3.1)
 
-Utiliza un pipeline basado en LangChain para cargar, dividir y consultar documentos de Obsidian, y una API construida con FastAPI para interactuar con el modelo. Además, se ofrece una interfaz gráfica para realizar consultas y visualizar respuestas utilizando Streamlit.
+## Description
+Obsidian RAG (Retrieval-Augmented Generation) is designed to query notes stored in Obsidian with a local language model (LLAMA3.2). It uses a LangChain-based pipeline to load, split, and query documents from Obsidian, along with a FastAPI service for model interaction and a Streamlit interface for displaying queries and responses.
 
-## Componentes del Proyecto
-- ObsidianLangchain.py: Script principal que gestiona la carga de documentos, creación de la base de datos vectorial, configuración del modelo de lenguaje y la cadena de recuperación y respuesta.
-- cerebro.py: API construida con FastAPI que expone un endpoint para hacer preguntas y obtener respuestas con contexto, utilizando el modelo de lenguaje y la base de datos vectorial.
-- app.py: Interfaz gráfica desarrollada con Streamlit para interactuar con la API y mostrar respuestas a las preguntas de los usuarios.
+## Components
+- **cerebro.py**: FastAPI service that manages document loading, vector database creation, language model configuration, and the retrieval and response chain. It exposes an endpoint for asking questions and getting context-aware answers.
+- **app.py**: Streamlit-based graphical interface for interacting with the API and displaying user query responses.
 
-
-## Instalación
-Clona el repositorio:
+## Installation
+Clone the repository:
 ```sh
 git clone <https://github.com/Vasallo94/ObsidianLangchain.git>
-cd <DIRECTORIO_DEL_PROYECTO>
+cd <PROJECT_DIRECTORY>
 ```
-Crea un entorno virtual y actívalo:
+Create a virtual environment and activate it:
 ```sh
 python -m venv venv
-source venv/bin/activate  # En Windows: venv\Scripts\activate
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
-Instala las dependencias:
+Install the dependencies:
 ```sh
 pip install -r requirements.txt
 ```
-## Configuración
-**ObsidianLangchain.py:**
-- Modifica el path en ObsidianLoader para que apunte al directorio donde se almacenan tus notas de Obsidian.
 
-**cerebro.py**: No requiere configuración adicional, pero asegúrate de que el script ObsidianLangchain.py esté disponible y correctamente configurado.
-**app.py**: Asegúrate de que el archivo **styles.css** y el ícono obsidian-icon.svg estén en el mismo directorio que app.py.
-## Uso
-- **Ejecutar la API**
-- Para iniciar la API, ejecuta el siguiente comando:
+## Configuration
+1. Install Ollama and the LLAMA3.2 model
+   To use the LLAMA3.2 language model, follow these steps:
+   - Install Ollama:
+     Ollama is a platform for managing and running language models locally. To install Ollama:
+
+     Download Ollama:
+
+     Visit [OLLAMA](https://ollama.com) and download the appropriate version for your operating system (Mac).
+     Install Ollama:
+
+     Once downloaded, open the downloaded file and follow the installation instructions.
+     Verify the Installation:
+
+     Open a terminal and run:
+     ```sh
+     ollama --version
+     ```
+     You should see the installed version of Ollama.
+   - Download and Install the LLAMA3.2 Model
+     Log in to Ollama:
+
+     In the terminal, run:
+     ```sh
+     ollama
+     ```
+     You will see a response with available comands.
+     Download the LLAMA3.2 Model:
+
+     In the terminal, run:
+     ```sh
+     ollama run llama3.2
+     ```
+     Run the following command to start the model; if you don't have it, it will be downloaded automatically.
+     Wait for the model download and installation to complete.
+
+     List the installed models with:
+     ```sh
+     ollama list
+     ```
+
+2. Create a .env file in the project's root directory and add the path to your Obsidian vault:
 ```sh
-python cerebro.py
+OBSIDIAN_PATH = /path/to/your/obsidian/vault
 ```
-La API estará disponible en http://localhost:8000.
-- **Ejecutar la Interfaz de Usuario**
-- Para iniciar la interfaz gráfica, ejecuta el siguiente comando:
-```sh
-streamlit run app.py
-```
-La aplicación de Streamlit estará disponible en http://localhost:8501.
-- **Hacer Preguntas**
-- Desde la interfaz de usuario (Streamlit): Ingresa tu pregunta en el campo de texto y haz clic en "Enviar" para obtener una respuesta.
-- Desde la API: Envía una solicitud POST a http://localhost:8000/ask con un JSON que contenga la pregunta:
-```json
-{
-    "text": "¿Qué opinas sobre el infinito?"
-}
-```
-La respuesta será un JSON con la respuesta generada, las fuentes de información y los bloques de texto utilizados.
-- **Ejemplo de Uso**
-- Ejecuta la API:
-```sh
-python cerebro.py
-```
-Ejecuta la interfaz gráfica:
-```sh
-streamlit run app.py
-```
-Haz una pregunta en la interfaz gráfica y visualiza la respuesta junto con las fuentes y los bloques de texto utilizados.
 
-**Swagger**
-La API FastAPI incluye una interfaz Swagger que puedes utilizar para probar los endpoints y ver la documentación. Visita http://localhost:8000/docs para acceder a Swagger.
+## Usage
+- **Run the API**  
+  To start the API, run the following command:
+  ```sh
+  python cerebro.py
+  ```
+  The API will be available at http://localhost:8000.
+- **Run the UI**  
+  To start the graphical interface, run the following command:
+  ```sh
+  streamlit run app.py
+  ```
+  The Streamlit application will be available at http://localhost:8501.
+- **Ask Questions**  
+  - From the user interface (Streamlit): Enter your question in the text field and click "Submit" to get a response.
+  - From the API: Send a POST request to http://localhost:8000/ask with a JSON containing the question:
+  ```json
+  {
+      "text": "What do you think about infinity?"
+  }
+  ```
+  The response will be a JSON with the generated answer, information sources, and text blocks used.
 
-**Contribuciones**
-Si deseas contribuir al proyecto, por favor abre un issue o envía un pull request. Asegúrate de seguir las mejores prácticas y de proporcionar una descripción clara de los cambios realizados.
+### What Can You Ask?
+You can query your Obsidian notes for:
+- Summaries of content across multiple notes.
+- Specific information stored in your notes.
+- Context-aware responses combining multiple sources.
+
+## Interface Preview
+![Streamlit Interface 1](img/dimensionalidad.png)
+![Streamlit Interface 2](img/dim.png)
+![Streamlit Interface 3](img/MA.png)
 
 
+## Swagger
+The FastAPI includes a Swagger interface that you can use to test endpoints and view documentation. Visit http://localhost:8000/docs to access Swagger.
+
+## Contributing
+If you wish to contribute to the project, please open an issue or submit a pull request. Make sure to follow best practices and provide a clear description of the changes made.
+
+## Future Improvements
+- Add support for multiple language models.
+- Implement a more efficient document retrieval system.
+- Implemeent a reranker for better response selection.
+- and more...
+
+## License
+This project is licensed under the MIT License. See the LICENSE file for more information.
+
+
+## File Structure
+.
+├── app.py                # Streamlit interface
+├── cerebro.py            # FastAPI backend
+├── db/                   # Vector database for document retrieval
+├── services/             # Core services for QA and database handling
+├── utils/                # Utility functions and logging
+├── requirements.txt      # Python dependencies
+└── README.md             # Project documentation
