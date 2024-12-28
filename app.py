@@ -4,14 +4,14 @@ import requests
 import streamlit as st
 
 # Configuración de la página con el ícono de Obsidian
-st.set_page_config(page_title="Obsidian RAG", page_icon="obsidian-icon.svg")
+st.set_page_config(page_title="Obsidian RAG", page_icon="assets/obsidian-icon.svg")
 
 # Cargar el archivo CSS personalizado
 def load_css(file_name):
     with open(file_name) as f:
         st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
 
-load_css("styles.css")
+load_css("assets/styles.css")
 st.markdown("# Obsidian RAG")
 
 # Campo de entrada para la pregunta

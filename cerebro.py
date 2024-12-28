@@ -1,4 +1,3 @@
-import logging
 import os
 import time
 import warnings
@@ -12,16 +11,16 @@ from pydantic import BaseModel, Field
 
 from services.db_service import load_or_create_db
 from services.qa_service import ask_question, create_qa_chain
+from utils.logger import setup_logger
 
 load_dotenv()
 
 # Configuración del logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 # Suprimir advertencias específicas
 warnings.filterwarnings("ignore", category=FutureWarning)
-warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 
 app = FastAPI(
     title="Obsidian RAG API",
