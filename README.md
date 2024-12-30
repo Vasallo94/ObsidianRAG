@@ -1,7 +1,7 @@
-# Obsidian RAG Project
+# ObsidianRAG Project
 
 ## Description
-Obsidian RAG (Retrieval-Augmented Generation) is designed to query notes stored in Obsidian with a local language model (LLAMA3.2). It uses a LangChain-based pipeline to load, split, and query documents from Obsidian, along with a FastAPI service for model interaction and a Streamlit interface for displaying queries and responses.
+ObsidianRAG (Retrieval-Augmented Generation) is designed to query notes stored in Obsidian with a local language model (LLAMA3.2). It uses a LangChain-based pipeline to load, split, and query documents from Obsidian, along with a FastAPI service for model interaction and a Streamlit interface for displaying queries and responses.
 
 ## Components
 - **cerebro.py**: FastAPI service that manages document loading, vector database creation, language model configuration, and the retrieval and response chain. It exposes an endpoint for asking questions and getting context-aware answers.
@@ -10,7 +10,7 @@ Obsidian RAG (Retrieval-Augmented Generation) is designed to query notes stored 
 ## Installation
 Clone the repository:
 ```sh
-git clone <https://github.com/Vasallo94/ObsidianLangchain.git>
+git clone <https://github.com/Vasallo94/ObsidianRAG.git>
 cd <PROJECT_DIRECTORY>
 ```
 Create a virtual environment and activate it:
