@@ -127,7 +127,7 @@ toml==0.10.2
 torch==2.5.1
 tornado==6.5.1
 tqdm==4.67.1
-transformers==4.46.3
+transformers==4.52.1
 typer==0.15.1
 typing-inspect==0.9.0
 typing_extensions==4.12.2
