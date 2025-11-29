@@ -57,20 +57,14 @@ class TestFullRAGPipeline:
 class TestAPIIntegration:
     """Integration tests for API endpoints with full backend."""
 
-    @pytest.mark.integration
-    @pytest.mark.skip(reason="Requires full backend setup with real embeddings")
-    @patch("obsidianrag.core.qa_agent.OllamaLLM")
-    def test_ask_endpoint_full_flow(self, mock_ollama, test_client, mock_vault):
+    def test_ask_endpoint_full_flow(self, test_client, mock_vault, mock_ollama_available):
         """Test /ask endpoint with complete backend."""
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = MagicMock(content="Integrated answer")
-        mock_ollama.return_value = mock_llm
 
         response = test_client.post("/ask", json={"text": "What is deep learning?"})
 
-        assert response.status_code == 200
+        assert response.status_code == 200, f"Response failed: {response.text}"
         data = response.json()
-        assert "answer" in data
+        assert "result" in data
 
     @pytest.mark.integration
     def test_stats_reflects_indexed_data(self, fast_test_client, mock_vault):
@@ -83,34 +77,36 @@ class TestAPIIntegration:
             assert isinstance(data, dict)
 
 
-@pytest.mark.skip(reason="CLI integration tests require complex mock setup - to be fixed")
 class TestCLIIntegration:
     """Integration tests for CLI commands."""
 
     @pytest.mark.integration
-    @patch("obsidianrag.api.server.run_server")
+    @patch("uvicorn.run")
+    @patch("obsidianrag.api.server.create_app")
     @patch("obsidianrag.config.configure_from_vault")
-    def test_cli_serve_starts_server(self, mock_configure, mock_run, cli_runner, mock_vault):
+    def test_cli_serve_starts_server(self, mock_configure, mock_create_app, mock_run, cli_runner, mock_vault):
         """Test that CLI serve command configures and starts server."""
         from obsidianrag.cli.main import app
 
-        cli_runner.invoke(app, ["serve", "--vault-path", str(mock_vault)])
+        result = cli_runner.invoke(app, ["serve", "--vault", str(mock_vault)])
+        assert result.exit_code == 0
 
         # Should configure from vault and start server
         mock_configure.assert_called_once()
         # run_server is called inside serve command
 
     @pytest.mark.integration
-    @patch("obsidianrag.core.db_service.DBService")
+    @patch("obsidianrag.core.db_service.load_or_create_db")
     @patch("obsidianrag.config.configure_from_vault")
-    def test_cli_index_creates_db(self, mock_configure, mock_db, cli_runner, mock_vault):
+    def test_cli_index_creates_db(self, mock_configure, mock_db_func, cli_runner, mock_vault):
         """Test that CLI index command creates/updates database."""
         from obsidianrag.cli.main import app
 
         mock_db_instance = MagicMock()
-        mock_db.return_value = mock_db_instance
+        mock_db_func.return_value = mock_db_instance
 
-        cli_runner.invoke(app, ["index", "--vault-path", str(mock_vault)])
+        result = cli_runner.invoke(app, ["index", "--vault", str(mock_vault)])
+        assert result.exit_code == 0
 
         # Should configure from vault
         mock_configure.assert_called_once()

@@ -181,7 +181,7 @@ def mock_embeddings():
     """Mock embeddings model."""
     mock = MagicMock()
     # Return 384-dimensional vectors (typical for sentence-transformers)
-    mock.embed_documents.return_value = [[0.1] * 384]
+    mock.embed_documents.side_effect = lambda texts: [[0.1] * 384] * len(texts)
     mock.embed_query.return_value = [0.1] * 384
 
     with patch("langchain_huggingface.HuggingFaceEmbeddings", return_value=mock):
@@ -219,12 +219,16 @@ def test_client(mock_vault: Path, mock_embeddings):
     # Configure settings for test vault
     configure_from_vault(str(mock_vault))
 
-    # Create app with mocked embeddings
-    with patch("obsidianrag.core.db_service.HuggingFaceEmbeddings", mock_embeddings):
-        app = create_app(str(mock_vault))
+    # Create app with mocked embeddings and LLM
+    from langchain_core.runnables import RunnableLambda
+    mock_llm = RunnableLambda(lambda x: "Integrated answer")
 
-        with TestClient(app) as client:
-            yield client
+    with patch("obsidianrag.core.db_service.HuggingFaceEmbeddings", return_value=mock_embeddings):
+        with patch("obsidianrag.core.qa_agent.OllamaLLM", return_value=mock_llm):
+            app = create_app(str(mock_vault))
+
+            with TestClient(app) as client:
+                yield client
 
 
 @pytest.fixture
