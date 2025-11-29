@@ -376,14 +376,23 @@ obsidianrag/
 
 ## 📅 Plan de Migración por Fases
 
-### Fase 0: Preparación (Actual)
-> **Estado**: ✅ En progreso  
-> **Duración estimada**: 1 día
+### Fase 0: Preparación ✅ COMPLETADA
+> **Estado**: ✅ Completada  
+> **Duración**: 29 de noviembre de 2025
 
 - [x] Crear rama `v3-plugin`
 - [x] Documentar plan de migración (este documento)
-- [ ] Revisar y aprobar plan
-- [ ] Crear issues en GitHub para tracking
+- [x] Revisar y aprobar plan
+- [x] Crear issues en GitHub para tracking
+  - Epic: #21
+  - Phase 1: #20
+  - Phase 2: #22
+  - Phase 3: #23
+  - Phase 4: #24
+  - Phase 5: #25
+  - Phase 6: #26
+  - Phase 7: #27
+  - Phase 8: #28
 
 ### Fase 1: Reestructuración del Backend
 > **Estado**: ⏳ Pendiente  
@@ -1216,7 +1225,7 @@ Semana 7+
 ### Progreso General
 
 ```
-Fase 0: Preparación          [██████████] 100%
+Fase 0: Preparación          [██████████] 100% ✅
 Fase 1: Backend              [░░░░░░░░░░]   0%
 Fase 2: Testing Backend      [░░░░░░░░░░]   0%
 Fase 3: PyPI                 [░░░░░░░░░░]   0%
@@ -1232,13 +1241,14 @@ TOTAL                        [█░░░░░░░░░]  ~5%
 
 | Fecha | Actualización |
 |-------|---------------|
+| 2025-11-29 | ✅ Fase 0 completada: Issues creados (#20-#28), Epic #21 activo |
 | 2025-11-29 | Creada rama v3-plugin, documento de planificación inicial |
 
 ---
 
 > **Nota**: Este documento es una guía viva. Actualízalo conforme avance el proyecto.
 > 
-> **Próxima Acción**: Revisar este plan y comenzar con la Fase 1.
+> **Próxima Acción**: Comenzar con la Fase 1 - Reestructuración del Backend (Issue #20).
 
 ---
 
