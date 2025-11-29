@@ -2,19 +2,25 @@
 
 import asyncio
 import gc
+import json
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import Dict, List, Optional, Tuple
+from typing import AsyncGenerator, Dict, List, Optional, Tuple
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from obsidianrag.config import configure_from_vault, get_settings
 from obsidianrag.core.db_service import load_or_create_db
-from obsidianrag.core.qa_agent import ask_question_graph, create_qa_graph
+from obsidianrag.core.qa_agent import (
+    ask_question_graph,
+    ask_question_graph_streaming,
+    create_qa_graph,
+)
 from obsidianrag.core.qa_service import ModelNotAvailableError, NoDocumentsFoundError, RAGError
 from obsidianrag.utils.logger import setup_logger
 
@@ -200,6 +206,77 @@ def _register_routes(application: FastAPI):
         except Exception as e:
             logger.error(f"Unexpected error: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail="Internal server error")
+
+    @application.post("/ask/stream", summary="Ask a question with streaming")
+    async def ask_stream(question: Question, request: Request):
+        """Ask a question and stream the response with progress updates via SSE."""
+        import time as time_module
+
+        from obsidianrag.core.qa_service import create_hybrid_retriever
+
+        async def event_generator() -> AsyncGenerator[str, None]:
+            """Generate SSE events for the streaming response."""
+            event_count = 0
+            stream_start = time_module.time()
+
+            try:
+                if _db is None:
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'System not initialized'})}\n\n"
+                    return
+
+                session_id = question.session_id or str(uuid.uuid4())
+                history = _chat_histories.get(session_id, [])
+
+                # Create retriever for streaming
+                retriever = create_hybrid_retriever(_db)
+
+                # Send start event
+                logger.info("📤 [SSE] Sending start event")
+                yield f"data: {json.dumps({'type': 'start', 'session_id': session_id})}\n\n"
+
+                # Stream with direct retrieval and LLM streaming
+                last_event = None
+                async for event in ask_question_graph_streaming(
+                    _qa_app, question.text, history, retriever=retriever, db=_db
+                ):
+                    event_count += 1
+                    event_type = event.get("type", "unknown")
+                    elapsed = time_module.time() - stream_start
+
+                    if event_type == "token":
+                        # Log every 10th token to avoid spam
+                        if event_count % 10 == 0:
+                            logger.info(f"📤 [SSE #{event_count}] +{elapsed:.2f}s token batch")
+                    else:
+                        logger.info(f"📤 [SSE #{event_count}] +{elapsed:.2f}s {event_type}")
+
+                    yield f"data: {json.dumps(event)}\n\n"
+                    last_event = event
+
+                # Update history
+                if last_event and last_event.get("type") == "answer":
+                    history.append((question.text, last_event.get("answer", "")))
+                    _chat_histories[session_id] = history
+
+                total_time = time_module.time() - stream_start
+                logger.info(f"✅ [SSE] Stream complete: {event_count} events in {total_time:.2f}s")
+
+            except Exception as e:
+                logger.error(f"Streaming error: {e}", exc_info=True)
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+            # Send end event
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @application.get("/health", summary="System status")
     async def health():

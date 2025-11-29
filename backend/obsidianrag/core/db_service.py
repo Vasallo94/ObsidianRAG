@@ -238,9 +238,12 @@ def update_db_incrementally(
             texts = text_splitter.split_documents(documents)
             logger.info(f"Created {len(texts)} text chunks")
 
-            # Add to database
-            db.add_documents(texts)
-            logger.info("Documents added to database")
+            # Add to database only if we have chunks
+            if texts:
+                db.add_documents(texts)
+                logger.info("Documents added to database")
+            else:
+                logger.warning("No text chunks generated from documents (files may be empty)")
 
     return db
 

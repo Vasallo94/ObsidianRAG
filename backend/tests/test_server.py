@@ -28,7 +28,7 @@ class TestAskEndpoint:
 
     def test_ask_valid_question(self, fast_test_client):
         """Test asking a valid question."""
-        response = fast_test_client.post("/ask", json={"question": "What is machine learning?"})
+        response = fast_test_client.post("/ask", json={"text": "What is machine learning?"})
 
         assert response.status_code == 200
         data = response.json()
@@ -37,7 +37,7 @@ class TestAskEndpoint:
 
     def test_ask_empty_question(self, fast_test_client):
         """Test asking with empty question."""
-        response = fast_test_client.post("/ask", json={"question": ""})
+        response = fast_test_client.post("/ask", json={"text": ""})
 
         # Should return error or validation failure
         assert response.status_code in [400, 422]
@@ -54,7 +54,7 @@ class TestAskEndpoint:
         response = fast_test_client.post(
             "/ask",
             json={
-                "question": "Tell me more about that",
+                "text": "Tell me more about that",
                 "conversation_id": "test-123",
             },
         )
@@ -63,7 +63,7 @@ class TestAskEndpoint:
 
     def test_ask_returns_sources(self, fast_test_client):
         """Test that ask endpoint returns sources."""
-        response = fast_test_client.post("/ask", json={"question": "What is deep learning?"})
+        response = fast_test_client.post("/ask", json={"text": "What is deep learning?"})
 
         assert response.status_code == 200
         data = response.json()
@@ -166,7 +166,7 @@ class TestCORS:
         """Test that CORS allows localhost origins."""
         response = test_client.post(
             "/ask",
-            json={"question": "test"},
+            json={"text": "test"},
             headers={"Origin": "http://localhost:3000"},
         )
 

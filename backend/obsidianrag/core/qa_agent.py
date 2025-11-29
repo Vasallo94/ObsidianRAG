@@ -290,6 +290,17 @@ def retrieve_node(state: AgentState, retriever, db):
         except Exception as e:
             logger.error(f"❌ [GRAPHRAG] Error fetching linked docs: {e}")
 
+    # Filter out documents with low relevance scores
+    MIN_SCORE_THRESHOLD = 0.3  # Minimum score to include in context
+    docs_before_filter = len(docs)
+    docs = [d for d in docs if d.metadata.get("score", 0) >= MIN_SCORE_THRESHOLD]
+    docs_filtered = docs_before_filter - len(docs)
+
+    if docs_filtered > 0:
+        logger.info(
+            f"🔻 [FILTER] Removed {docs_filtered} low-score docs (score < {MIN_SCORE_THRESHOLD})"
+        )
+
     logger.info(f"✅ [RETRIEVE NODE] Final context: {len(docs)} documents")
 
     tracer.exit_node(
@@ -397,13 +408,18 @@ def create_qa_graph(db):
 
     system_prompt = """You are a personal assistant that answers questions based on the user's Obsidian notes provided below in the CONTEXT section.
 
-RULES:
+CRITICAL RULE - LANGUAGE:
+**YOU MUST RESPOND IN THE SAME LANGUAGE AS THE USER'S QUESTION.**
+- If the user asks in Spanish → respond entirely in Spanish
+- If the user asks in English → respond entirely in English
+- NEVER switch languages. Match the user's language exactly.
+
+OTHER RULES:
 1. **USE THE CONTEXT**: The notes below contain the information you need. READ THEM CAREFULLY before answering.
 2. **Exact Quotes**: If asked for specific text, quote it EXACTLY as it appears.
-3. **Honesty**: ONLY if the context is completely empty or truly irrelevant, say "I couldn't find this in the notes".
+3. **Honesty**: ONLY if the context is completely empty or truly irrelevant, say you couldn't find the information.
 4. **Format**: Use Markdown for formatting.
 5. **Direct**: Be concise and to the point.
-6. **Language**: ALWAYS respond in the dominant language of the CONTEXT notes. If notes are in Spanish, respond in Spanish. If notes are in English, respond in English.
 
 IMPORTANT: The context below contains relevant notes. Use them to answer the question.
 
@@ -475,3 +491,202 @@ def ask_question_graph(
         logger.error(f"❌ [GRAPH ERROR] Exception during graph execution: {e}")
         tracer.end({"error": str(e)})
         raise
+
+
+async def ask_question_graph_streaming(
+    app, question: str, chat_history: List[Tuple[str, str]] = None, retriever=None, db=None
+):
+    """Streaming version that yields events including token-by-token LLM output.
+
+    This function bypasses the normal graph execution for generate node,
+    running retrieve through the graph but doing LLM streaming directly.
+
+    Yields dict events with structure:
+    - {"type": "status", "message": "..."}
+    - {"type": "retrieve_complete", "docs_count": 5, "sources": [...]}
+    - {"type": "token", "content": "..."}  # Individual tokens
+    - {"type": "answer", "answer": "...", "sources": [...]}
+    """
+    import asyncio
+
+    if chat_history is None:
+        chat_history = []
+
+    logger.info(f"🚀 [STREAM START] Question: '{question}'")
+    settings = get_settings()
+
+    try:
+        start_invoke = time.time()
+
+        # Yield initial status
+        yield {"type": "status", "message": "Searching your notes..."}
+        await asyncio.sleep(0.01)
+
+        # Step 1: Run retrieve node directly (not through graph to avoid generate)
+        logger.info(f"🔍 [STREAM] Running retrieval for: '{question}'")
+
+        # Build a minimal state for retrieve_node
+        history_messages = []
+        for q, a in chat_history:
+            history_messages.append(HumanMessage(content=q))
+            history_messages.append(AIMessage(content=a))
+        history_messages.append(HumanMessage(content=question))
+
+        state = {
+            "question": question,
+            "messages": history_messages,
+            "context": [],
+        }
+
+        # Call retrieve_node directly
+        retrieve_result = retrieve_node(state, retriever, db)
+        final_context = retrieve_result.get("context", [])
+
+        logger.info(f"📄 [STREAM] Retrieved {len(final_context)} documents")
+
+        # Yield retrieve complete event
+        sources = []
+        for doc in final_context:
+            sources.append(
+                {
+                    "source": doc.metadata.get("source", "Unknown"),
+                    "score": doc.metadata.get("score", 0),
+                }
+            )
+        yield {
+            "type": "retrieve_complete",
+            "docs_count": len(final_context),
+            "sources": sources[:6],
+        }
+        await asyncio.sleep(0.01)
+
+        # Step 2: Stream LLM generation token by token
+        yield {"type": "status", "message": "Generating answer..."}
+        await asyncio.sleep(0.01)
+
+        # Format context for LLM
+        context_parts = []
+        for doc in final_context:
+            source = doc.metadata.get("source", "Unknown")
+            source_name = os.path.basename(source) if source else "Unknown"
+            context_parts.append(f"[Note: {source_name}]\n{doc.page_content}")
+        context_str = "\n\n---\n\n".join(context_parts)
+
+        # Build the prompt
+        system_prompt = """You are a personal assistant that answers questions based on the user's Obsidian notes provided below in the CONTEXT section.
+
+CRITICAL RULE - LANGUAGE:
+**YOU MUST RESPOND IN THE SAME LANGUAGE AS THE USER'S QUESTION.**
+- If the user asks in Spanish → respond entirely in Spanish
+- If the user asks in English → respond entirely in English
+- NEVER switch languages. Match the user's language exactly.
+
+OTHER RULES:
+1. **USE THE CONTEXT**: The notes below contain the information you need. READ THEM CAREFULLY before answering.
+2. **Exact Quotes**: If asked for specific text, quote it EXACTLY as it appears.
+3. **Honesty**: ONLY if the context is completely empty or truly irrelevant, say you couldn't find the information.
+4. **Format**: Use Markdown for formatting.
+5. **Direct**: Be concise and to the point.
+
+---
+CONTEXT (User's Obsidian Notes):
+{context}
+---
+"""
+
+        full_prompt = (
+            system_prompt.format(context=context_str) + f"\n\nQuestion: {question}\n\nAnswer:"
+        )
+
+        # Stream tokens with TTFT measurement
+        # Use httpx directly for TRUE async streaming from Ollama
+        import httpx
+
+        full_answer = ""
+        first_token_time = None
+        llm_start_time = time.time()
+        token_count = 0
+
+        logger.info(f"💭 [STREAM] Starting LLM streaming ({settings.llm_model})...")
+        logger.info(
+            f"📝 [STREAM] Prompt length: {len(full_prompt)} chars, Context: {len(context_str)} chars"
+        )
+
+        # Call Ollama API directly with httpx for true async streaming
+        ollama_url = f"{settings.ollama_base_url}/api/generate"
+        payload = {
+            "model": settings.llm_model,
+            "prompt": full_prompt,
+            "stream": True,
+        }
+
+        async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
+            async with client.stream("POST", ollama_url, json=payload) as response:
+                async for line in response.aiter_lines():
+                    if line:
+                        try:
+                            import json
+
+                            data = json.loads(line)
+                            chunk = data.get("response", "")
+                            done = data.get("done", False)
+
+                            if chunk:
+                                token_count += 1
+
+                                if first_token_time is None:
+                                    first_token_time = time.time()
+                                    ttft = first_token_time - llm_start_time
+                                    logger.info(f"⚡ [TTFT] Time to First Token: {ttft:.3f}s")
+                                    yield {"type": "ttft", "seconds": round(ttft, 3)}
+
+                                full_answer += chunk
+                                yield {"type": "token", "content": chunk}
+                                logger.debug(f"📤 [TOKEN #{token_count}] '{chunk[:20]}...' yielded")
+
+                            if done:
+                                break
+
+                        except json.JSONDecodeError:
+                            logger.warning(f"Failed to parse line: {line}")
+                            continue
+
+        llm_end_time = time.time()
+        llm_total_time = llm_end_time - llm_start_time
+        tokens_per_second = token_count / llm_total_time if llm_total_time > 0 else 0
+
+        logger.info(
+            f"✅ [STREAM] LLM complete: {len(full_answer)} chars, {token_count} tokens in {llm_total_time:.2f}s ({tokens_per_second:.1f} tok/s)"
+        )
+
+        invoke_time = time.time() - start_invoke
+
+        # Format sources from captured context
+        sources = []
+        for doc in final_context:
+            sources.append(
+                {
+                    "source": doc.metadata.get("source", "Unknown"),
+                    "score": doc.metadata.get("score", 0),
+                    "retrieval_type": doc.metadata.get("retrieval_type", "retrieved"),
+                }
+            )
+        sources.sort(key=lambda x: x["score"], reverse=True)
+
+        # Final answer event
+        yield {
+            "type": "answer",
+            "question": question,
+            "answer": full_answer,
+            "sources": sources,
+            "process_time": round(invoke_time, 3),
+        }
+
+        logger.info(f"🎯 [STREAM END] Total time: {invoke_time:.2f}s")
+
+    except Exception as e:
+        logger.error(f"❌ [STREAM ERROR] Exception: {e}")
+        import traceback
+
+        logger.error(traceback.format_exc())
+        yield {"type": "error", "message": str(e)}

@@ -508,118 +508,134 @@ obsidianrag/
 - [ ] Build y publicación automática
 
 ### Fase 4: Desarrollo del Plugin de Obsidian
-> **Estado**: ⏳ Pendiente  
-> **Duración estimada**: 7-10 días
+> **Estado**: ✅ Completada  
+> **Completada**: 29 de noviembre de 2025  
+> **Issue**: #24 (cerrado)
 
 **Objetivo**: Crear el plugin TypeScript que gestiona el backend y proporciona UI.
 
 #### 4.1 Setup del Proyecto
-- [ ] Crear estructura `plugin/`
-- [ ] Inicializar con `obsidian-sample-plugin` como base
-- [ ] Configurar TypeScript, ESLint, esbuild
-- [ ] Configurar `manifest.json`
+- [x] Crear estructura `plugin/`
+- [x] Inicializar con template propio (no sample plugin)
+- [x] Configurar TypeScript, esbuild
+- [x] Configurar `manifest.json`
 
 #### 4.2 Server Manager
-- [ ] Implementar `server-manager.ts`
-  - [ ] Detección de Python (`which python3`)
-  - [ ] Detección de pip/pipx
-  - [ ] Instalación de obsidianrag si no existe
-  - [ ] Spawn del proceso servidor
-  - [ ] Manejo de stdout/stderr
-  - [ ] Kill del proceso en onunload
-  - [ ] Restart automático si el proceso muere
-- [ ] Manejar diferentes plataformas (Windows, macOS, Linux)
+- [x] Implementar servidor externo vía wrapper script `/usr/local/bin/obsidianrag-server`
+  - [x] Detección del path del vault
+  - [x] Configuración de puerto
+  - [x] Start/Stop desde terminal (no spawn directo, para estabilidad)
+- [ ] *(Diferido v3.1)* Spawn automático desde plugin
+- [ ] *(Diferido v3.1)* Restart automático si el proceso muere
 
 #### 4.3 API Client
-- [ ] Implementar `api-client.ts`
-  - [ ] Método `ask(question: string): Promise<Answer>`
-  - [ ] Método `health(): Promise<boolean>`
-  - [ ] Método `stats(): Promise<VaultStats>`
-  - [ ] Método `reindex(): Promise<void>`
-  - [ ] Timeout handling
-  - [ ] Retry logic
+- [x] Implementar cliente HTTP integrado en `main.ts`
+  - [x] Método `health(): Promise<boolean>` via `requestUrl`
+  - [x] **SSE Streaming** via `fetch()` para `/ask/stream`
+  - [ ] *(Diferido)* Método `stats(): Promise<VaultStats>`
+  - [ ] *(Diferido)* Método `reindex(): Promise<void>`
+  - [x] Timeout handling (30s stream timeout)
+  - [ ] *(Diferido)* Retry logic
 
 #### 4.4 Health Checker
-- [ ] Implementar `health-checker.ts`
-  - [ ] Polling periódico al endpoint `/health`
-  - [ ] Eventos para cambio de estado
-  - [ ] Detección de servidor caído
+- [x] Implementar health check integrado
+  - [x] Polling periódico cada 10 segundos (`setInterval`)
+  - [x] Eventos para cambio de estado (Online/Offline)
+  - [x] Status bar item actualizado dinámicamente
 
 #### 4.5 UI: Chat View
-- [ ] Implementar `chat-view.ts` (vista lateral)
-  - [ ] Input de texto para preguntas
-  - [ ] Historial de mensajes
-  - [ ] Mostrar fuentes/referencias
-  - [ ] Indicador de loading
-  - [ ] Manejo de errores en UI
-  - [ ] Scroll automático
-  - [ ] Markdown rendering
+- [x] Implementar `ChatView` (vista lateral derecha)
+  - [x] Input de texto para preguntas (textarea + botón)
+  - [x] Historial de mensajes (user/assistant)
+  - [x] Mostrar fuentes/referencias con links clickeables
+  - [x] Indicador de loading (con spinner animado)
+  - [x] Manejo de errores en UI
+  - [x] Scroll automático al nuevo contenido
+  - [x] Markdown rendering con `MarkdownRenderer.render()`
+  - [x] **🆕 Streaming en tiempo real** (tokens aparecen progresivamente)
+  - [x] **🆕 Indicador de fases** del grafo RAG (retrieve, rerank, generate)
+  - [x] **🆕 TTFT badge** (Time To First Token)
+  - [x] **🆕 Verificación de existencia de fuentes** (oculta no encontradas)
 
 #### 4.6 UI: Settings Tab
-- [ ] Implementar `settings-tab.ts`
-  - [ ] Configuración del modelo LLM
-  - [ ] Configuración del puerto
-  - [ ] Toggle para auto-start del servidor
-  - [ ] Botón para reindexar
-  - [ ] Mostrar estado del servidor
-  - [ ] Mostrar estadísticas del vault
+- [x] Implementar `SettingsTab`
+  - [ ] *(Diferido)* Configuración del modelo LLM desde UI
+  - [x] Configuración del puerto del servidor
+  - [ ] *(Diferido)* Toggle para auto-start del servidor
+  - [ ] *(Diferido)* Botón para reindexar
+  - [x] Mostrar estado del servidor (indicador visual)
+  - [ ] *(Diferido)* Mostrar estadísticas del vault
 
 #### 4.7 UI: Status Bar
-- [ ] Implementar `status-bar.ts`
-  - [ ] Indicador visual del estado del servidor
-  - [ ] 🟢 Running / 🟡 Starting / 🔴 Stopped
-  - [ ] Click para abrir settings
+- [x] Implementar status bar item
+  - [x] Indicador visual del estado: "🟢 Online" / "🔴 Offline"
+  - [x] Actualización en tiempo real (cada 10s + on-demand)
+  - [x] Click para abrir chat view
 
 #### 4.8 UI: Modals
-- [ ] Implementar `setup-modal.ts`
-  - [ ] Guía de primera instalación
-  - [ ] Verificación de prerequisitos
-  - [ ] Instalación del backend
-- [ ] Implementar `ask-modal.ts`
-  - [ ] Modal rápido para preguntas (Command Palette)
-- [ ] Implementar `error-modal.ts`
-  - [ ] Mostrar errores de forma amigable
-  - [ ] Sugerencias de solución
+- [ ] *(Diferido v3.1)* Setup Modal - Guía de primera instalación
+- [ ] *(Diferido v3.1)* Ask Modal - Modal rápido para preguntas
+- [ ] *(Diferido v3.1)* Error Modal - Errores amigables
 
 #### 4.9 Commands
-- [ ] Registrar comandos en Obsidian:
-  - [ ] `ObsidianRAG: Ask a question`
-  - [ ] `ObsidianRAG: Open chat`
-  - [ ] `ObsidianRAG: Reindex vault`
-  - [ ] `ObsidianRAG: Start server`
-  - [ ] `ObsidianRAG: Stop server`
-  - [ ] `ObsidianRAG: Show status`
+- [x] `ObsidianRAG: Open Chat` - Abre la vista de chat
+- [ ] *(Diferido)* `ObsidianRAG: Ask a question` (modal)
+- [ ] *(Diferido)* `ObsidianRAG: Reindex vault`
+- [ ] *(Diferido)* `ObsidianRAG: Start/Stop server`
 
 #### 4.10 Ribbon Icon
-- [ ] Agregar icono en el ribbon (barra lateral izquierda)
-- [ ] Click para abrir chat view
+- [x] Agregar icono en el ribbon (barra lateral izquierda)
+- [x] Click para abrir chat view
+
+#### 4.11 🆕 Streaming Backend (No planificado originalmente)
+> Implementación completa de streaming SSE para mejorar UX
+
+- [x] **Endpoint `/ask/stream`** - Server-Sent Events
+- [x] **TRUE async streaming** con `httpx.AsyncClient` (no buffered)
+- [x] **Eventos SSE**:
+  - [x] `phase` - Fase actual del grafo (retrieve, rerank, generate)
+  - [x] `retrieval_info` - Estadísticas de retrieval
+  - [x] `context_info` - Info del contexto enviado al LLM
+  - [x] `ttft` - Time To First Token
+  - [x] `token` - Tokens individuales del LLM
+  - [x] `sources` - Fuentes citadas
+  - [x] `done` - Fin del stream
+  - [x] `error` - Errores
+- [x] **Score filtering** - Filtrado de documentos con score < 0.3
+- [x] **Logging detallado** con timestamps (HH:MM:SS.mmm)
+
+#### 4.12 🆕 Source Links Enhancement (No planificado originalmente)
+- [x] Links a notas funcionan correctamente (rutas relativas)
+- [x] Verificación de existencia de archivos antes de mostrar
+- [x] Búsqueda fallback por nombre de archivo
+- [x] Ocultar fuentes que no existen en el vault
 
 ### Fase 5: Testing del Plugin
-> **Estado**: ⏳ Pendiente  
+> **Estado**: 🔄 En progreso  
 > **Duración estimada**: 2-3 días
 
 #### 5.1 Tests Manuales
-- [ ] Test en macOS
+- [x] Test en macOS ✅
 - [ ] Test en Windows
 - [ ] Test en Linux
-- [ ] Test de instalación limpia
+- [x] Test de instalación limpia (symlink a vault)
 - [ ] Test de upgrade
 - [ ] Test de desinstalación
 
 #### 5.2 Edge Cases
 - [ ] Python no instalado
 - [ ] pip no disponible
-- [ ] Ollama no corriendo
+- [x] Ollama no corriendo → Muestra error apropiado
 - [ ] Puerto ocupado
 - [ ] Vault vacío
 - [ ] Vault muy grande (>1000 notas)
-- [ ] Conexión a servidor perdida
+- [x] Conexión a servidor perdida → Status se actualiza a Offline
 - [ ] Múltiples instancias de Obsidian
 
 #### 5.3 CI/CD para Plugin
 - [ ] Crear `.github/workflows/test-plugin.yml`
 - [ ] Lint TypeScript
-- [ ] Build verification
+- [x] Build verification (esbuild funciona)
 
 ### Fase 6: Documentación
 > **Estado**: ⏳ Pendiente  
@@ -745,59 +761,68 @@ obsidianrag/
 ### Plugin Obsidian
 
 #### Setup
-- [ ] Crear directorio `plugin/`
-- [ ] Inicializar proyecto desde template
-- [ ] Configurar `manifest.json`
-- [ ] Configurar `package.json`
-- [ ] Configurar `tsconfig.json`
-- [ ] Configurar `esbuild.config.mjs`
-- [ ] Verificar build: `npm run build`
+- [x] Crear directorio `plugin/`
+- [x] Inicializar proyecto desde cero
+- [x] Configurar `manifest.json`
+- [x] Configurar `package.json`
+- [x] Configurar `tsconfig.json`
+- [x] Configurar `esbuild.config.mjs`
+- [x] Verificar build: `node esbuild.config.mjs production`
 
 #### Core
-- [ ] Implementar clase principal `ObsidianRAGPlugin`
-- [ ] Implementar `onload()`
-- [ ] Implementar `onunload()`
-- [ ] Implementar `loadSettings()`
-- [ ] Implementar `saveSettings()`
+- [x] Implementar clase principal `ObsidianRAGPlugin`
+- [x] Implementar `onload()`
+- [x] Implementar `onunload()`
+- [x] Implementar `loadSettings()`
+- [x] Implementar `saveSettings()`
 
 #### Server Manager
-- [ ] Detectar si Python está instalado
-- [ ] Detectar si obsidianrag está instalado
-- [ ] Instalar obsidianrag si es necesario
-- [ ] Iniciar servidor con spawn
-- [ ] Manejar logs del servidor
-- [ ] Detener servidor limpiamente
-- [ ] Reiniciar servidor si falla
-- [ ] Soporte Windows
-- [ ] Soporte macOS
-- [ ] Soporte Linux
+- [ ] Detectar si Python está instalado *(diferido)*
+- [ ] Detectar si obsidianrag está instalado *(diferido)*
+- [ ] Instalar obsidianrag si es necesario *(diferido)*
+- [ ] Iniciar servidor con spawn *(usando wrapper script)*
+- [ ] Manejar logs del servidor *(diferido)*
+- [ ] Detener servidor limpiamente *(diferido)*
+- [ ] Reiniciar servidor si falla *(diferido)*
+- [ ] Soporte Windows *(pendiente testing)*
+- [x] Soporte macOS ✅
+- [ ] Soporte Linux *(pendiente testing)*
 
 #### API Client
-- [ ] Implementar health check
-- [ ] Implementar ask
-- [ ] Implementar stats
-- [ ] Implementar reindex
-- [ ] Manejo de errores
-- [ ] Timeouts
-- [ ] Retries
+- [x] Implementar health check
+- [x] Implementar ask con SSE streaming
+- [ ] Implementar stats *(diferido)*
+- [ ] Implementar reindex *(diferido)*
+- [x] Manejo de errores
+- [x] Timeouts (30s para streaming)
+- [ ] Retries *(diferido)*
 
 #### UI
-- [ ] Chat View (ItemView)
-- [ ] Settings Tab (PluginSettingTab)
-- [ ] Status Bar Item
-- [ ] Setup Modal
-- [ ] Error Modal
-- [ ] Quick Ask Modal
+- [x] Chat View (ItemView) ✅
+- [x] Settings Tab (PluginSettingTab) ✅
+- [x] Status Bar Item ✅
+- [ ] Setup Modal *(diferido v3.1)*
+- [ ] Error Modal *(diferido v3.1)*
+- [ ] Quick Ask Modal *(diferido v3.1)*
 
 #### Commands
-- [ ] Registrar todos los comandos
-- [ ] Agregar hotkeys por defecto
+- [x] `ObsidianRAG: Open Chat`
+- [ ] Otros comandos *(diferidos)*
 
 #### Estilos
-- [ ] Crear `styles.css`
-- [ ] Estilos para chat view
-- [ ] Estilos responsive
-- [ ] Soporte para temas claro/oscuro
+- [x] Crear `styles.css`
+- [x] Estilos para chat view
+- [x] Estilos responsive
+- [x] Soporte para temas claro/oscuro (usa variables CSS de Obsidian)
+
+#### 🆕 Streaming Features (Implementación adicional)
+- [x] SSE event handling en frontend
+- [x] TRUE async streaming con httpx en backend
+- [x] Mostrar fases del grafo RAG
+- [x] TTFT (Time To First Token) badge
+- [x] Token-by-token rendering
+- [x] Score filtering (MIN_SCORE = 0.3)
+- [x] Logging con timestamps detallado
 
 ### Documentación
 
@@ -841,9 +866,23 @@ obsidianrag/
 | Endpoint | Método | Descripción | Request | Response |
 |----------|--------|-------------|---------|----------|
 | `/health` | GET | Health check | - | `{ status: "ok", model: "...", version: "..." }` |
-| `/ask` | POST | Hacer pregunta | `{ text: string, session_id?: string }` | `{ result: string, sources: Source[], ... }` |
+| `/ask` | POST | Hacer pregunta (sync) | `{ text: string }` | `{ result: string, sources: Source[], ... }` |
+| `/ask/stream` | POST | 🆕 Hacer pregunta (SSE streaming) | `{ text: string }` | SSE events (ver abajo) |
 | `/stats` | GET | Estadísticas del vault | - | `{ notes: number, chunks: number, ... }` |
 | `/rebuild_db` | POST | Reindexar vault | - | `{ status: "ok", indexed: number }` |
+
+#### 🆕 SSE Events del endpoint `/ask/stream`
+
+| Event Type | Data | Descripción |
+|------------|------|-------------|
+| `phase` | `{ phase: string, message: string }` | Fase actual: retrieve, rerank, generate |
+| `retrieval_info` | `{ total_found: int, after_filter: int }` | Docs encontrados vs filtrados |
+| `context_info` | `{ num_docs: int, total_chars: int }` | Tamaño del contexto |
+| `ttft` | `{ ttft: float }` | Time To First Token en segundos |
+| `token` | `{ token: string }` | Token individual del LLM |
+| `sources` | `{ sources: [...] }` | Array de fuentes citadas |
+| `done` | `{ done: true }` | Fin del stream |
+| `error` | `{ error: string }` | Error durante procesamiento |
 
 ### Backend: CLI Commands
 
@@ -1175,6 +1214,20 @@ Semana 7+
 | Plugin UI | ItemView lateral | Modal only | Mejor UX para conversaciones |
 | Comunicación | HTTP localhost | WebSocket | Más simple, suficiente para request/response |
 | Instalación backend | pip install | Bundled binary | Más simple, aprovecha Python del usuario |
+| **🆕 Streaming** | SSE (Server-Sent Events) | WebSocket, Long polling | Simple, unidireccional, compatible con fetch |
+| **🆕 Async HTTP** | httpx.AsyncClient | aiohttp, OllamaLLM.stream() | TRUE async, no bloquea event loop |
+| **🆕 Token rendering** | Append incremental | Rerender full | Mejor performance, no re-parses markdown |
+
+### 🆕 Lecciones Aprendidas (Fase 4)
+
+| Problema | Solución | Impacto |
+|----------|----------|---------|
+| `OllamaLLM.stream()` es síncrono | Usar `httpx.AsyncClient.stream()` directo a Ollama API | TRUE async streaming funciona |
+| TTFT alto (22-32s) | Score filtering (MIN_SCORE=0.3) | Reducción de contexto 77% |
+| Fuentes con rutas absolutas | Convertir a rutas relativas | Links funcionan en Obsidian |
+| Fuentes inexistentes aparecían | Verificar con `vault.getAbstractFileByPath()` + fallback | UX limpia, solo fuentes reales |
+| Status no se actualizaba | `setInterval` cada 10s | Status siempre actualizado |
+| Markdown cells en SSE | Usar `fetch()` nativo con `ReadableStream` | Streaming real en browser |
 
 ### Preguntas Abiertas
 
@@ -1214,6 +1267,46 @@ Semana 7+
 
 ---
 
+## 🎁 Características Implementadas No Planificadas
+
+> Estas características se añadieron durante la Fase 4 basándose en necesidades reales de UX que surgieron durante el desarrollo.
+
+### 1. Streaming SSE Completo
+**¿Por qué?**: El usuario quería ver el progreso mientras el agente procesaba la pregunta.
+
+- **Endpoint `/ask/stream`**: Server-Sent Events con múltiples tipos de eventos
+- **TRUE async streaming**: Usando `httpx.AsyncClient` en lugar de LangChain (que bloqueaba)
+- **Fases visibles**: El usuario ve en qué fase está el grafo (retrieve → rerank → generate)
+- **TTFT Badge**: Muestra cuánto tardó el primer token
+
+### 2. Score Filtering
+**¿Por qué?**: El TTFT era muy alto (22-32s) por contexto excesivo.
+
+- **MIN_SCORE_THRESHOLD = 0.3**: Documentos con score < 0.3 se filtran
+- **Reducción 77%**: De ~16k caracteres a ~4k caracteres de contexto
+- **Logging detallado**: Se reporta cuántos docs se filtran
+
+### 3. Verificación de Fuentes
+**¿Por qué?**: Las fuentes mostraban archivos que no existían en el vault.
+
+- **Verificación de existencia**: `vault.getAbstractFileByPath()`
+- **Búsqueda fallback**: Si no encuentra por path, busca por nombre
+- **Filtrado en UI**: Solo se muestran fuentes que existen
+
+### 4. Status Polling
+**¿Por qué?**: El indicador Online/Offline no se actualizaba.
+
+- **Polling cada 10s**: `setInterval` que verifica `/health`
+- **Actualización visual**: El status bar refleja el estado real
+
+### 5. Logging con Timestamps
+**¿Por qué?**: Para debuggear el streaming necesitábamos saber cuándo ocurría cada cosa.
+
+- **Formato**: `HH:MM:SS.mmm - LEVEL - message`
+- **Events logged**: Cada fase, cada 10 tokens, TTFT, errores
+
+---
+
 ## 📊 Métricas de Progreso
 
 ### Progreso General
@@ -1223,18 +1316,25 @@ Fase 0: Preparación          [██████████] 100% ✅
 Fase 1: Backend              [██████████] 100% ✅
 Fase 2: Testing Backend      [██████████] 100% ✅
 Fase 3: PyPI                 [██████████] 100% ✅
-Fase 4: Plugin               [░░░░░░░░░░]   0%
-Fase 5: Testing Plugin       [░░░░░░░░░░]   0%
+Fase 4: Plugin               [██████████] 100% ✅
+Fase 5: Testing Plugin       [██░░░░░░░░]  20% 🔄
 Fase 6: Documentación        [█░░░░░░░░░]  10%
 Fase 7: Publicación          [░░░░░░░░░░]   0%
 ─────────────────────────────────────────────
-TOTAL                        [████░░░░░░]  ~40%
+TOTAL                        [███████░░░]  ~70%
 ```
 
 ### Últimas Actualizaciones
 
 | Fecha | Actualización |
 |-------|---------------|
+| 2025-11-29 | ✅ Fase 4 completada: Plugin funcional con streaming SSE, chat view, source links (#24 cerrado) |
+| 2025-11-29 | 🆕 Implementado TRUE async streaming con httpx (no estaba planificado) |
+| 2025-11-29 | 🆕 Implementado score filtering para reducir contexto (MIN_SCORE=0.3) |
+| 2025-11-29 | 🆕 Implementada verificación de existencia de fuentes |
+| 2025-11-29 | 🆕 Implementado status polling cada 10 segundos |
+| 2025-11-29 | 🔄 Fase 5 en progreso: Testing del plugin en macOS |
+| 2025-11-29 | 🔄 Fase 4 en progreso: Scaffolding del plugin creado, compilando con esbuild |
 | 2025-11-29 | ✅ Fase 3 completada: PyPI publicado v3.0.1, Trusted Publishers, workflow automático (#23 cerrado) |
 | 2025-01-14 | ✅ Fase 2 completada: 59 tests, CI/CD configurado, ruff aplicado (#22 cerrado) |
 | 2025-01-14 | ✅ Fase 1 completada: Backend reestructurado como paquete PyPI (#20 cerrado) |
@@ -1243,9 +1343,53 @@ TOTAL                        [████░░░░░░]  ~40%
 
 ---
 
+## 🔮 Roadmap Futuro (Post v3.0)
+
+> Mejoras planificadas para versiones futuras, enfocadas en mejorar la experiencia de usuarios no técnicos.
+
+### v3.1 - Mejoras de UX
+
+- [ ] **Setup Wizard**: Modal interactivo que detecta prerequisitos (Python, Ollama) y guía la instalación
+- [ ] **Status Dashboard**: Vista del estado del sistema (servidor, modelo cargado, notas indexadas)
+- [ ] **Progress Indicators**: Barras de progreso para indexación ~~y generación de respuestas~~ *(streaming ya implementado en v3.0)*
+- [ ] **Auto-start server**: Spawn del servidor Python directamente desde el plugin
+- [ ] **Server lifecycle management**: Start/Stop/Restart desde comandos del plugin
+
+### v3.2 - Instalación Simplificada
+
+- [ ] **Detección automática de Python**: Buscar Python en ubicaciones comunes
+- [ ] **Verificación de Ollama**: Detectar si Ollama está corriendo y qué modelos hay disponibles
+- [ ] **Links directos de instalación**: Botones que abren las páginas de descarga de Ollama y Python
+- [ ] **Verificación pre-start**: Antes de iniciar el servidor, verificar que todo está listo
+
+### v3.3 - Instalador Automático (Avanzado)
+
+- [ ] **Descarga automática de Ollama**: Script que descarga e instala Ollama si no existe
+- [ ] **Gestión de modelos**: Descargar modelos LLM desde el plugin
+- [ ] **Python embebido**: Explorar bundlear un Python mínimo con el plugin (pyinstaller/nuitka)
+- [ ] **Actualizaciones automáticas del backend**: Detectar nuevas versiones en PyPI
+
+### v4.0 - Alternativas Cloud (Opcional)
+
+- [ ] **Soporte OpenAI API**: Opción para usar GPT-4 en lugar de Ollama local
+- [ ] **Soporte Anthropic API**: Opción para usar Claude
+- [ ] **Soporte Azure OpenAI**: Para usuarios enterprise
+- [ ] **Toggle local/cloud**: El usuario elige según privacidad vs conveniencia
+
+### Consideraciones de Diseño
+
+| Versión | Target Audience | Conocimientos Requeridos |
+|---------|-----------------|--------------------------|
+| v3.0 | Desarrolladores, Power Users | Terminal, Python básico |
+| v3.1-v3.2 | Usuarios técnicos | Instalar apps, seguir instrucciones |
+| v3.3+ | Usuarios generales | Solo usar Obsidian |
+| v4.0 | Cualquier usuario | Solo tener API key |
+
+---
+
 > **Nota**: Este documento es una guía viva. Actualízalo conforme avance el proyecto.
 > 
-> **Próxima Acción**: Comenzar con la Fase 4 - Desarrollo del Plugin de Obsidian (Issue #24).
+> **Próxima Acción**: Completar Fase 5 (testing en Windows/Linux) y Fase 6 (documentación).
 
 ---
 

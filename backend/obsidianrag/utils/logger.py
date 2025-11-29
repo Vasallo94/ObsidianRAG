@@ -40,8 +40,10 @@ def setup_logger(
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
 
-        # Console formatter
-        console_formatter = logging.Formatter("%(levelname)s - %(name)s - %(message)s")
+        # Console formatter WITH TIMESTAMP
+        console_formatter = logging.Formatter(
+            "%(asctime)s.%(msecs)03d - %(levelname)s - %(name)s - %(message)s", datefmt="%H:%M:%S"
+        )
         console_handler.setFormatter(console_formatter)
         logger.addHandler(console_handler)
 
