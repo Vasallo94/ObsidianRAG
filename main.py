@@ -204,6 +204,61 @@ async def health():
     }
 
 
+@app.get("/stats", summary="Vault statistics", description="Get statistics about the indexed Obsidian vault.")
+async def get_stats():
+    """
+    Endpoint to get vault and database statistics.
+    """
+    if db is None:
+        return {"error": "Database not ready"}
+    
+    try:
+        # Get data from ChromaDB
+        db_data = db.get()
+        documents = db_data.get('documents', [])
+        metadatas = db_data.get('metadatas', [])
+        
+        # Calculate stats
+        total_chunks = len(documents)
+        total_chars = sum(len(doc) for doc in documents)
+        total_words = sum(len(doc.split()) for doc in documents)
+        
+        # Unique sources (notes)
+        sources = set()
+        folders = set()
+        links = set()
+        
+        for meta in metadatas:
+            source = meta.get('source', '')
+            if source:
+                sources.add(source)
+                # Extract folder from path
+                parts = source.split('/')
+                if len(parts) > 1:
+                    folders.add(parts[-2])
+            
+            # Extract links
+            links_str = meta.get('links', '')
+            if links_str:
+                for link in links_str.split(','):
+                    if link.strip():
+                        links.add(link.strip())
+        
+        return {
+            "total_notes": len(sources),
+            "total_chunks": total_chunks,
+            "total_words": total_words,
+            "total_chars": total_chars,
+            "avg_words_per_chunk": total_words // total_chunks if total_chunks > 0 else 0,
+            "folders": len(folders),
+            "internal_links": len(links),
+            "vault_path": settings.obsidian_path.split('/')[-1] if settings.obsidian_path else "Unknown"
+        }
+    except Exception as e:
+        logger.error(f"Error getting stats: {e}")
+        return {"error": str(e)}
+
+
 @app.post("/rebuild_db", summary="Rebuild database", description="Force rebuild of the vector database to index new files.")
 async def rebuild_db():
     """

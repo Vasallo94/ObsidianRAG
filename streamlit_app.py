@@ -40,6 +40,17 @@ def get_system_info() -> dict:
         info["status"] = "🟡 Connection error"
     return info
 
+
+def get_vault_stats() -> dict:
+    """Get vault statistics from the backend"""
+    try:
+        response = requests.get("http://localhost:8000/stats", timeout=5)
+        if response.status_code == 200:
+            return response.json()
+    except Exception:
+        pass
+    return None
+
 # Main header
 st.markdown("# 🧠 Obsidian RAG")
 
@@ -94,7 +105,29 @@ with st.sidebar:
     
     st.divider()
     
-    st.caption("v2.0 · [GitHub](https://github.com/Vasallo94/ObsidianRAG)")
+    # Vault Statistics
+    if sys_info["status"] == "🟢 Connected" and sys_info["db_ready"]:
+        stats = get_vault_stats()
+        if stats and "error" not in stats:
+            st.markdown("### 📊 Vault Info")
+            
+            # Main metrics in columns
+            c1, c2 = st.columns(2)
+            with c1:
+                st.metric("📝 Notes", stats.get("total_notes", 0))
+                st.metric("🔗 Links", stats.get("internal_links", 0))
+            with c2:
+                st.metric("📦 Chunks", stats.get("total_chunks", 0))
+                st.metric("📁 Folders", stats.get("folders", 0))
+            
+            # Word count with formatting
+            total_words = stats.get("total_words", 0)
+            if total_words > 1000:
+                word_display = f"{total_words/1000:.1f}K"
+            else:
+                word_display = str(total_words)
+            
+            st.caption(f"💬 {word_display} words indexed · ~{stats.get('avg_words_per_chunk', 0)} words/chunk")
 
 # Initialize chat history
 if "messages" not in st.session_state:
