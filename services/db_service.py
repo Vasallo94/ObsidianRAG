@@ -4,13 +4,15 @@ import os
 import re
 import shutil
 import uuid
-from typing import Optional
+from typing import Optional, Union
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import ObsidianLoader
 from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_ollama import OllamaEmbeddings
 
 from config.settings import settings
 from services.metadata_tracker import FileMetadataTracker
@@ -33,11 +35,48 @@ def extract_obsidian_links(content: str) -> list[str]:
     return unique_links
 
 
-def get_embeddings() -> HuggingFaceEmbeddings:
-    """Get configured embeddings model"""
-    logger.info(f"Inicializando modelo de embeddings: {settings.embedding_model}")
-    embeddings = HuggingFaceEmbeddings(model_name=settings.embedding_model)
-    logger.info("Modelo de embeddings cargado correctamente")
+def get_embeddings() -> Embeddings:
+    """Get configured embeddings model based on provider setting.
+    
+    Falls back to HuggingFace if Ollama embedding model is not available.
+    """
+    provider = settings.embedding_provider.lower()
+    
+    if provider == "ollama":
+        model = settings.ollama_embedding_model
+        logger.info(f"Intentando cargar Ollama embeddings: {model}")
+        
+        # Check if model is available in Ollama
+        try:
+            import httpx
+            response = httpx.get(f"{settings.ollama_base_url}/api/tags", timeout=5.0)
+            if response.status_code == 200:
+                available_models = [m["name"].split(":")[0] for m in response.json().get("models", [])]
+                if model not in available_models:
+                    logger.warning(f"⚠️ Modelo '{model}' no encontrado en Ollama. Modelos disponibles: {available_models}")
+                    logger.warning(f"💡 Ejecuta: ollama pull {model}")
+                    logger.info("🔄 Fallback a HuggingFace embeddings...")
+                    provider = "huggingface"  # Fallback
+                else:
+                    embeddings = OllamaEmbeddings(
+                        model=model,
+                        base_url=settings.ollama_base_url
+                    )
+                    logger.info(f"✅ Ollama embeddings ({model}) cargado correctamente")
+                    return embeddings
+            else:
+                logger.warning(f"⚠️ No se pudo conectar a Ollama. Fallback a HuggingFace...")
+                provider = "huggingface"
+        except Exception as e:
+            logger.warning(f"⚠️ Error verificando Ollama: {e}. Fallback a HuggingFace...")
+            provider = "huggingface"
+    
+    # Default: HuggingFace (or fallback)
+    model = settings.embedding_model
+    logger.info(f"Inicializando HuggingFace embeddings: {model}")
+    embeddings = HuggingFaceEmbeddings(model_name=model)
+    logger.info(f"✅ HuggingFace embeddings ({model}) cargado correctamente")
+    
     return embeddings
 
 
@@ -86,9 +125,17 @@ def load_all_obsidian_documents(obsidian_path: str) -> list[Document]:
     """Load all documents from Obsidian vault using recursive walk"""
     logger.info("Cargando documentos de Obsidian (.md) recursivamente")
     
+    # Patrones de archivos a excluir (binarios, canvas, etc.)
+    EXCLUDED_PATTERNS = [
+        '.excalidraw.md',  # Excalidraw drawings (base64)
+        '.canvas',          # Canvas files
+        'untitled',         # Untitled files
+    ]
+    
     documents = []
     total_files = 0
     loaded_files = 0
+    skipped_files = 0
     total_links_found = 0
     
     for root, _, files in os.walk(obsidian_path):
@@ -96,6 +143,12 @@ def load_all_obsidian_documents(obsidian_path: str) -> list[Document]:
             if file.endswith('.md'):
                 total_files += 1
                 filepath = os.path.join(root, file)
+                
+                # Skip excluded patterns
+                if any(pattern in file.lower() for pattern in EXCLUDED_PATTERNS):
+                    skipped_files += 1
+                    logger.debug(f"Skipping excluded file: {file}")
+                    continue
                 
                 try:
                     # Try UTF-8 first
@@ -130,7 +183,7 @@ def load_all_obsidian_documents(obsidian_path: str) -> list[Document]:
                 except Exception as e:
                     logger.error(f"Error cargando archivo {filepath}: {e}")
     
-    logger.info(f"Se cargaron {loaded_files} de {total_files} notas de Obsidian")
+    logger.info(f"Se cargaron {loaded_files} de {total_files} notas ({skipped_files} excluidos)")
     logger.info(f"Total de enlaces extraídos: {total_links_found}")
     return documents
 

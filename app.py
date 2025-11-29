@@ -17,21 +17,99 @@ def load_css(file_name):
         st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
 
 load_css("assets/styles.css")
-st.markdown("# Obsidian RAG Chat")
 
-# Sidebar para acciones administrativas
+def get_system_info() -> dict:
+    """Obtiene información del sistema desde el backend"""
+    info = {
+        "llm_model": "...",
+        "embedding": "...",
+        "status": "🔴 Desconectado",
+        "db_ready": False
+    }
+    try:
+        response = requests.get("http://localhost:8000/health", timeout=3)
+        if response.status_code == 200:
+            data = response.json()
+            info["llm_model"] = data.get("model", "gemma3")
+            info["embedding"] = data.get("embedding_model", "multilingual").split("/")[-1][:20]
+            info["status"] = "🟢 Conectado"
+            info["db_ready"] = data.get("db_ready", False)
+    except requests.exceptions.ConnectionError:
+        info["status"] = "🔴 Servidor no iniciado"
+    except Exception:
+        info["status"] = "🟡 Error de conexión"
+    return info
+
+# Header principal
+st.markdown("# 🧠 Obsidian RAG")
+
+# Sidebar mejorada
 with st.sidebar:
-    st.header("Administración")
-    if st.button("Reindexar Base de Datos"):
-        with st.spinner("Reconstruyendo base de datos... Esto puede tardar unos minutos."):
-            try:
-                response = requests.post("http://localhost:8000/rebuild_db")
-                if response.status_code == 200:
-                    st.success("Base de datos reindexada correctamente.")
-                else:
-                    st.error(f"Error al reindexar: {response.text}")
-            except Exception as e:
-                st.error(f"Error de conexión: {e}")
+    # Estado del sistema
+    sys_info = get_system_info()
+    
+    # Status badge
+    st.markdown(f"### {sys_info['status']}")
+    
+    if sys_info["status"] == "🟢 Conectado":
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**🤖 LLM**")
+            st.code(sys_info["llm_model"], language=None)
+        with col2:
+            st.markdown("**📊 Embeddings**")
+            st.code(sys_info["embedding"][:15], language=None)
+        
+        if sys_info["db_ready"]:
+            st.success("Base de datos lista", icon="✅")
+        else:
+            st.warning("Indexando notas...", icon="⏳")
+    else:
+        st.error("Inicia el servidor: `uv run cerebro.py`")
+    
+    st.divider()
+    
+    # Acciones
+    st.markdown("### 🔧 Acciones")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔄 Reindexar", use_container_width=True):
+            with st.spinner("Reindexando..."):
+                try:
+                    response = requests.post("http://localhost:8000/rebuild_db", timeout=300)
+                    if response.status_code == 200:
+                        st.success("✅ Listo")
+                        st.rerun()
+                    else:
+                        st.error("Error")
+                except Exception as e:
+                    st.error(f"{e}")
+    
+    with col2:
+        if st.button("🗑️ Limpiar", use_container_width=True):
+            st.session_state.messages = []
+            st.session_state.session_id = None
+            st.rerun()
+    
+    st.divider()
+    
+    # Ayuda
+    with st.expander("💡 Configuración", expanded=False):
+        st.markdown("""
+        **Cambiar modelo LLM:**
+        ```
+        # En .env
+        LLM_MODEL=gemma3
+        ```
+        
+        **Modelos recomendados:**
+        - `gemma3` - Equilibrado
+        - `qwen2.5` - Buen español
+        - `llama3.2` - Rápido
+        """)
+    
+    st.caption("v2.0 · [GitHub](https://github.com/Vasallo94/ObsidianRAG)")
 
 # Inicializar historial de chat
 if "messages" not in st.session_state:

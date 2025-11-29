@@ -138,13 +138,16 @@ async def ask(question: Question, request: Request):
         # Obtener historial
         history = chat_histories.get(session_id, [])
         
-        # Hacer la pregunta con historial
+        # Hacer la pregunta usando el modelo configurado en settings
         async with db_lock:
+            # Create graph with configured model
+            qa_graph = create_qa_graph(db)
+            
             # Run in thread pool since LangGraph might be blocking
             loop = asyncio.get_event_loop()
             result, sources = await loop.run_in_executor(
                 None, 
-                lambda: ask_question_graph(qa_app, question.text, history)
+                lambda: ask_question_graph(qa_graph, question.text, history)
             )
         
         # Actualizar historial
@@ -185,6 +188,20 @@ async def ask(question: Question, request: Request):
     except Exception as e:
         logger.error(f"Error inesperado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error interno del servidor")
+
+
+@app.get("/health", summary="Estado del sistema", description="Verifica el estado del sistema y muestra configuración actual.")
+async def health():
+    """
+    Endpoint para verificar el estado del sistema.
+    """
+    return {
+        "status": "ok",
+        "model": settings.llm_model,
+        "embedding_provider": settings.embedding_provider,
+        "embedding_model": settings.embedding_model if settings.embedding_provider == "huggingface" else settings.ollama_embedding_model,
+        "db_ready": db is not None
+    }
 
 
 @app.post("/rebuild_db", summary="Reconstruir base de datos", description="Fuerza la reconstrucción de la base de datos vectorial para indexar nuevos archivos.")

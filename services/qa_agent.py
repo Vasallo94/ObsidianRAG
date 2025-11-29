@@ -375,13 +375,62 @@ def generate_node(state: AgentState, llm_chain):
 
 # --- Graph Construction ---
 
+def get_available_ollama_models() -> list[str]:
+    """Get list of available models in Ollama"""
+    try:
+        import httpx
+        response = httpx.get(f"{settings.ollama_base_url}/api/tags", timeout=5.0)
+        if response.status_code == 200:
+            return [m["name"].split(":")[0] for m in response.json().get("models", [])]
+    except Exception as e:
+        logger.warning(f"Could not get Ollama models: {e}")
+    return []
+
+def verify_llm_model(model: str) -> str:
+    """Verify LLM model is available, return fallback if not"""
+    available_models = get_available_ollama_models()
+    
+    if not available_models:
+        logger.warning("⚠️ No se pudo obtener lista de modelos de Ollama")
+        return model  # Try anyway
+    
+    if model in available_models:
+        logger.info(f"✅ Modelo LLM '{model}' disponible en Ollama")
+        return model
+    
+    # Model not found, try fallbacks
+    logger.warning(f"⚠️ Modelo '{model}' no encontrado en Ollama")
+    logger.warning(f"   Modelos disponibles: {available_models}")
+    logger.warning(f"   💡 Ejecuta: ollama pull {model}")
+    
+    # Try common fallbacks in order of preference
+    fallback_models = ["gemma3", "qwen2.5", "llama3.2", "mistral", "llama2"]
+    for fallback in fallback_models:
+        if fallback in available_models:
+            logger.info(f"🔄 Usando modelo alternativo: {fallback}")
+            return fallback
+    
+    # Use first available model as last resort
+    if available_models:
+        fallback = available_models[0]
+        logger.info(f"🔄 Usando primer modelo disponible: {fallback}")
+        return fallback
+    
+    # No models available at all
+    raise ValueError(f"No hay modelos LLM disponibles en Ollama. Ejecuta: ollama pull {model}")
+
 def create_qa_graph(db):
-    """Build the LangGraph agent"""
+    """Build the LangGraph agent using the model configured in settings"""
     verify_ollama_available()
+    
+    # Verify configured model is available, get fallback if needed
+    llm_model = verify_llm_model(settings.llm_model)
+    
+    logger.info(f"🤖 Usando modelo LLM: {llm_model}")
     
     # 1. Components
     llm = OllamaLLM(
-        model=settings.llm_model,
+        model=llm_model,
         base_url=settings.ollama_base_url
     )
     
