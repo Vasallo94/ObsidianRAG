@@ -1,6 +1,3 @@
-# Created by https://www.toptal.com/developers/gitignore/api/macos,venv,python
-# Edit at https://www.toptal.com/developers/gitignore?templates=macos,venv,python
-
 ### macOS ###
 # General
 .DS_Store
@@ -239,4 +236,27 @@ debug_output.txt
 # Database files
 /db/
 db/
+
+# =============================================================================
+# Node.js / TypeScript Plugin
+# =============================================================================
+
+# Dependencies
+node_modules/
+plugin/node_modules/
+
+# Build output (keep main.js for Obsidian plugin distribution)
+# plugin/main.js  # Uncomment if you want to exclude built JS
+
+# IDE
+.vscode/
+*.swp
+*.swo
+
+# TypeScript cache
+*.tsbuildinfo
+
+# npm/pnpm
+.npm/
+.pnpm-store/
 

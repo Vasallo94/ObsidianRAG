@@ -1,0 +1,255 @@
+/* ObsidianRAG Plugin Styles */
+
+/* ============================================================================
+   Chat Container
+   ============================================================================ */
+
+.obsidianrag-chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0;
+}
+
+/* ============================================================================
+   Header
+   ============================================================================ */
+
+.obsidianrag-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background-color: var(--background-secondary);
+}
+
+.obsidianrag-header h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.obsidianrag-status {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.obsidianrag-status.status-online {
+  color: var(--text-success);
+}
+
+.obsidianrag-status.status-offline {
+  color: var(--text-error);
+}
+
+/* ============================================================================
+   Messages
+   ============================================================================ */
+
+.obsidianrag-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.obsidianrag-message {
+  padding: 12px 15px;
+  border-radius: 12px;
+  max-width: 90%;
+  word-wrap: break-word;
+}
+
+.obsidianrag-message.user {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+}
+
+.obsidianrag-message.assistant {
+  background-color: var(--background-secondary);
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+}
+
+.obsidianrag-message.loading {
+  font-style: normal;
+  opacity: 0.9;
+  background-color: var(--background-secondary-alt);
+  border-left: 3px solid var(--interactive-accent);
+}
+
+.obsidianrag-message.loading .progress-content {
+  line-height: 1.6;
+}
+
+.obsidianrag-message.loading .progress-details {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  margin-top: 4px;
+  display: block;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 0.6; }
+}
+
+.obsidianrag-message.loading {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.obsidianrag-message .message-content {
+  line-height: 1.5;
+}
+
+.obsidianrag-message .message-content p:first-child {
+  margin-top: 0;
+}
+
+.obsidianrag-message .message-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* ============================================================================
+   Sources
+   ============================================================================ */
+
+.message-sources {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  font-size: 0.85em;
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.message-sources strong {
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+.source-item {
+  display: inline-flex;
+  align-items: center;
+  background-color: var(--background-primary-alt);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.9em;
+}
+
+.message-sources a {
+  color: var(--text-accent);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.message-sources a:hover {
+  text-decoration: underline;
+}
+
+/* Source that doesn't exist in vault */
+.source-not-found {
+  color: var(--text-muted);
+  font-style: italic;
+  cursor: default;
+}
+
+/* ============================================================================
+   Input
+   ============================================================================ */
+
+.obsidianrag-input-container {
+  display: flex;
+  gap: 10px;
+  padding: 15px;
+  border-top: 1px solid var(--background-modifier-border);
+  background-color: var(--background-secondary);
+}
+
+.obsidianrag-input {
+  flex: 1;
+  min-height: 60px;
+  max-height: 150px;
+  resize: vertical;
+  padding: 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background-color: var(--background-primary);
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.obsidianrag-input:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+}
+
+.obsidianrag-send-button {
+  align-self: flex-end;
+  padding: 10px 20px;
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.15s ease;
+}
+
+.obsidianrag-send-button:hover {
+  background-color: var(--interactive-accent-hover);
+}
+
+/* ============================================================================
+   Settings
+   ============================================================================ */
+
+.setting-item-description code {
+  background-color: var(--background-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.setting-item-description ul {
+  margin: 10px 0;
+  padding-left: 20px;
+}
+
+.setting-item-description li {
+  margin: 5px 0;
+}
+
+/* ============================================================================
+   Streaming Content
+   ============================================================================ */
+
+.streaming-content {
+  line-height: 1.6;
+  min-height: 20px;
+}
+
+.streaming-content::after {
+  content: "▋";
+  animation: blink 1s infinite;
+  margin-left: 2px;
+  color: var(--text-accent);
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* When streaming is complete, hide the cursor */
+.streaming-content.complete::after {
+  display: none;
+}
