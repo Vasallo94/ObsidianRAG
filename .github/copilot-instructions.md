@@ -1,107 +1,114 @@
-# ObsidianRAG - Copilot Instructions
+# ObsidianRAG v3 - Copilot Instructions
 
-## Architecture Overview
+## Project Overview
 
-ObsidianRAG is a RAG (Retrieval-Augmented Generation) system for querying Obsidian notes using LangGraph and local LLMs (Ollama).
+ObsidianRAG is a RAG (Retrieval-Augmented Generation) system for querying Obsidian notes. Version 3 restructures it as:
+- **Backend**: Python package (`obsidianrag`) distributed via PyPI with CLI
+- **Frontend**: TypeScript Obsidian plugin (planned)
 
-### Core Components
+## Repository Structure
+
 ```
-main.py                → FastAPI server, lifespan-managed startup
-├── services/
-│   ├── qa_agent.py        → LangGraph StateGraph (retrieve→generate nodes)
-│   ├── qa_service.py      → Hybrid retriever (BM25 + Vector + Reranker)
-│   ├── db_service.py      → ChromaDB management, incremental indexing
-│   └── metadata_tracker.py → File change detection via hashes
-├── config/settings.py     → Pydantic BaseSettings (.env support)
-└── streamlit_app.py       → Streamlit UI with vault stats
-```
-
-### Data Flow
-1. Question → `qa_agent.retrieve_node` (hybrid search) → documents
-2. Documents → GraphRAG link expansion via `[[wikilinks]]` → enriched context
-3. Context → `qa_agent.generate_node` (Ollama LLM) → answer
-
-## Key Patterns
-
-### Configuration
-All settings in `config/settings.py` using Pydantic `BaseSettings`. Access: `from config.settings import settings`.
-
-### Imports (LangChain 1.x)
-```python
-# Use langchain_classic for deprecated modules
-from langchain_classic.chains import ConversationalRetrievalChain
-from langchain_classic.retrievers import EnsembleRetriever, ContextualCompressionRetriever
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_core.prompts import PromptTemplate
+ObsidianRAG/
+├── backend/                    # Python backend (PyPI package)
+│   ├── obsidianrag/           # Main package
+│   │   ├── __init__.py        # Package exports, version
+│   │   ├── __main__.py        # python -m obsidianrag entry
+│   │   ├── config.py          # Pydantic Settings
+│   │   ├── api/server.py      # FastAPI server
+│   │   ├── cli/main.py        # Typer CLI
+│   │   └── core/              # Business logic
+│   │       ├── db_service.py      # ChromaDB management
+│   │       ├── qa_agent.py        # LangGraph RAG agent
+│   │       ├── qa_service.py      # Hybrid retriever
+│   │       └── metadata_tracker.py # Incremental indexing
+│   ├── tests/                 # pytest tests
+│   ├── pyproject.toml         # Package config
+│   └── uv.lock
+├── plugin/                    # Obsidian plugin (TypeScript) - PLANNED
+├── docs/                      # Documentation - PLANNED
+├── .github/
+│   ├── workflows/             # CI/CD
+│   └── instructions/          # Development guidelines
+└── V3_MIGRATION_PLAN.md       # Full migration plan
 ```
 
-### LangGraph Agent Pattern
-```python
-class AgentState(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], add_messages]
-    context: List[Document]
-    question: str
-    answer: str
+## Quick Reference
 
-# Nodes return partial state updates
-def retrieve_node(state: AgentState, retriever, db) -> dict:
-    return {"context": docs}
-```
-
-### FastAPI Lifespan (not @app.on_event)
-```python
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup: load db, create agent
-    yield
-    # Shutdown: cleanup
-```
-
-## Developer Commands
-
+### Run Commands (from `backend/`)
 ```bash
-# Run API server
-uv run main.py
-
-# Run Streamlit UI  
-uv run streamlit run streamlit_app.py
-
-# Force database rebuild
-rm -rf db/ && uv run main.py
-
-# Update dependencies
-uv lock --upgrade && uv sync
+uv run obsidianrag serve --vault-path /path/to/vault  # Start server
+uv run obsidianrag index --vault-path /path/to/vault  # Index vault
+uv run obsidianrag status --vault-path /path/to/vault # Check status
+uv run obsidianrag ask --vault-path /path "question"  # CLI query
+uv run pytest tests/ -v                                # Run tests
+uv run ruff check obsidianrag/ tests/                 # Lint
+uv run ruff format obsidianrag/ tests/                # Format
 ```
 
-## API Endpoints
+### Key Technologies
+- **Python**: 3.11+ with uv for dependency management
+- **LLM**: Ollama (local) with langchain-ollama
+- **Embeddings**: HuggingFace sentence-transformers
+- **Vector DB**: ChromaDB (persistent)
+- **Reranker**: BAAI/bge-reranker-v2-m3
+- **API**: FastAPI with uvicorn
+- **CLI**: Typer with Rich
+- **Tests**: pytest with pytest-asyncio, pytest-cov
 
+### API Endpoints
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/ask` | POST | Ask question, returns answer + sources |
-| `/health` | GET | System status, model info |
-| `/stats` | GET | Vault statistics (notes, chunks, links) |
-| `/rebuild_db` | POST | Force reindex all notes |
+| `/health` | GET | Health check |
+| `/ask` | POST | Ask question (JSON: `{"question": "..."}`) |
+| `/stats` | GET | Vault statistics |
+| `/rebuild_db` | POST | Force reindex |
 
-## Critical Settings (config/settings.py)
+## Development Guidelines
 
-| Setting | Purpose | Default |
+📚 **See detailed instructions in `.github/instructions/`:**
+
+| File | Topics |
+|------|--------|
+| [python-backend.md](instructions/python-backend.md) | Python code style, patterns, imports, error handling |
+| [testing.md](instructions/testing.md) | pytest fixtures, mocking, coverage, test patterns |
+| [obsidian-plugin.md](instructions/obsidian-plugin.md) | TypeScript plugin structure, Obsidian API, UI components |
+| [rag-patterns.md](instructions/rag-patterns.md) | LangGraph, hybrid search, reranking, GraphRAG |
+| [ci-cd.md](instructions/ci-cd.md) | GitHub Actions, releases, PyPI publishing |
+
+## Data Flow
+
+```
+Question → Retrieve (hybrid search) → Rerank → GraphRAG expansion → Generate (LLM) → Answer
+```
+
+## Configuration
+
+All settings via Pydantic `BaseSettings` in `config.py`:
+- Environment variables with `OBSIDIANRAG_` prefix
+- `.env` file support
+- CLI arguments override environment
+
+### Key Settings
+| Setting | Default | Purpose |
 |---------|---------|---------|
-| `reranker_top_n` | Final docs after reranking | 6 |
-| `retrieval_k` | Docs before reranking | 12 |
-| `chunk_size` | Text chunk size | 1500 |
-| `use_reranker` | Enable CrossEncoder | True |
-| `bm25_weight` / `vector_weight` | Hybrid search weights | 0.4 / 0.6 |
+| `llm_model` | gemma3 | Ollama model name |
+| `use_reranker` | true | Enable CrossEncoder reranking |
+| `reranker_top_n` | 6 | Docs after reranking |
+| `retrieval_k` | 12 | Docs before reranking |
+| `chunk_size` | 1500 | Text chunk size |
+| `bm25_weight` | 0.4 | BM25 weight in hybrid search |
+| `vector_weight` | 0.6 | Vector weight in hybrid search |
 
-## Common Issues
+## Phase Status (v3 Migration)
 
-- **Import errors after upgrade**: Use `langchain_classic` for chains/retrievers
-- **Empty links metadata**: DB predates link extraction → `rm -rf db/`
-- **Ollama not available**: Run `ollama serve` first
-- **Fragmented context**: `read_full_document()` in qa_agent.py reconstitutes docs
+- ✅ Phase 0: Planning & Issues
+- ✅ Phase 1: Backend restructure
+- 🔄 Phase 2: Testing (in progress)
+- ⏳ Phase 3: Obsidian Plugin
+- ⏳ Phase 4: Integration
+- ⏳ Phase 5: Polish
+- ⏳ Phase 6: Documentation
+- ⏳ Phase 7: Release
 
-## File Locations
-
-- **Debug scripts**: `scripts/debug/` (check_db.py, debug_retrieval.py)
-- **Test scripts**: `scripts/tests/` (test_links.py, test_migration.py)
-- **Logs**: `logs/` (gitignored)
-- **Vector DB**: `db/` (gitignored, delete to force rebuild)
+See `V3_MIGRATION_PLAN.md` and GitHub Issues #20-#28 for details.
