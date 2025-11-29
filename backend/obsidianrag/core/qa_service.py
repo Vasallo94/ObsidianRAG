@@ -55,7 +55,7 @@ Your goal is to be an intelligent semantic search engine for the user's digital 
 # Prompt to condense question with history
 condense_question_prompt = PromptTemplate.from_template(
     """Given the following conversation and a follow-up question, rewrite the follow-up question to be a standalone question, in its original language.
-    
+
     Chat History:
     {chat_history}
     Follow Up Input: {question}
