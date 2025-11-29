@@ -44,7 +44,7 @@ def get_embeddings() -> Embeddings:
     
     if provider == "ollama":
         model = settings.ollama_embedding_model
-        logger.info(f"Intentando cargar Ollama embeddings: {model}")
+        logger.info(f"Trying to load Ollama embeddings: {model}")
         
         # Check if model is available in Ollama
         try:
@@ -53,29 +53,29 @@ def get_embeddings() -> Embeddings:
             if response.status_code == 200:
                 available_models = [m["name"].split(":")[0] for m in response.json().get("models", [])]
                 if model not in available_models:
-                    logger.warning(f"⚠️ Modelo '{model}' no encontrado en Ollama. Modelos disponibles: {available_models}")
-                    logger.warning(f"💡 Ejecuta: ollama pull {model}")
-                    logger.info("🔄 Fallback a HuggingFace embeddings...")
+                    logger.warning(f"⚠️ Model '{model}' not found in Ollama. Available models: {available_models}")
+                    logger.warning(f"💡 Run: ollama pull {model}")
+                    logger.info("🔄 Falling back to HuggingFace embeddings...")
                     provider = "huggingface"  # Fallback
                 else:
                     embeddings = OllamaEmbeddings(
                         model=model,
                         base_url=settings.ollama_base_url
                     )
-                    logger.info(f"✅ Ollama embeddings ({model}) cargado correctamente")
+                    logger.info(f"✅ Ollama embeddings ({model}) loaded successfully")
                     return embeddings
             else:
-                logger.warning(f"⚠️ No se pudo conectar a Ollama. Fallback a HuggingFace...")
+                logger.warning(f"⚠️ Could not connect to Ollama. Falling back to HuggingFace...")
                 provider = "huggingface"
         except Exception as e:
-            logger.warning(f"⚠️ Error verificando Ollama: {e}. Fallback a HuggingFace...")
+            logger.warning(f"⚠️ Error checking Ollama: {e}. Falling back to HuggingFace...")
             provider = "huggingface"
     
     # Default: HuggingFace (or fallback)
     model = settings.embedding_model
-    logger.info(f"Inicializando HuggingFace embeddings: {model}")
+    logger.info(f"Initializing HuggingFace embeddings: {model}")
     embeddings = HuggingFaceEmbeddings(model_name=model)
-    logger.info(f"✅ HuggingFace embeddings ({model}) cargado correctamente")
+    logger.info(f"✅ HuggingFace embeddings ({model}) loaded successfully")
     
     return embeddings
 
@@ -123,9 +123,9 @@ def load_documents_from_paths(filepaths: set[str]) -> list[Document]:
 
 def load_all_obsidian_documents(obsidian_path: str) -> list[Document]:
     """Load all documents from Obsidian vault using recursive walk"""
-    logger.info("Cargando documentos de Obsidian (.md) recursivamente")
+    logger.info("Loading Obsidian documents (.md) recursively")
     
-    # Patrones de archivos a excluir (binarios, canvas, etc.)
+    # File patterns to exclude (binary, canvas, etc.)
     EXCLUDED_PATTERNS = [
         '.excalidraw.md',  # Excalidraw drawings (base64)
         '.canvas',          # Canvas files
@@ -181,10 +181,10 @@ def load_all_obsidian_documents(obsidian_path: str) -> list[Document]:
                             logger.debug(f"Note '{file}' has {len(links)} links: {links[:5]}...")
                         
                 except Exception as e:
-                    logger.error(f"Error cargando archivo {filepath}: {e}")
+                    logger.error(f"Error loading file {filepath}: {e}")
     
-    logger.info(f"Se cargaron {loaded_files} de {total_files} notas ({skipped_files} excluidos)")
-    logger.info(f"Total de enlaces extraídos: {total_links_found}")
+    logger.info(f"Loaded {loaded_files} of {total_files} notes ({skipped_files} excluded)")
+    logger.info(f"Total links extracted: {total_links_found}")
     return documents
 
 
@@ -206,11 +206,11 @@ def update_db_incrementally(
     Returns:
         Updated ChromaDB instance
     """
-    logger.info("Aplicando actualización incremental a la base de datos")
+    logger.info("Applying incremental update to database")
     
     # Delete removed files
     if deleted_files:
-        logger.info(f"Eliminando {len(deleted_files)} documentos eliminados")
+        logger.info(f"Removing {len(deleted_files)} deleted documents")
         for filepath in deleted_files:
             try:
                 # Delete by metadata filter
@@ -222,7 +222,7 @@ def update_db_incrementally(
     files_to_process = new_files | modified_files
     
     if files_to_process:
-        logger.info(f"Procesando {len(files_to_process)} documentos nuevos/modificados")
+        logger.info(f"Processing {len(files_to_process)} new/modified documents")
         
         # For modified files, delete old versions first
         for filepath in modified_files:
@@ -237,11 +237,11 @@ def update_db_incrementally(
         if documents:
             text_splitter = get_text_splitter()
             texts = text_splitter.split_documents(documents)
-            logger.info(f"Se crearon {len(texts)} chunks de texto")
+            logger.info(f"Created {len(texts)} text chunks")
             
             # Add to database
             db.add_documents(texts)
-            logger.info("Documentos añadidos a la base de datos")
+            logger.info("Documents added to database")
     
     return db
 
@@ -257,7 +257,7 @@ def load_or_create_db(obsidian_path: str = None, force_rebuild: bool = False) ->
     Returns:
         ChromaDB instance or None if no documents
     """
-    logger.info("Iniciando carga o creación de la base de datos vectorial")
+    logger.info("Starting vector database load or creation")
     
     # Get obsidian path from settings if not provided
     if not obsidian_path:
@@ -274,23 +274,23 @@ def load_or_create_db(obsidian_path: str = None, force_rebuild: bool = False) ->
         not force_rebuild and 
         settings.enable_incremental_indexing):
         
-        logger.info("Verificando si hay cambios para actualización incremental")
+        logger.info("Checking for changes for incremental update")
         tracker = FileMetadataTracker(settings.metadata_file)
         
         # Check if we should do full rebuild based on change ratio
         if tracker.should_rebuild(obsidian_path):
-            logger.warning("Demasiados cambios detectados, haciendo rebuild completo")
+            logger.warning("Too many changes detected, doing full rebuild")
             force_rebuild = True
         else:
             new_files, modified_files, deleted_files = tracker.detect_changes(obsidian_path)
             
             if not new_files and not modified_files and not deleted_files:
-                logger.info("No hay cambios, cargando base de datos existente")
+                logger.info("No changes, loading existing database")
                 db = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
                 return db
             
             # Do incremental update
-            logger.info("Realizando actualización incremental")
+            logger.info("Performing incremental update")
             db = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
             db = update_db_incrementally(db, new_files, modified_files, deleted_files)
             
@@ -301,25 +301,25 @@ def load_or_create_db(obsidian_path: str = None, force_rebuild: bool = False) ->
     
     # Full rebuild from scratch
     if force_rebuild:
-        logger.info("Forzando reconstrucción completa de la base de datos")
+        logger.info("Forcing full database rebuild")
     
     # Load all documents
     documents = load_all_obsidian_documents(obsidian_path)
     
     if not documents:
-        logger.warning("No se cargaron documentos. Verifique el path y los archivos")
+        logger.warning("No documents loaded. Check the path and files")
         return None
     
     # Split documents
-    logger.info("Dividiendo documentos en chunks")
+    logger.info("Splitting documents into chunks")
     text_splitter = get_text_splitter()
     texts = text_splitter.split_documents(documents)
-    logger.info(f"Se crearon {len(texts)} chunks de texto")
+    logger.info(f"Created {len(texts)} text chunks")
     
     if force_rebuild and os.path.exists(persist_directory):
         # Atomic rebuild: create in temp directory then swap
         temp_dir = f"{persist_directory}_{uuid.uuid4().hex}"
-        logger.info(f"Creando nueva base de datos en directorio temporal: {temp_dir}")
+        logger.info(f"Creating new database in temporary directory: {temp_dir}")
         
         try:
             # Create DB in temp directory
@@ -335,37 +335,37 @@ def load_or_create_db(obsidian_path: str = None, force_rebuild: bool = False) ->
             gc.collect()
             
             # Replace old directory atomically
-            logger.info(f"Eliminando directorio antiguo: {persist_directory}")
+            logger.info(f"Removing old directory: {persist_directory}")
             shutil.rmtree(persist_directory)
             
-            logger.info(f"Moviendo {temp_dir} a {persist_directory}")
+            logger.info(f"Moving {temp_dir} to {persist_directory}")
             os.rename(temp_dir, persist_directory)
             
             # Load from final location
             db = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
-            logger.info("Base de datos reconstruida y cargada exitosamente")
+            logger.info("Database rebuilt and loaded successfully")
             
         except Exception as e:
-            logger.error(f"Error durante la reconstrucción atómica: {e}")
+            logger.error(f"Error during atomic rebuild: {e}")
             # Cleanup on error
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir)
             raise e
     else:
         # First time creation
-        logger.info("Creando nueva base de datos vectorial")
+        logger.info("Creating new vector database")
         db = Chroma.from_documents(
             texts, 
             embeddings, 
             persist_directory=persist_directory,
             collection_metadata={"hnsw:space": "cosine"}
         )
-        logger.info("Base de datos vectorial creada exitosamente")
+        logger.info("Vector database created successfully")
     
     # Update metadata tracker after successful indexing
     if settings.enable_incremental_indexing:
         tracker = FileMetadataTracker(settings.metadata_file)
         tracker.update_metadata(obsidian_path)
-        logger.info("Metadata tracker actualizado")
+        logger.info("Metadata tracker updated")
     
     return db

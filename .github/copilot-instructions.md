@@ -6,14 +6,14 @@ ObsidianRAG is a RAG (Retrieval-Augmented Generation) system for querying Obsidi
 
 ### Core Components
 ```
-cerebro.py          → FastAPI server, main entry point
+main.py             → FastAPI server, main entry point
 ├── services/
 │   ├── qa_agent.py      → LangGraph StateGraph with retrieve→generate nodes
 │   ├── qa_service.py    → Retriever setup (BM25 + Vector + Reranker)
 │   ├── db_service.py    → ChromaDB management, incremental indexing
 │   └── metadata_tracker.py → File change detection
 ├── config/settings.py   → Centralized Pydantic settings (.env support)
-└── app.py               → Streamlit UI (optional)
+└── streamlit_app.py     → Streamlit UI (optional)
 ```
 
 ### Data Flow
@@ -50,13 +50,13 @@ Use `GraphTracer` class in `qa_agent.py` for detailed execution tracing. Log for
 
 ```bash
 # Run the API server
-uv run cerebro.py
+uv run main.py
 
 # Force database rebuild (delete db/ folder)
-rm -rf db/ && uv run cerebro.py
+rm -rf db/ && uv run main.py
 
 # Run Streamlit UI
-uv run streamlit run app.py
+uv run streamlit run streamlit_app.py
 ```
 
 ## Critical Configuration (settings.py)

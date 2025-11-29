@@ -1,6 +1,6 @@
 # ObsidianRAG 🧠
 
-Sistema RAG (Retrieval-Augmented Generation) para consultar tus notas de Obsidian usando **LangGraph** y **LLMs locales** con Ollama. Pregunta en lenguaje natural y obtén respuestas basadas en tu conocimiento personal.
+A RAG (Retrieval-Augmented Generation) system for querying your Obsidian notes using **LangGraph** and **local LLMs** with Ollama. Ask questions in natural language and get answers based on your personal knowledge.
 
 ![Python](https://img.shields.io/badge/Python-3.11+-blue)
 ![LangGraph](https://img.shields.io/badge/LangGraph-0.2+-green)
@@ -13,51 +13,55 @@ Sistema RAG (Retrieval-Augmented Generation) para consultar tus notas de Obsidia
 
 ---
 
-## 📋 Tabla de Contenidos
+## 📋 Table of Contents
 
-- [Características](#-características)
-- [Requisitos Previos](#-requisitos-previos)
-- [Instalación Rápida](#-instalación-rápida)
-- [Configuración](#-configuración)
-- [Uso](#-uso)
-- [Arquitectura](#-arquitectura)
-- [Modelos Disponibles](#-modelos-disponibles)
-- [Solución de Problemas](#-solución-de-problemas)
-- [Contribuir](#-contribuir)
-
----
-
-## ✨ Características
-
-### 🔍 Búsqueda Híbrida Avanzada
-- **Vectorial + BM25**: Combina embeddings semánticos con búsqueda léxica
-- **CrossEncoder Reranker**: BAAI/bge-reranker-v2-m3 para reordenar por relevancia
-- **GraphRAG**: Expansión de contexto siguiendo enlaces `[[wikilinks]]` de Obsidian
-
-### 🤖 Integración LLM
-- **100% Local**: Todo corre en tu máquina, sin enviar datos a la nube
-- **Múltiples modelos**: Selector en UI para cambiar entre gemma3, qwen2.5, qwen3, deepseek-r1
-- **Fallback inteligente**: Si un modelo no está disponible, usa alternativas automáticamente
-
-### 📊 Análisis y Métricas
-- **Scores de relevancia**: Cada fuente muestra su score de reranker (0-100%)
-- **Logging detallado**: Trazabilidad completa de cada consulta
-- **Indexación incremental**: Solo procesa notas modificadas
+- [Features](#-features)
+- [Prerequisites](#-prerequisites)
+- [Quick Installation](#-quick-installation)
+- [Configuration](#-configuration)
+- [Usage](#-usage)
+- [Architecture](#-architecture)
+- [Available Models](#-available-models)
+- [Troubleshooting](#-troubleshooting)
+- [Contributing](#-contributing)
 
 ---
 
-## 📦 Requisitos Previos
+## ✨ Features
+
+### 🔍 Advanced Hybrid Search
+- **Vector + BM25**: Combines semantic embeddings with lexical search
+- **CrossEncoder Reranker**: BAAI/bge-reranker-v2-m3 for relevance reordering
+- **GraphRAG**: Context expansion following Obsidian `[[wikilinks]]`
+
+### 🤖 LLM Integration
+- **100% Local**: Everything runs on your machine, no data sent to the cloud
+- **Multiple models**: Supports gemma3, qwen2.5, qwen3, deepseek-r1, and more
+- **Smart fallback**: If a model is not available, automatically uses alternatives
+
+### 📊 Analytics & Metrics
+- **Relevance scores**: Each source shows its reranker score (0-100%)
+- **Detailed logging**: Complete traceability of each query
+- **Incremental indexing**: Only processes modified notes
+
+### 🌍 Multilingual Support
+- **Automatic language detection**: Responds in the dominant language between your question and notes
+- **Works with any language**: Spanish, English, Portuguese, etc.
+
+---
+
+## 📦 Prerequisites
 
 ### 1. Python 3.11+
 
 ```bash
-# Verificar versión
-python --version  # Debe ser 3.11 o superior
+# Check version
+python --version  # Must be 3.11 or higher
 ```
 
 ### 2. Ollama
 
-Ollama es el motor de LLMs locales. Instálalo desde [ollama.ai](https://ollama.ai/):
+Ollama is the local LLM engine. Install from [ollama.ai](https://ollama.ai/):
 
 ```bash
 # macOS
@@ -67,120 +71,130 @@ brew install ollama
 curl -fsSL https://ollama.com/install.sh | sh
 
 # Windows
-# Descarga desde https://ollama.com/download
+# Download from https://ollama.com/download
 ```
 
-Verifica que funcione:
+Verify it works:
 ```bash
 ollama --version
 ```
 
-### 3. UV (Gestor de paquetes recomendado)
+### 3. UV (Recommended package manager)
 
 ```bash
 # macOS/Linux
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# O con pip
+# Or with pip
 pip install uv
 ```
 
 ---
 
-## 🚀 Instalación Rápida
+## 🚀 Quick Installation
 
-### Paso 1: Clonar el repositorio
+### Option A: One-Command Installation (Recommended)
+
+```bash
+git clone https://github.com/Vasallo94/ObsidianRAG.git
+cd ObsidianRAG
+chmod +x install.sh && ./install.sh
+```
+
+### Option B: Manual Installation
+
+#### Step 1: Clone the repository
 
 ```bash
 git clone https://github.com/Vasallo94/ObsidianRAG.git
 cd ObsidianRAG
 ```
 
-### Paso 2: Instalar dependencias
+#### Step 2: Install dependencies
 
 ```bash
 uv sync
 ```
 
-### Paso 3: Configurar variables de entorno
+#### Step 3: Configure environment variables
 
 ```bash
-# Copiar plantilla
+# Copy template
 cp .env.example .env
 
-# Editar con tu editor favorito
-nano .env  # o code .env, vim .env, etc.
+# Edit with your favorite editor
+nano .env  # or code .env, vim .env, etc.
 ```
 
-**Contenido mínimo de `.env`:**
+**Minimum `.env` content:**
 ```env
-# OBLIGATORIO: Ruta a tu vault de Obsidian
-OBSIDIAN_PATH=/Users/tu_usuario/Documents/ObsidianVault
+# REQUIRED: Path to your Obsidian vault
+OBSIDIAN_PATH=/Users/your_user/Documents/ObsidianVault
 
-# OPCIONAL: Modelo LLM (default: gemma3)
+# OPTIONAL: LLM model (default: gemma3)
 LLM_MODEL=gemma3
 ```
 
-### Paso 4: Descargar modelos de Ollama
+#### Step 4: Download Ollama models
 
 ```bash
-# Iniciar Ollama (si no está corriendo)
+# Start Ollama (if not running)
 ollama serve &
 
-# Descargar modelo LLM (elige uno)
-ollama pull gemma3      # Recomendado, equilibrado
-ollama pull qwen2.5     # Bueno para español
-ollama pull qwen3       # Mejor razonamiento
-ollama pull deepseek-r1 # Razonamiento avanzado
+# Download LLM model (choose one)
+ollama pull gemma3      # Recommended, balanced
+ollama pull qwen2.5     # Good for Spanish
+ollama pull qwen3       # Better reasoning
+ollama pull deepseek-r1 # Advanced reasoning
 
-# OPCIONAL: Modelo de embeddings de Ollama
-ollama pull embeddinggemma  # 622MB, multilingüe
+# OPTIONAL: Ollama embeddings model
+ollama pull embeddinggemma  # 622MB, multilingual
 ```
 
-> **Nota**: Si no descargas `embeddinggemma`, el sistema usará automáticamente HuggingFace embeddings (se descargan automáticamente la primera vez).
+> **Note**: If you don't download `embeddinggemma`, the system will automatically use HuggingFace embeddings (downloaded automatically on first run).
 
-### Paso 5: Iniciar el servidor
+#### Step 5: Start the server
 
 ```bash
-uv run cerebro.py
+uv run main.py
 ```
 
-Deberías ver:
+You should see:
 ```
-INFO - ✅ Aplicación iniciada exitosamente
+INFO - ✅ Application started successfully
 INFO - Uvicorn running on http://0.0.0.0:8000
 ```
 
-### Paso 6: Abrir la interfaz web
+#### Step 6: Open the web interface
 
 ```bash
-# En otra terminal
-uv run streamlit run app.py
+# In another terminal
+uv run streamlit run streamlit_app.py
 ```
 
-Abre tu navegador en: **http://localhost:8501**
+Open your browser at: **http://localhost:8501**
 
 ---
 
-## ⚙️ Configuración
+## ⚙️ Configuration
 
-### Variables de Entorno Completas
+### Complete Environment Variables
 
-Crea un archivo `.env` en la raíz del proyecto:
+Create a `.env` file in the project root:
 
 ```env
-# ============ OBLIGATORIO ============
-OBSIDIAN_PATH=/ruta/a/tu/vault
+# ============ REQUIRED ============
+OBSIDIAN_PATH=/path/to/your/vault
 
-# ============ MODELOS ============
+# ============ MODELS ============
 # LLM (gemma3, qwen2.5, qwen3, deepseek-r1)
 LLM_MODEL=gemma3
 
-# Embeddings: 'ollama' o 'huggingface'
-EMBEDDING_PROVIDER=ollama
+# Embeddings: 'ollama' or 'huggingface'
+EMBEDDING_PROVIDER=huggingface
 OLLAMA_EMBEDDING_MODEL=embeddinggemma
 
-# Si usas HuggingFace (fallback automático)
+# If using HuggingFace (automatic fallback)
 EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-mpnet-base-v2
 
 # ============ RERANKER ============
@@ -201,59 +215,59 @@ API_HOST=0.0.0.0
 API_PORT=8000
 ```
 
-### Archivo .env.example
+### .env.example File
 
-El proyecto incluye un `.env.example` con todos los valores por defecto.
+The project includes a `.env.example` with all default values.
 
 ---
 
-## 📖 Uso
+## 📖 Usage
 
-### Interfaz Web (Recomendado)
+### Web Interface (Recommended)
 
-1. Inicia el servidor: `uv run cerebro.py`
-2. Inicia la UI: `uv run streamlit run app.py`
-3. Abre http://localhost:8501
-4. ¡Pregunta sobre tus notas!
+1. Start the server: `uv run main.py`
+2. Start the UI: `uv run streamlit run streamlit_app.py`
+3. Open http://localhost:8501
+4. Ask questions about your notes!
 
-**Características de la UI:**
-- 🤖 Selector de modelo LLM en el sidebar
-- 📚 Fuentes con scores de relevancia
-- 🔄 Botón de reindexar base de datos
-- 🗑️ Botón de limpiar chat
+**UI Features:**
+- 🤖 System status display in sidebar
+- 📚 Sources with relevance scores
+- 🔄 Reindex database button
+- 🗑️ Clear chat button
 
-### API REST
+### REST API
 
 ```bash
-# Hacer una pregunta
+# Ask a question
 curl -X POST http://localhost:8000/ask \
   -H "Content-Type: application/json" \
-  -d '{"text": "¿Qué notas tengo sobre Python?", "model": "gemma3"}'
+  -d '{"text": "What notes do I have about Python?"}'
 
-# Verificar estado
+# Check status
 curl http://localhost:8000/health
 
-# Obtener estadísticas
+# Get statistics
 curl http://localhost:8000/stats
 
-# Forzar reindexación
+# Force reindex
 curl -X POST http://localhost:8000/rebuild_db
 ```
 
-### Respuesta de la API
+### API Response
 
 ```json
 {
-  "question": "¿Qué notas tengo sobre Python?",
-  "result": "Según tus notas, tienes documentación sobre...",
+  "question": "What notes do I have about Python?",
+  "result": "According to your notes, you have documentation about...",
   "sources": [
     {
-      "source": "Programación/Python Basics.md",
+      "source": "Programming/Python Basics.md",
       "score": 0.92,
       "retrieval_type": "retrieved"
     },
     {
-      "source": "Programación/Django Tutorial.md", 
+      "source": "Programming/Django Tutorial.md", 
       "score": 0.78,
       "retrieval_type": "graphrag_link"
     }
@@ -265,213 +279,275 @@ curl -X POST http://localhost:8000/rebuild_db
 
 ---
 
-## 🏗️ Arquitectura
+## 🏗️ Architecture
 
+### System Overview
+
+```mermaid
+flowchart TB
+    subgraph Frontend["🖥️ Frontend"]
+        UI["Streamlit<br/>Web Interface"]
+    end
+    
+    subgraph Backend["⚙️ Backend"]
+        API["FastAPI<br/>(main.py)"]
+        Agent["LangGraph Agent"]
+    end
+    
+    subgraph Retrieval["🔍 Retrieval Layer"]
+        Ensemble["EnsembleRetriever"]
+        Vector["Vector Search<br/>(ChromaDB)"]
+        BM25["BM25 Search"]
+        Reranker["CrossEncoder<br/>Reranker"]
+    end
+    
+    subgraph LLM["🤖 LLM Layer"]
+        Ollama["Ollama<br/>(gemma3, qwen2.5, etc.)"]
+    end
+    
+    subgraph Storage["💾 Storage"]
+        ChromaDB[(ChromaDB<br/>Vector Store)]
+        Obsidian[("📁 Obsidian<br/>Vault")]
+    end
+    
+    UI -->|HTTP POST /ask| API
+    API --> Agent
+    Agent --> Ensemble
+    Ensemble --> Vector
+    Ensemble --> BM25
+    Vector --> Reranker
+    BM25 --> Reranker
+    Reranker --> Agent
+    Agent --> Ollama
+    Ollama --> Agent
+    Agent -->|Response| API
+    API -->|JSON| UI
+    
+    ChromaDB --> Vector
+    Obsidian -->|Index| ChromaDB
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        FRONTEND                              │
-│  ┌─────────────┐                                            │
-│  │  Streamlit  │  ◄── Interfaz web interactiva              │
-│  │    (UI)     │                                            │
-│  └──────┬──────┘                                            │
-└─────────┼───────────────────────────────────────────────────┘
-          │ HTTP
-          ▼
-┌─────────────────────────────────────────────────────────────┐
-│                        BACKEND                               │
-│  ┌──────────────┐     ┌─────────────────────────────────┐   │
-│  │   FastAPI    │────▶│         LangGraph Agent         │   │
-│  │  (cerebro)   │     │  ┌─────────┐    ┌───────────┐   │   │
-│  └──────────────┘     │  │Retrieve │───▶│ Generate  │   │   │
-│                       │  │  Node   │    │   Node    │   │   │
-│                       │  └────┬────┘    └─────┬─────┘   │   │
-│                       └───────┼───────────────┼─────────┘   │
-└───────────────────────────────┼───────────────┼─────────────┘
-                                │               │
-          ┌─────────────────────┘               └──────────────┐
-          ▼                                                    ▼
-┌──────────────────────┐                        ┌──────────────────────┐
-│      RETRIEVAL       │                        │         LLM          │
-│ ┌──────────────────┐ │                        │  ┌────────────────┐  │
-│ │  EnsembleRetriever│ │                        │  │     Ollama     │  │
-│ │ ┌──────┐ ┌─────┐ │ │                        │  │  (gemma3, etc) │  │
-│ │ │Vector│ │BM25 │ │ │                        │  └────────────────┘  │
-│ │ └──┬───┘ └──┬──┘ │ │                        └──────────────────────┘
-│ │    └────┬───┘    │ │
-│ │         ▼        │ │
-│ │  ┌────────────┐  │ │
-│ │  │  Reranker  │  │ │
-│ │  └────────────┘  │ │
-│ └──────────────────┘ │
-│ ┌──────────────────┐ │
-│ │    ChromaDB      │ │
-│ │   (Vectores)     │ │
-│ └──────────────────┘ │
-└──────────────────────┘
+
+### LangGraph Agent Flow
+
+The agent uses a simple but powerful two-node graph:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Retrieve: Question + Chat History
+    
+    Retrieve --> Generate: Documents + Context
+    
+    Generate --> [*]: Answer
+    
+    state Retrieve {
+        [*] --> HybridSearch
+        HybridSearch --> Reranking
+        Reranking --> GraphRAG
+        GraphRAG --> [*]
+        
+        note right of HybridSearch
+            Vector (60%) + BM25 (40%)
+        end note
+        
+        note right of GraphRAG
+            Follow [[wikilinks]]
+            to expand context
+        end note
+    }
+    
+    state Generate {
+        [*] --> BuildPrompt
+        BuildPrompt --> InvokeLLM
+        InvokeLLM --> [*]
+    }
 ```
 
-### Flujo de Datos
+### Retrieval Pipeline Detail
 
-1. **Usuario** hace pregunta → **Streamlit**
+```mermaid
+flowchart LR
+    Q[/"Question"/] --> V["Vector<br/>Search"]
+    Q --> B["BM25<br/>Search"]
+    
+    V -->|"k=12 docs"| E["Ensemble<br/>Retriever"]
+    B -->|"k=5 docs"| E
+    
+    E -->|"Weighted<br/>0.6 / 0.4"| R["CrossEncoder<br/>Reranker"]
+    
+    R -->|"top_n=6"| G["GraphRAG<br/>Link Expansion"]
+    
+    G -->|"Follow [[links]]"| D[/"Context<br/>Documents"/]
+    
+    style Q fill:#e1f5fe
+    style D fill:#c8e6c9
+    style R fill:#fff3e0
+    style G fill:#f3e5f5
+```
+
+### Data Flow
+
+1. **User** asks question → **Streamlit**
 2. **Streamlit** → POST `/ask` → **FastAPI**
-3. **FastAPI** → invoca → **LangGraph Agent**
+3. **FastAPI** → invokes → **LangGraph Agent**
 4. **Retrieve Node**:
-   - Búsqueda híbrida (Vector + BM25)
-   - Reranking con CrossEncoder
-   - Expansión GraphRAG (sigue [[links]])
+   - Hybrid search (Vector + BM25)
+   - Reranking with CrossEncoder
+   - GraphRAG expansion (follows [[links]])
 5. **Generate Node**:
-   - Construye prompt con contexto
-   - Invoca LLM (Ollama)
-6. **Respuesta** → FastAPI → Streamlit → Usuario
+   - Builds prompt with context
+   - Invokes LLM (Ollama)
+6. **Response** → FastAPI → Streamlit → User
+
+### Agent State
+
+```mermaid
+classDiagram
+    class AgentState {
+        +List~BaseMessage~ messages
+        +List~Document~ context
+        +str question
+        +str answer
+    }
+    
+    class Document {
+        +str page_content
+        +dict metadata
+        +float score
+        +str retrieval_type
+    }
+    
+    AgentState --> Document : contains
+```
 
 ---
 
-## 🤖 Modelos Disponibles
+## 🤖 Available Models
 
 ### LLMs (Ollama)
 
-| Modelo | Tamaño | Descripción | Comando |
-|--------|--------|-------------|---------|
-| `gemma3` | 5GB | Equilibrado, bueno para todo | `ollama pull gemma3` |
-| `qwen2.5` | 4.4GB | Excelente para español | `ollama pull qwen2.5` |
-| `qwen3` | 5GB | Mejor razonamiento | `ollama pull qwen3` |
-| `deepseek-r1` | 4.7GB | Razonamiento avanzado | `ollama pull deepseek-r1` |
+| Model | Size | Description | Command |
+|-------|------|-------------|---------|
+| `gemma3` | 5GB | Balanced, good for everything | `ollama pull gemma3` |
+| `qwen2.5` | 4.4GB | Excellent for Spanish | `ollama pull qwen2.5` |
+| `qwen3` | 5GB | Better reasoning | `ollama pull qwen3` |
+| `deepseek-r1` | 4.7GB | Advanced reasoning | `ollama pull deepseek-r1` |
 
 ### Embeddings
 
-| Modelo | Provider | Tamaño | Descripción |
-|--------|----------|--------|-------------|
-| `embeddinggemma` | Ollama | 622MB | 100+ idiomas, rápido |
-| `paraphrase-multilingual-mpnet` | HuggingFace | 420MB | Fallback automático |
+| Model | Provider | Size | Description |
+|-------|----------|------|-------------|
+| `embeddinggemma` | Ollama | 622MB | 100+ languages, fast |
+| `paraphrase-multilingual-mpnet` | HuggingFace | 420MB | Automatic fallback |
 
-> **Tip**: El sistema hace fallback automático a HuggingFace si el modelo de Ollama no está disponible.
+> **Tip**: The system automatically falls back to HuggingFace if the Ollama model is not available.
 
 ---
 
-## 🔧 Solución de Problemas
+## 🔧 Troubleshooting
 
 ### ❌ "Ollama not available" / Connection refused
 
 ```bash
-# 1. Verificar que Ollama está corriendo
+# 1. Verify Ollama is running
 ollama serve
 
-# 2. Si usas macOS, puede estar como app
-# Abre Ollama.app desde Aplicaciones
+# 2. On macOS, it might be running as an app
+# Open Ollama.app from Applications
 
-# 3. Verificar con
+# 3. Verify with
 curl http://localhost:11434/api/tags
 ```
 
 ### ❌ "Model not found"
 
 ```bash
-# Descargar el modelo que necesitas
+# Download the model you need
 ollama pull gemma3
-ollama pull embeddinggemma  # Para embeddings
+ollama pull embeddinggemma  # For embeddings
 ```
 
-### ❌ "Collection does not exist" / DB corrupta
+### ❌ "Collection does not exist" / Corrupt DB
 
 ```bash
-# Eliminar y reconstruir la base de datos
+# Delete and rebuild the database
 rm -rf db/
-uv run cerebro.py
+uv run main.py
 ```
 
-### ❌ Primera ejecución muy lenta
+### ❌ First run very slow
 
-Es normal. La primera vez:
-1. Descarga modelos de HuggingFace (reranker, embeddings)
-2. Indexa todas tus notas de Obsidian
-3. Crea la base de datos vectorial
+This is normal. The first time:
+1. Downloads HuggingFace models (reranker, embeddings)
+2. Indexes all your Obsidian notes
+3. Creates the vector database
 
-Las siguientes ejecuciones son mucho más rápidas (indexación incremental).
+Subsequent runs are much faster (incremental indexing).
 
-### ❌ "No se encontraron resultados"
+### ❌ "No results found"
 
-1. Verifica que `OBSIDIAN_PATH` apunta a tu vault
-2. Asegúrate de tener archivos `.md` en el vault
-3. Reindexar: `rm -rf db/ && uv run cerebro.py`
+1. Verify `OBSIDIAN_PATH` points to your vault
+2. Make sure you have `.md` files in the vault
+3. Reindex: `rm -rf db/ && uv run main.py`
 
-### ❌ Respuestas en inglés cuando pregunto en español
+### ❌ Responses in wrong language
 
-Prueba con `qwen2.5` que tiene mejor soporte para español:
+The agent responds in the dominant language between your question and your notes content. If most of your notes are in Spanish and you ask in English, you'll get Spanish responses.
+
+Try `qwen2.5` for better Spanish support:
 ```bash
 ollama pull qwen2.5
-# Luego selecciónalo en la UI
 ```
 
 ---
 
-## 📂 Estructura del Proyecto
+## 📂 Project Structure
 
 ```
 ObsidianRAG/
-├── cerebro.py              # 🧠 Servidor FastAPI (punto de entrada)
-├── app.py                  # 🖥️ Interfaz Streamlit
+├── main.py                 # 🧠 FastAPI server (entry point)
+├── streamlit_app.py        # 🖥️ Streamlit interface
+├── install.sh              # 📦 One-command installation script
 ├── config/
-│   └── settings.py         # ⚙️ Configuración Pydantic
+│   └── settings.py         # ⚙️ Pydantic configuration
 ├── services/
-│   ├── qa_agent.py         # 🤖 Agente LangGraph (retrieve→generate)
-│   ├── qa_service.py       # 🔍 Retriever híbrido + reranker
-│   ├── db_service.py       # 💾 ChromaDB + indexación
-│   └── metadata_tracker.py # 📊 Detección de cambios
+│   ├── qa_agent.py         # 🤖 LangGraph agent (retrieve→generate)
+│   ├── qa_service.py       # 🔍 Hybrid retriever + reranker
+│   ├── db_service.py       # 💾 ChromaDB + indexing
+│   └── metadata_tracker.py # 📊 Change detection
 ├── utils/
-│   └── logger.py           # 📝 Configuración de logging
+│   └── logger.py           # 📝 Logging configuration
 ├── scripts/
-│   ├── debug/              # 🐛 Utilidades de debug
-│   └── tests/              # 🧪 Tests de integración
+│   ├── debug/              # 🐛 Debug utilities
+│   └── tests/              # 🧪 Integration tests
 ├── assets/
-│   └── styles.css          # 🎨 Estilos de la UI
-├── db/                     # 💽 Base de datos ChromaDB (auto-generada)
-├── logs/                   # 📋 Logs de ejecución
-├── .env                    # 🔐 Variables de entorno (crear desde .env.example)
-└── .env.example            # 📄 Plantilla de configuración
+│   └── styles.css          # 🎨 UI styles
+├── db/                     # 💽 ChromaDB database (auto-generated)
+├── logs/                   # 📋 Execution logs
+├── .env                    # 🔐 Environment variables (create from .env.example)
+└── .env.example            # 📄 Configuration template
 ```
 
 ---
 
-## 🔮 Roadmap
+## 🤝 Contributing
 
-- [x] Selector de modelos en UI
-- [x] Fallback automático de embeddings
-- [x] Scores de relevancia en fuentes
-- [ ] Modo conversacional con memoria persistente
-- [ ] Dashboard de analytics
-- [ ] Soporte para APIs externas (Google AI, OpenAI)
-- [ ] Exportar conversaciones
+Contributions are welcome!
 
----
-
-## 🤝 Contribuir
-
-¡Las contribuciones son bienvenidas!
-
-1. Fork el repositorio
-2. Crea una rama: `git checkout -b feature/nueva-caracteristica`
-3. Commit: `git commit -m 'feat: añadir nueva característica'`
-4. Push: `git push origin feature/nueva-caracteristica`
-5. Abre un Pull Request
+1. Fork the repository
+2. Create a branch: `git checkout -b feature/new-feature`
+3. Commit: `git commit -m 'feat: add new feature'`
+4. Push: `git push origin feature/new-feature`
+5. Open a Pull Request
 
 ---
 
-## 📄 Licencia
+## 📄 License
 
-MIT License - ver [LICENSE](LICENSE)
-
----
-
-## 🙏 Créditos
-
-- [LangGraph](https://github.com/langchain-ai/langgraph) - Framework de agentes
-- [Ollama](https://ollama.ai/) - LLMs locales
-- [ChromaDB](https://www.trychroma.com/) - Base de datos vectorial
-- [Streamlit](https://streamlit.io/) - Framework de UI
-- [Obsidian](https://obsidian.md/) - Tu segundo cerebro
+MIT License - see [LICENSE](LICENSE)
 
 ---
+
 
 <p align="center">
-  Hecho con ❤️ para la comunidad de Obsidian
+  Made with ❤️ for the Obsidian community
 </p>

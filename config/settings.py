@@ -17,22 +17,22 @@ class Settings(BaseSettings):
     metadata_file: str = Field(default="db/metadata.json", description="File metadata tracker")
     
     # ========== Model Configuration ==========
-    # LLM: cualquier modelo de Ollama (gemma3, qwen2.5, llama3.2, mistral, etc.)
-    llm_model: str = Field(default="gemma3", description="Modelo LLM de Ollama")
+    # LLM: any Ollama model (gemma3, qwen2.5, llama3.2, mistral, etc.)
+    llm_model: str = Field(default="gemma3", description="Ollama LLM model")
     ollama_base_url: str = Field(default="http://localhost:11434", description="Ollama API URL")
     
-    # Embeddings: por defecto HuggingFace (funciona sin configuración adicional)
+    # Embeddings: default HuggingFace (works without additional configuration)
     embedding_provider: str = Field(
         default="huggingface",
-        description="Proveedor de embeddings: 'huggingface' (recomendado) o 'ollama'"
+        description="Embeddings provider: 'huggingface' (recommended) or 'ollama'"
     )
     embedding_model: str = Field(
         default="sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
-        description="Modelo de embeddings HuggingFace"
+        description="HuggingFace embeddings model"
     )
     ollama_embedding_model: str = Field(
         default="nomic-embed-text",
-        description="Modelo de embeddings Ollama (si embedding_provider=ollama)"
+        description="Ollama embeddings model (if embedding_provider=ollama)"
     )
     
     # Reranker configuration

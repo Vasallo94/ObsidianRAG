@@ -342,14 +342,23 @@ def generate_node(state: AgentState, llm_chain):
     
     logger.info(f"🤖 [GENERATE NODE] Generating answer with {len(context)} docs")
     
-    # Format context
-    context_str = "\n\n".join([doc.page_content for doc in context])
+    # Format context - add source info for each document
+    context_parts = []
+    for i, doc in enumerate(context):
+        source = doc.metadata.get('source', 'Unknown')
+        source_name = os.path.basename(source) if source else 'Unknown'
+        context_parts.append(f"[Note: {source_name}]\n{doc.page_content}")
+    
+    context_str = "\n\n---\n\n".join(context_parts)
     logger.info(f"📝 [GENERATE NODE] Context length: {len(context_str)} characters")
     
     # Log context sources for debugging
     logger.info(f"📋 [GENERATE NODE] Context sources:")
     for i, doc in enumerate(context):
         logger.info(f"   {i+1}. {doc.metadata.get('source', 'Unknown')[:80]}...")
+    
+    # Debug: log first 500 chars of context
+    logger.debug(f"📄 [GENERATE NODE] Context preview: {context_str[:500]}...")
     
     # Generate
     logger.info(f"💭 [GENERATE NODE] Invoking LLM ({settings.llm_model})...")
@@ -391,33 +400,33 @@ def verify_llm_model(model: str) -> str:
     available_models = get_available_ollama_models()
     
     if not available_models:
-        logger.warning("⚠️ No se pudo obtener lista de modelos de Ollama")
+        logger.warning("⚠️ Could not get list of Ollama models")
         return model  # Try anyway
     
     if model in available_models:
-        logger.info(f"✅ Modelo LLM '{model}' disponible en Ollama")
+        logger.info(f"✅ LLM model '{model}' available in Ollama")
         return model
     
     # Model not found, try fallbacks
-    logger.warning(f"⚠️ Modelo '{model}' no encontrado en Ollama")
-    logger.warning(f"   Modelos disponibles: {available_models}")
-    logger.warning(f"   💡 Ejecuta: ollama pull {model}")
+    logger.warning(f"⚠️ Model '{model}' not found in Ollama")
+    logger.warning(f"   Available models: {available_models}")
+    logger.warning(f"   💡 Run: ollama pull {model}")
     
     # Try common fallbacks in order of preference
     fallback_models = ["gemma3", "qwen2.5", "llama3.2", "mistral", "llama2"]
     for fallback in fallback_models:
         if fallback in available_models:
-            logger.info(f"🔄 Usando modelo alternativo: {fallback}")
+            logger.info(f"🔄 Using alternative model: {fallback}")
             return fallback
     
     # Use first available model as last resort
     if available_models:
         fallback = available_models[0]
-        logger.info(f"🔄 Usando primer modelo disponible: {fallback}")
+        logger.info(f"🔄 Using first available model: {fallback}")
         return fallback
     
     # No models available at all
-    raise ValueError(f"No hay modelos LLM disponibles en Ollama. Ejecuta: ollama pull {model}")
+    raise ValueError(f"No LLM models available in Ollama. Run: ollama pull {model}")
 
 def create_qa_graph(db):
     """Build the LangGraph agent using the model configured in settings"""
@@ -426,7 +435,7 @@ def create_qa_graph(db):
     # Verify configured model is available, get fallback if needed
     llm_model = verify_llm_model(settings.llm_model)
     
-    logger.info(f"🤖 Usando modelo LLM: {llm_model}")
+    logger.info(f"🤖 Using LLM model: {llm_model}")
     
     # 1. Components
     llm = OllamaLLM(
@@ -437,16 +446,22 @@ def create_qa_graph(db):
     retriever = create_retriever_with_reranker(db)
     
     # Prompt
-    system_prompt = """Eres un asistente personal que responde preguntas basándose EXCLUSIVAMENTE en mis notas de Obsidian proporcionadas en el contexto.
+    system_prompt = """You are a personal assistant that answers questions based on the user's Obsidian notes provided below in the CONTEXT section.
 
-Reglas CRÍTICAS:
-1. **Cita Textual**: Si pregunto por un texto específico, cítalo EXACTAMENTE como aparece. NO resumas, NO censures y NO modifiques el lenguaje.
-2. **Honestidad**: Si la respuesta no está en el contexto, di "No lo encuentro en las notas".
-3. **Formato**: Usa Markdown.
-4. **Directo**: Ve al grano.
+RULES:
+1. **USE THE CONTEXT**: The notes below contain the information you need. READ THEM CAREFULLY before answering.
+2. **Exact Quotes**: If asked for specific text, quote it EXACTLY as it appears.
+3. **Honesty**: ONLY if the context is completely empty or truly irrelevant, say "I couldn't find this in the notes".
+4. **Format**: Use Markdown for formatting.
+5. **Direct**: Be concise and to the point.
+6. **Language**: ALWAYS respond in the dominant language of the CONTEXT notes. If notes are in Spanish, respond in Spanish. If notes are in English, respond in English.
 
-Contexto:
+IMPORTANT: The context below contains relevant notes. Use them to answer the question.
+
+---
+CONTEXT (User's Obsidian Notes):
 {context}
+---
 """
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),

@@ -4,6 +4,7 @@ import warnings
 import uuid
 import asyncio
 import gc
+from contextlib import asynccontextmanager
 from typing import List, Optional, Dict, Tuple
 
 import uvicorn
@@ -25,17 +26,53 @@ from utils.logger import setup_logger
 
 load_dotenv()
 
-# Configuración del logging
+# Logging configuration
 logger = setup_logger(__name__)
 
 # Suprimir advertencias específicas
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+# Global state management
+db = None
+qa_app = None
+db_lock = asyncio.Lock()
+chat_histories: Dict[str, List[Tuple[str, str]]] = {}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown events"""
+    global db, qa_app
+    
+    # Startup
+    logger.info("Starting ObsidianRAG application")
+    logger.info(f"Configuration: {settings.model_dump()}")
+    
+    try:
+        logger.info("Loading vector database...")
+        db = load_or_create_db()
+        
+        if db is None:
+            logger.error("Could not load database")
+        else:
+            logger.info("Creating LangGraph agent...")
+            qa_app = create_qa_graph(db)
+            logger.info("✅ Application started successfully")
+    except Exception as e:
+        logger.error(f"Error during startup: {e}", exc_info=True)
+        raise
+    
+    yield  # Application runs here
+    
+    # Shutdown (cleanup if needed)
+    logger.info("Shutting down ObsidianRAG application")
+
 
 app = FastAPI(
     title="Obsidian RAG API",
     description="API para consultar notas de Obsidian usando RAG",
-    version="2.0.0"
+    version="2.0.0",
+    lifespan=lifespan
 )
 
 # Add CORS middleware
@@ -47,98 +84,65 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Middleware para medir el tiempo de las solicitudes
+# Middleware to measure request processing time
 @app.middleware("http")
 async def add_process_time_header(request: Request, call_next):
     start_time = time.time()
     response = await call_next(request)
     process_time = time.time() - start_time
     response.headers["X-Process-Time"] = str(process_time)
-    logger.info(f"Tiempo de procesamiento: {process_time:.4f} segundos")
+    logger.info(f"Processing time: {process_time:.4f} seconds")
     return response
-
-# Global state management
-db = None
-qa_app = None
-db_lock = asyncio.Lock()
-chat_histories: Dict[str, List[Tuple[str, str]]] = {}
-
-# Initialize on startup
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database and QA graph on startup"""
-    global db, qa_app
-    
-    logger.info("Iniciando aplicación ObsidianRAG")
-    logger.info(f"Configuración: {settings.model_dump()}")
-    
-    try:
-        logger.info("Cargando base de datos vectorial...")
-        db = load_or_create_db()
-        
-        if db is None:
-            logger.error("No se pudo cargar la base de datos")
-            return
-        
-        logger.info("Creando agente LangGraph...")
-        qa_app = create_qa_graph(db)
-        
-        logger.info("✅ Aplicación iniciada exitosamente")
-    except Exception as e:
-        logger.error(f"Error durante startup: {e}", exc_info=True)
-        raise
-
-
 
 
 chat_histories: Dict[str, List[Tuple[str, str]]] = {}
 
 class Question(BaseModel):
-    text: str = Field(..., description="La pregunta que quieres hacer")
-    session_id: Optional[str] = Field(None, description="ID de sesión para mantener el contexto")
+    text: str = Field(..., description="The question you want to ask")
+    session_id: Optional[str] = Field(None, description="Session ID to maintain context")
 
 class Source(BaseModel):
-    source: str = Field(..., description="La fuente de la información")
-    score: float = Field(0.0, description="Puntuación de relevancia del reranker (mayor es mejor)")
-    retrieval_type: str = Field("retrieved", description="Tipo de recuperación: 'retrieved' o 'graphrag_link'")
+    source: str = Field(..., description="The source of the information")
+    score: float = Field(0.0, description="Reranker relevance score (higher is better)")
+    retrieval_type: str = Field("retrieved", description="Retrieval type: 'retrieved' or 'graphrag_link'")
 
 class Answer(BaseModel):
     question: str
     result: str
     sources: List[Source]
     text_blocks: List[str]
-    process_time: float = Field(..., description="Tiempo de procesamiento en segundos")
-    session_id: str = Field(..., description="ID de sesión utilizado")
+    process_time: float = Field(..., description="Processing time in seconds")
+    session_id: str = Field(..., description="Session ID used")
 
-@app.post("/ask", response_model=Answer, summary="Haz una pregunta", description="Este endpoint permite hacer una pregunta y obtener una respuesta con contexto.")
+@app.post("/ask", response_model=Answer, summary="Ask a question", description="This endpoint allows you to ask a question and get an answer with context.")
 async def ask(question: Question, request: Request):
     """
-    Endpoint para hacer una pregunta y obtener una respuesta con contexto.
-    - **question**: La pregunta que quieres hacer.
-    - **session_id**: Opcional. Si no se envía, se genera uno nuevo.
+    Endpoint to ask a question and get an answer with context.
+    - **question**: The question you want to ask.
+    - **session_id**: Optional. If not provided, a new one is generated.
     """
     try:
-        logger.info(f"Recibida pregunta: {question.text}")
+        logger.info(f"Received question: {question.text}")
         start_time = time.time()
         
         # Check if system is ready
         if qa_app is None:
             raise HTTPException(
                 status_code=503, 
-                detail="Sistema no inicializado. Intente de nuevo en unos momentos."
+                detail="System not initialized. Try again in a few moments."
             )
         
-        # Gestión de sesión
+        # Session management
         session_id = question.session_id
         if not session_id:
             session_id = str(uuid.uuid4())
             chat_histories[session_id] = []
-            logger.info(f"Nueva sesión creada: {session_id}")
+            logger.info(f"New session created: {session_id}")
         
-        # Obtener historial
+        # Get history
         history = chat_histories.get(session_id, [])
         
-        # Hacer la pregunta usando el modelo configurado en settings
+        # Ask question using the model configured in settings
         async with db_lock:
             # Create graph with configured model
             qa_graph = create_qa_graph(db)
@@ -150,18 +154,18 @@ async def ask(question: Question, request: Request):
                 lambda: ask_question_graph(qa_graph, question.text, history)
             )
         
-        # Actualizar historial
+        # Update history
         history.append((question.text, result))
         chat_histories[session_id] = history
         
         process_time = time.time() - start_time
-        logger.info(f"Respuesta generada en {process_time:.4f} segundos")
+        logger.info(f"Response generated in {process_time:.4f} seconds")
         text_blocks = [source.page_content for source in sources]
         
         # Create source list and sort by score (highest first)
         source_list = [
             Source(
-                source=source.metadata.get('source', 'Desconocido'),
+                source=source.metadata.get('source', 'Unknown'),
                 score=source.metadata.get('score', 0.0),
                 retrieval_type=source.metadata.get('retrieval_type', 'retrieved')
             ) for source in sources
@@ -177,23 +181,23 @@ async def ask(question: Question, request: Request):
             session_id=session_id
         )
     except ModelNotAvailableError as e:
-        logger.error(f"Ollama no disponible: {str(e)}")
+        logger.error(f"Ollama not available: {str(e)}")
         raise HTTPException(status_code=503, detail=str(e))
     except NoDocumentsFoundError as e:
-        logger.error(f"No hay documentos: {str(e)}")
+        logger.error(f"No documents found: {str(e)}")
         raise HTTPException(status_code=404, detail=str(e))
     except RAGError as e:
-        logger.error(f"Error RAG: {str(e)}")
+        logger.error(f"RAG error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        logger.error(f"Error inesperado: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error interno del servidor")
+        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@app.get("/health", summary="Estado del sistema", description="Verifica el estado del sistema y muestra configuración actual.")
+@app.get("/health", summary="System status", description="Check system status and show current configuration.")
 async def health():
     """
-    Endpoint para verificar el estado del sistema.
+    Endpoint to check system status.
     """
     return {
         "status": "ok",
@@ -204,41 +208,41 @@ async def health():
     }
 
 
-@app.post("/rebuild_db", summary="Reconstruir base de datos", description="Fuerza la reconstrucción de la base de datos vectorial para indexar nuevos archivos.")
+@app.post("/rebuild_db", summary="Rebuild database", description="Force rebuild of the vector database to index new files.")
 async def rebuild_db():
     """
-    Endpoint para forzar la reconstrucción de la base de datos.
+    Endpoint to force database rebuild.
     """
     try:
-        logger.info("Solicitud de reconstrucción de DB recibida")
+        logger.info("Database rebuild request received")
         global db, qa_app
         
         async with db_lock:
-            # Intentar liberar recursos antes de reconstruir
+            # Try to release resources before rebuilding
             db = None
             qa_app = None
             gc.collect()
             
-            # Reconstruir DB
+            # Rebuild DB
             db = load_or_create_db(force_rebuild=True)
             
             if db is None:
-                raise HTTPException(status_code=500, detail="Error al reconstruir la base de datos")
+                raise HTTPException(status_code=500, detail="Error rebuilding database")
             
-            # Recrear grafo
+            # Recreate graph
             qa_app = create_qa_graph(db)
             
-        return {"status": "success", "message": "Base de datos reconstruida y grafo actualizado"}
+        return {"status": "success", "message": "Database rebuilt and graph updated"}
     except Exception as e:
-        logger.error(f"Error al reconstruir la DB: {str(e)}")
+        logger.error(f"Error rebuilding DB: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/", summary="Endpoint raíz", description="Endpoint de bienvenida a la API.")
+@app.get("/", summary="Root endpoint", description="Welcome endpoint for the API.")
 async def root():
     """
-    Endpoint de bienvenida a la API.
+    Welcome endpoint for the API.
     """
-    return {"message": "Bienvenido a la API de Obsidian RAG"}
+    return {"message": "Welcome to the Obsidian RAG API"}
 
 if __name__ == "__main__":
     uvicorn.run(

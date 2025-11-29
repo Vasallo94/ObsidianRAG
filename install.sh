@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # ============================================================
-# ObsidianRAG - Script de Instalación
+# ObsidianRAG - Installation Script
 # ============================================================
-# Ejecutar con: chmod +x install.sh && ./install.sh
+# Run with: chmod +x install.sh && ./install.sh
 
-set -e  # Salir si hay errores
+set -e  # Exit on errors
 
-# Colores para output
+# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -16,151 +16,151 @@ NC='\033[0m' # No Color
 
 echo -e "${BLUE}"
 echo "╔═══════════════════════════════════════════════════════════╗"
-echo "║              🧠 ObsidianRAG - Instalación                 ║"
+echo "║              🧠 ObsidianRAG - Installation               ║"
 echo "╚═══════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
 # ============================================================
-# 1. Verificar requisitos del sistema
+# 1. Check system requirements
 # ============================================================
-echo -e "${YELLOW}[1/5] Verificando requisitos del sistema...${NC}"
+echo -e "${YELLOW}[1/5] Checking system requirements...${NC}"
 
-# Verificar Python
+# Check Python
 if command -v python3 &> /dev/null; then
     PYTHON_VERSION=$(python3 --version 2>&1 | cut -d' ' -f2)
-    echo -e "  ${GREEN}✓${NC} Python $PYTHON_VERSION encontrado"
+    echo -e "  ${GREEN}✓${NC} Python $PYTHON_VERSION found"
 else
-    echo -e "  ${RED}✗ Python 3 no encontrado${NC}"
-    echo "    Instala Python 3.11+ desde https://python.org"
+    echo -e "  ${RED}✗ Python 3 not found${NC}"
+    echo "    Install Python 3.11+ from https://python.org"
     exit 1
 fi
 
-# Verificar versión de Python (3.11+)
+# Check Python version (3.11+)
 PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d'.' -f1)
 PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d'.' -f2)
 if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 11 ]); then
-    echo -e "  ${RED}✗ Se requiere Python 3.11+, tienes $PYTHON_VERSION${NC}"
+    echo -e "  ${RED}✗ Python 3.11+ required, you have $PYTHON_VERSION${NC}"
     exit 1
 fi
 
-# Verificar Ollama
+# Check Ollama
 if command -v ollama &> /dev/null; then
-    echo -e "  ${GREEN}✓${NC} Ollama encontrado"
+    echo -e "  ${GREEN}✓${NC} Ollama found"
 else
-    echo -e "  ${YELLOW}⚠ Ollama no encontrado${NC}"
-    echo -e "    Instalando Ollama..."
+    echo -e "  ${YELLOW}⚠ Ollama not found${NC}"
+    echo -e "    Installing Ollama..."
     
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
         if command -v brew &> /dev/null; then
             brew install ollama
         else
-            echo "    Descarga Ollama desde: https://ollama.ai"
+            echo "    Download Ollama from: https://ollama.ai"
             exit 1
         fi
     elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
         # Linux
         curl -fsSL https://ollama.com/install.sh | sh
     else
-        echo "    Descarga Ollama desde: https://ollama.ai"
+        echo "    Download Ollama from: https://ollama.ai"
         exit 1
     fi
 fi
 
 # ============================================================
-# 2. Instalar UV (gestor de paquetes)
+# 2. Install UV (package manager)
 # ============================================================
-echo -e "${YELLOW}[2/5] Configurando gestor de paquetes...${NC}"
+echo -e "${YELLOW}[2/5] Configuring package manager...${NC}"
 
 if command -v uv &> /dev/null; then
-    echo -e "  ${GREEN}✓${NC} UV ya instalado"
+    echo -e "  ${GREEN}✓${NC} UV already installed"
 else
-    echo "  Instalando UV..."
+    echo "  Installing UV..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
     export PATH="$HOME/.cargo/bin:$PATH"
-    echo -e "  ${GREEN}✓${NC} UV instalado"
+    echo -e "  ${GREEN}✓${NC} UV installed"
 fi
 
 # ============================================================
-# 3. Instalar dependencias Python
+# 3. Install Python dependencies
 # ============================================================
-echo -e "${YELLOW}[3/5] Instalando dependencias Python...${NC}"
+echo -e "${YELLOW}[3/5] Installing Python dependencies...${NC}"
 
 uv sync
-echo -e "  ${GREEN}✓${NC} Dependencias instaladas"
+echo -e "  ${GREEN}✓${NC} Dependencies installed"
 
 # ============================================================
-# 4. Configurar archivo .env
+# 4. Configure .env file
 # ============================================================
-echo -e "${YELLOW}[4/5] Configurando entorno...${NC}"
+echo -e "${YELLOW}[4/5] Configuring environment...${NC}"
 
 if [ ! -f .env ]; then
     if [ -f .env.example ]; then
         cp .env.example .env
-        echo -e "  ${GREEN}✓${NC} Archivo .env creado desde .env.example"
-        echo -e "  ${YELLOW}⚠ IMPORTANTE: Edita .env y configura OBSIDIAN_PATH${NC}"
+        echo -e "  ${GREEN}✓${NC} .env file created from .env.example"
+        echo -e "  ${YELLOW}⚠ IMPORTANT: Edit .env and configure OBSIDIAN_PATH${NC}"
     else
-        # Crear .env mínimo
+        # Create minimal .env
         cat > .env << 'EOF'
-# Ruta a tu vault de Obsidian (OBLIGATORIO)
-OBSIDIAN_PATH=/ruta/a/tu/vault
+# Path to your Obsidian vault (REQUIRED)
+OBSIDIAN_PATH=/path/to/your/vault
 
-# Modelo LLM (cualquier modelo de Ollama)
+# LLM model (any Ollama model)
 LLM_MODEL=gemma3
 EOF
-        echo -e "  ${GREEN}✓${NC} Archivo .env creado"
-        echo -e "  ${YELLOW}⚠ IMPORTANTE: Edita .env y configura OBSIDIAN_PATH${NC}"
+        echo -e "  ${GREEN}✓${NC} .env file created"
+        echo -e "  ${YELLOW}⚠ IMPORTANT: Edit .env and configure OBSIDIAN_PATH${NC}"
     fi
 else
-    echo -e "  ${GREEN}✓${NC} Archivo .env ya existe"
+    echo -e "  ${GREEN}✓${NC} .env file already exists"
 fi
 
 # ============================================================
-# 5. Descargar modelo de Ollama
+# 5. Download Ollama model
 # ============================================================
-echo -e "${YELLOW}[5/5] Configurando Ollama...${NC}"
+echo -e "${YELLOW}[5/5] Configuring Ollama...${NC}"
 
-# Verificar si Ollama está corriendo
+# Check if Ollama is running
 if ! curl -s http://localhost:11434/api/tags &> /dev/null; then
-    echo "  Iniciando Ollama..."
+    echo "  Starting Ollama..."
     ollama serve &> /dev/null &
     sleep 3
 fi
 
-# Obtener modelo del .env o usar default
+# Get model from .env or use default
 LLM_MODEL=$(grep -E "^LLM_MODEL=" .env 2>/dev/null | cut -d'=' -f2 || echo "gemma3")
 LLM_MODEL=${LLM_MODEL:-gemma3}
 
-# Verificar si el modelo ya está descargado
+# Check if model is already downloaded
 if ollama list 2>/dev/null | grep -q "$LLM_MODEL"; then
-    echo -e "  ${GREEN}✓${NC} Modelo $LLM_MODEL ya descargado"
+    echo -e "  ${GREEN}✓${NC} Model $LLM_MODEL already downloaded"
 else
-    echo "  Descargando modelo $LLM_MODEL (esto puede tardar)..."
+    echo "  Downloading model $LLM_MODEL (this may take a while)..."
     ollama pull "$LLM_MODEL"
-    echo -e "  ${GREEN}✓${NC} Modelo $LLM_MODEL descargado"
+    echo -e "  ${GREEN}✓${NC} Model $LLM_MODEL downloaded"
 fi
 
 # ============================================================
-# Finalización
+# Completion
 # ============================================================
 echo ""
 echo -e "${GREEN}"
 echo "╔═══════════════════════════════════════════════════════════╗"
-echo "║              ✅ Instalación Completada                    ║"
+echo "║              ✅ Installation Complete                    ║"
 echo "╚═══════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 echo ""
-echo -e "${BLUE}Próximos pasos:${NC}"
+echo -e "${BLUE}Next steps:${NC}"
 echo ""
-echo "  1. Edita el archivo .env y configura tu vault de Obsidian:"
+echo "  1. Edit the .env file and configure your Obsidian vault:"
 echo -e "     ${YELLOW}nano .env${NC}"
 echo ""
-echo "  2. Inicia el servidor:"
-echo -e "     ${YELLOW}uv run cerebro.py${NC}"
+echo "  2. Start the server:"
+echo -e "     ${YELLOW}uv run main.py${NC}"
 echo ""
-echo "  3. Abre la interfaz web (en otra terminal):"
-echo -e "     ${YELLOW}uv run streamlit run app.py${NC}"
+echo "  3. Open the web interface (in another terminal):"
+echo -e "     ${YELLOW}uv run streamlit run streamlit_app.py${NC}"
 echo ""
-echo "  4. Abre tu navegador en: http://localhost:8501"
+echo "  4. Open your browser at: http://localhost:8501"
 echo ""
-echo -e "${GREEN}¡Listo para usar! 🚀${NC}"
+echo -e "${GREEN}Ready to use! 🚀${NC}"
