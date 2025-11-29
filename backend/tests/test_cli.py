@@ -37,10 +37,12 @@ class TestServeCommand:
     @patch("uvicorn.run")
     @patch("obsidianrag.api.server.create_app")
     @patch("obsidianrag.config.configure_from_vault")
-    def test_serve_default_options(self, mock_configure, mock_create_app, mock_uvicorn, runner, mock_vault):
+    def test_serve_default_options(
+        self, mock_configure, mock_create_app, mock_uvicorn, runner, mock_vault
+    ):
         """Test serve command with default options."""
         mock_create_app.return_value = MagicMock()
-        
+
         result = runner.invoke(app, ["serve", "--vault", str(mock_vault)])
 
         assert result.exit_code == 0
@@ -50,10 +52,12 @@ class TestServeCommand:
     @patch("uvicorn.run")
     @patch("obsidianrag.api.server.create_app")
     @patch("obsidianrag.config.configure_from_vault")
-    def test_serve_custom_port(self, mock_configure, mock_create_app, mock_uvicorn, runner, mock_vault):
+    def test_serve_custom_port(
+        self, mock_configure, mock_create_app, mock_uvicorn, runner, mock_vault
+    ):
         """Test serve command with custom port."""
         mock_create_app.return_value = MagicMock()
-        
+
         result = runner.invoke(app, ["serve", "--vault", str(mock_vault), "--port", "9000"])
 
         assert result.exit_code == 0
@@ -66,10 +70,12 @@ class TestServeCommand:
     @patch("uvicorn.run")
     @patch("obsidianrag.api.server.create_app")
     @patch("obsidianrag.config.configure_from_vault")
-    def test_serve_custom_host(self, mock_configure, mock_create_app, mock_uvicorn, runner, mock_vault):
+    def test_serve_custom_host(
+        self, mock_configure, mock_create_app, mock_uvicorn, runner, mock_vault
+    ):
         """Test serve command with custom host."""
         mock_create_app.return_value = MagicMock()
-        
+
         result = runner.invoke(app, ["serve", "--vault", str(mock_vault), "--host", "0.0.0.0"])
 
         assert result.exit_code == 0
@@ -87,7 +93,7 @@ class TestIndexCommand:
         mock_db = MagicMock()
         mock_db.get.return_value = {
             "documents": ["doc1", "doc2"],
-            "metadatas": [{"source": "note1.md"}, {"source": "note2.md"}]
+            "metadatas": [{"source": "note1.md"}, {"source": "note2.md"}],
         }
         mock_load_db.return_value = mock_db
 
@@ -104,10 +110,7 @@ class TestIndexCommand:
     def test_index_incremental(self, mock_configure, mock_load_db, runner, mock_vault):
         """Test index command for incremental update."""
         mock_db = MagicMock()
-        mock_db.get.return_value = {
-            "documents": ["doc1"],
-            "metadatas": [{"source": "note1.md"}]
-        }
+        mock_db.get.return_value = {"documents": ["doc1"], "metadatas": [{"source": "note1.md"}]}
         mock_load_db.return_value = mock_db
 
         result = runner.invoke(app, ["index", "--vault", str(mock_vault)])
@@ -124,7 +127,7 @@ class TestStatusCommand:
         """Test status command displays vault info."""
         # Mock Ollama check to fail (not running)
         mock_httpx.side_effect = Exception("Connection refused")
-        
+
         result = runner.invoke(app, ["status", "--vault", str(mock_vault)])
 
         assert result.exit_code == 0
@@ -137,7 +140,7 @@ class TestStatusCommand:
         mock_response.status_code = 200
         mock_response.json.return_value = {"models": [{"name": "gemma3"}]}
         mock_httpx.return_value = mock_response
-        
+
         result = runner.invoke(app, ["status", "--vault", str(mock_vault)])
 
         assert result.exit_code == 0

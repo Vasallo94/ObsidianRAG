@@ -2,8 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from obsidianrag.core.qa_agent import AgentState, extract_links_from_content
 
 
@@ -165,7 +163,9 @@ class TestQAAgent:
     @patch("obsidianrag.core.qa_agent.create_retriever_with_reranker")
     @patch("obsidianrag.core.qa_agent.verify_ollama_available")
     @patch("obsidianrag.core.qa_agent.get_settings")
-    def test_agent_handles_ollama_unavailable(self, mock_settings, mock_verify, mock_retriever, mock_ollama):
+    def test_agent_handles_ollama_unavailable(
+        self, mock_settings, mock_verify, mock_retriever, mock_ollama
+    ):
         """Test agent handles Ollama not being available."""
         mock_settings.return_value = MagicMock(llm_model="gemma3")
         mock_verify.return_value = False

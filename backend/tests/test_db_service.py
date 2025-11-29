@@ -1,9 +1,6 @@
 """Tests for ObsidianRAG Database Service (ChromaDB)."""
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from obsidianrag.core.db_service import extract_obsidian_links
 
@@ -188,4 +185,3 @@ class TestDocumentMetadata:
         )
 
         assert "other-note" in doc.metadata["links"]
-

@@ -1,4 +1,5 @@
 """FastAPI server for ObsidianRAG"""
+
 import asyncio
 import gc
 import time
@@ -29,33 +30,33 @@ _vault_path: Optional[str] = None
 
 def create_app(vault_path: Optional[str] = None) -> FastAPI:
     """Create and configure the FastAPI application.
-    
+
     Args:
         vault_path: Optional path to Obsidian vault
-        
+
     Returns:
         Configured FastAPI application
     """
     global _vault_path
     _vault_path = vault_path
-    
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         """Lifespan context manager for startup and shutdown events"""
         global _db, _qa_app
-        
+
         settings = get_settings()
-        
+
         logger.info("Starting ObsidianRAG application")
         logger.info(f"Configuration: {settings.model_dump()}")
-        
+
         try:
             logger.info("Loading vector database...")
             if _vault_path:
                 configure_from_vault(_vault_path)
-            
+
             _db = load_or_create_db()
-            
+
             if _db is None:
                 logger.error("Could not load database")
             else:
@@ -65,16 +66,16 @@ def create_app(vault_path: Optional[str] = None) -> FastAPI:
         except Exception as e:
             logger.error(f"Error during startup: {e}", exc_info=True)
             raise
-        
+
         yield
-        
+
         logger.info("Shutting down ObsidianRAG application")
 
     application = FastAPI(
         title="ObsidianRAG API",
         description="API for querying Obsidian notes using RAG",
         version="3.0.0",
-        lifespan=lifespan
+        lifespan=lifespan,
     )
 
     # Add CORS middleware
@@ -99,7 +100,7 @@ def create_app(vault_path: Optional[str] = None) -> FastAPI:
 
     # Register routes
     _register_routes(application)
-    
+
     return application
 
 
@@ -112,7 +113,9 @@ class Question(BaseModel):
 class Source(BaseModel):
     source: str = Field(..., description="The source of the information")
     score: float = Field(0.0, description="Reranker relevance score (higher is better)")
-    retrieval_type: str = Field("retrieved", description="Retrieval type: 'retrieved' or 'graphrag_link'")
+    retrieval_type: str = Field(
+        "retrieved", description="Retrieval type: 'retrieved' or 'graphrag_link'"
+    )
 
 
 class Answer(BaseModel):
@@ -126,7 +129,7 @@ class Answer(BaseModel):
 
 def _register_routes(application: FastAPI):
     """Register all API routes."""
-    
+
     @application.get("/", summary="Root endpoint")
     async def root():
         """Welcome endpoint for the API."""
@@ -138,53 +141,52 @@ def _register_routes(application: FastAPI):
         try:
             logger.info(f"Received question: {question.text}")
             start_time = time.time()
-            
+
             if _qa_app is None:
                 raise HTTPException(
-                    status_code=503, 
-                    detail="System not initialized. Try again in a few moments."
+                    status_code=503, detail="System not initialized. Try again in a few moments."
                 )
-            
+
             session_id = question.session_id
             if not session_id:
                 session_id = str(uuid.uuid4())
                 _chat_histories[session_id] = []
                 logger.info(f"New session created: {session_id}")
-            
+
             history = _chat_histories.get(session_id, [])
-            
+
             async with _db_lock:
                 qa_graph = create_qa_graph(_db)
-                
+
                 loop = asyncio.get_event_loop()
                 result, sources = await loop.run_in_executor(
-                    None, 
-                    lambda: ask_question_graph(qa_graph, question.text, history)
+                    None, lambda: ask_question_graph(qa_graph, question.text, history)
                 )
-            
+
             history.append((question.text, result))
             _chat_histories[session_id] = history
-            
+
             process_time = time.time() - start_time
             logger.info(f"Response generated in {process_time:.4f} seconds")
             text_blocks = [source.page_content for source in sources]
-            
+
             source_list = [
                 Source(
-                    source=source.metadata.get('source', 'Unknown'),
-                    score=source.metadata.get('score', 0.0),
-                    retrieval_type=source.metadata.get('retrieval_type', 'retrieved')
-                ) for source in sources
+                    source=source.metadata.get("source", "Unknown"),
+                    score=source.metadata.get("score", 0.0),
+                    retrieval_type=source.metadata.get("retrieval_type", "retrieved"),
+                )
+                for source in sources
             ]
             source_list.sort(key=lambda x: x.score, reverse=True)
-            
+
             return Answer(
                 question=question.text,
                 result=result,
                 sources=source_list,
                 text_blocks=text_blocks,
                 process_time=process_time,
-                session_id=session_id
+                session_id=session_id,
             )
         except ModelNotAvailableError as e:
             logger.error(f"Ollama not available: {str(e)}")
@@ -207,8 +209,10 @@ def _register_routes(application: FastAPI):
             "status": "ok",
             "model": settings.llm_model,
             "embedding_provider": settings.embedding_provider,
-            "embedding_model": settings.embedding_model if settings.embedding_provider == "huggingface" else settings.ollama_embedding_model,
-            "db_ready": _db is not None
+            "embedding_model": settings.embedding_model
+            if settings.embedding_provider == "huggingface"
+            else settings.ollama_embedding_model,
+            "db_ready": _db is not None,
         }
 
     @application.get("/stats", summary="Vault statistics")
@@ -217,34 +221,34 @@ def _register_routes(application: FastAPI):
         settings = get_settings()
         if _db is None:
             return {"error": "Database not ready"}
-        
+
         try:
             db_data = _db.get()
-            documents = db_data.get('documents', [])
-            metadatas = db_data.get('metadatas', [])
-            
+            documents = db_data.get("documents", [])
+            metadatas = db_data.get("metadatas", [])
+
             total_chunks = len(documents)
             total_chars = sum(len(doc) for doc in documents)
             total_words = sum(len(doc.split()) for doc in documents)
-            
+
             sources = set()
             folders = set()
             links = set()
-            
+
             for meta in metadatas:
-                source = meta.get('source', '')
+                source = meta.get("source", "")
                 if source:
                     sources.add(source)
-                    parts = source.split('/')
+                    parts = source.split("/")
                     if len(parts) > 1:
                         folders.add(parts[-2])
-                
-                links_str = meta.get('links', '')
+
+                links_str = meta.get("links", "")
                 if links_str:
-                    for link in links_str.split(','):
+                    for link in links_str.split(","):
                         if link.strip():
                             links.add(link.strip())
-            
+
             return {
                 "total_notes": len(sources),
                 "total_chunks": total_chunks,
@@ -253,7 +257,9 @@ def _register_routes(application: FastAPI):
                 "avg_words_per_chunk": total_words // total_chunks if total_chunks > 0 else 0,
                 "folders": len(folders),
                 "internal_links": len(links),
-                "vault_path": settings.obsidian_path.split('/')[-1] if settings.obsidian_path else "Unknown"
+                "vault_path": settings.obsidian_path.split("/")[-1]
+                if settings.obsidian_path
+                else "Unknown",
             }
         except Exception as e:
             logger.error(f"Error getting stats: {e}")
@@ -265,19 +271,19 @@ def _register_routes(application: FastAPI):
         try:
             logger.info("Database rebuild request received")
             global _db, _qa_app
-            
+
             async with _db_lock:
                 _db = None
                 _qa_app = None
                 gc.collect()
-                
+
                 _db = load_or_create_db(force_rebuild=True)
-                
+
                 if _db is None:
                     raise HTTPException(status_code=500, detail="Error rebuilding database")
-                
+
                 _qa_app = create_qa_graph(_db)
-                
+
             return {"status": "success", "message": "Database rebuilt and graph updated"}
         except Exception as e:
             logger.error(f"Error rebuilding DB: {str(e)}")
@@ -290,7 +296,7 @@ app = create_app()
 
 def run_server(vault_path: str, host: str = "127.0.0.1", port: int = 8000):
     """Run the server programmatically.
-    
+
     Args:
         vault_path: Path to Obsidian vault
         host: Host to bind to

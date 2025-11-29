@@ -1,6 +1,5 @@
 """Tests for ObsidianRAG FastAPI server."""
 
-
 import pytest
 
 

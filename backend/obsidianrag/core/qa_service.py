@@ -1,4 +1,5 @@
 """QA Service with hybrid search and reranking"""
+
 import logging
 from typing import List, Tuple
 
@@ -22,16 +23,19 @@ logger = logging.getLogger(__name__)
 # Custom exceptions for better error handling
 class RAGError(Exception):
     """Base exception for RAG-related errors"""
+
     pass
 
 
 class ModelNotAvailableError(RAGError):
     """Ollama model is not available"""
+
     pass
 
 
 class NoDocumentsFoundError(RAGError):
     """No documents found in database or retrieval"""
+
     pass
 
 
@@ -61,7 +65,7 @@ condense_question_prompt = PromptTemplate.from_template(
 # Prompt for final response (QA)
 qa_prompt = PromptTemplate(
     input_variables=["context", "question"],
-    template=system_prompt + "\n\nContext:\n{context}\n\nQuestion: {question}\nAnswer:"
+    template=system_prompt + "\n\nContext:\n{context}\n\nQuestion: {question}\nAnswer:",
 )
 
 
@@ -70,24 +74,24 @@ def verify_ollama_available():
     settings = get_settings()
     try:
         import requests
+
         response = requests.get(f"{settings.ollama_base_url}/api/tags", timeout=2)
         response.raise_for_status()
         logger.info("Ollama is available")
     except Exception as e:
         logger.error(f"Ollama is not available: {e}")
         raise ModelNotAvailableError(
-            f"Ollama is not running at {settings.ollama_base_url}. "
-            "Run: ollama serve"
+            f"Ollama is not running at {settings.ollama_base_url}. Run: ollama serve"
         )
 
 
 def create_hybrid_retriever(db):
     """
     Create a hybrid retriever with BM25 + Vector search
-    
+
     Args:
         db: ChromaDB instance
-    
+
     Returns:
         Configured hybrid retriever
     """
@@ -95,42 +99,48 @@ def create_hybrid_retriever(db):
     logger.info("=" * 50)
     logger.info("📦 Configuring Hybrid Search (BM25 + Vector)")
     logger.info("=" * 50)
-    
+
     # Get documents from DB for BM25
     try:
         db_data = db.get()
-        texts = db_data['documents']
-        metadatas = db_data['metadatas']
-        
+        texts = db_data["documents"]
+        metadatas = db_data["metadatas"]
+
         if not texts:
             logger.warning("No documents found in DB")
             raise NoDocumentsFoundError("Database is empty")
-        
+
         # Log stats about links in metadata
-        docs_with_links = sum(1 for m in metadatas if m.get('links', ''))
-        total_links = sum(len(m.get('links', '').split(',')) for m in metadatas if m.get('links', ''))
-        logger.info(f"📊 DB Stats: {len(texts)} chunks, {docs_with_links} with links, {total_links} total links")
-        
+        docs_with_links = sum(1 for m in metadatas if m.get("links", ""))
+        total_links = sum(
+            len(m.get("links", "").split(",")) for m in metadatas if m.get("links", "")
+        )
+        logger.info(
+            f"📊 DB Stats: {len(texts)} chunks, {docs_with_links} with links, {total_links} total links"
+        )
+
         # Create BM25 retriever
         docs = [Document(page_content=t, metadata=m) for t, m in zip(texts, metadatas)]
         bm25_retriever = BM25Retriever.from_documents(docs)
         bm25_retriever.k = settings.bm25_k
         logger.info(f"   BM25 k={settings.bm25_k}")
-        
+
         # Create vector retriever
         chroma_retriever = db.as_retriever(search_kwargs={"k": settings.retrieval_k})
         logger.info(f"   Vector k={settings.retrieval_k}")
-        
+
         # Combine with ensemble
         ensemble_retriever = EnsembleRetriever(
             retrievers=[bm25_retriever, chroma_retriever],
-            weights=[settings.bm25_weight, settings.vector_weight]
+            weights=[settings.bm25_weight, settings.vector_weight],
         )
-        logger.info(f"   Ensemble weights: BM25={settings.bm25_weight}, Vector={settings.vector_weight}")
-        
+        logger.info(
+            f"   Ensemble weights: BM25={settings.bm25_weight}, Vector={settings.vector_weight}"
+        )
+
         logger.info("✅ EnsembleRetriever created successfully")
         return ensemble_retriever
-            
+
     except NoDocumentsFoundError:
         raise
     except Exception as e:
@@ -141,16 +151,16 @@ def create_hybrid_retriever(db):
 def create_retriever_with_reranker(db):
     """
     Create a retriever with optional reranking
-    
+
     Args:
         db: ChromaDB instance
-    
+
     Returns:
         Configured retriever (with or without reranker)
     """
     settings = get_settings()
     ensemble_retriever = create_hybrid_retriever(db)
-    
+
     # Add reranker if enabled
     if settings.use_reranker:
         logger.info(f"🔄 Adding reranker: {settings.reranker_model}")
@@ -158,10 +168,9 @@ def create_retriever_with_reranker(db):
         try:
             model = HuggingFaceCrossEncoder(model_name=settings.reranker_model)
             compressor = CrossEncoderReranker(model=model, top_n=settings.reranker_top_n)
-            
+
             retriever = ContextualCompressionRetriever(
-                base_compressor=compressor,
-                base_retriever=ensemble_retriever
+                base_compressor=compressor, base_retriever=ensemble_retriever
             )
             logger.info("✅ Reranker configured successfully")
             logger.info("=" * 50)
@@ -177,26 +186,23 @@ def create_retriever_with_reranker(db):
 def create_qa_chain(db):
     """
     Create conversational QA chain with hybrid search and optional reranking
-    
+
     Args:
         db: ChromaDB instance
-    
+
     Returns:
         ConversationalRetrievalChain instance
     """
     settings = get_settings()
     # Verify Ollama is available
     verify_ollama_available()
-    
+
     logger.info(f"Initializing Ollama model ({settings.llm_model})")
-    llm = OllamaLLM(
-        model=settings.llm_model,
-        base_url=settings.ollama_base_url
-    )
-    
+    llm = OllamaLLM(model=settings.llm_model, base_url=settings.ollama_base_url)
+
     # Create retriever (with or without reranker)
     retriever = create_retriever_with_reranker(db)
-    
+
     logger.info("Creating ConversationalRetrievalChain")
     qa_chain_instance = ConversationalRetrievalChain.from_llm(
         llm=llm,
@@ -204,7 +210,7 @@ def create_qa_chain(db):
         return_source_documents=True,
         condense_question_prompt=condense_question_prompt,
         combine_docs_chain_kwargs={"prompt": qa_prompt},
-        verbose=True
+        verbose=True,
     )
     logger.info("ConversationalRetrievalChain configured successfully")
     return qa_chain_instance
@@ -214,57 +220,52 @@ def retrieve_with_links(retriever, query: str) -> List[Document]:
     """Retrieve documents and their linked references (GraphRAG)"""
     # 1. Base retrieval
     docs = retriever.invoke(query)
-    
+
     # 2. Extract links
     linked_sources = set()
     for doc in docs:
-        links_str = doc.metadata.get('links', '')
+        links_str = doc.metadata.get("links", "")
         if links_str:
-            for link in links_str.split(','):
+            for link in links_str.split(","):
                 if link.strip():
                     linked_sources.add(link.strip())
-    
+
     # 3. Fetch linked docs if any
     if linked_sources:
         logger.info(f"GraphRAG: Found {len(linked_sources)} linked notes")
-        
+
     return docs
 
 
 def ask_question(
-    qa_chain, 
-    question: str, 
-    chat_history: List[Tuple[str, str]] = None
+    qa_chain, question: str, chat_history: List[Tuple[str, str]] = None
 ) -> Tuple[str, List[Document]]:
     """
     Ask a question using the QA chain
-    
+
     Args:
         qa_chain: ConversationalRetrievalChain instance
         question: User question
         chat_history: List of (question, answer) tuples
-        
+
     Returns:
         Tuple of (answer, source_documents)
     """
     if chat_history is None:
         chat_history = []
-        
+
     logger.info(f"Processing question: {question}")
-    
+
     try:
-        response = qa_chain.invoke({
-            "question": question, 
-            "chat_history": chat_history
-        })
-        
-        answer = response['answer']
+        response = qa_chain.invoke({"question": question, "chat_history": chat_history})
+
+        answer = response["answer"]
         source_documents = response.get("source_documents", [])
-        
+
         logger.info(f"Response generated with {len(source_documents)} sources")
-        
+
         return answer, source_documents
-        
+
     except ModelNotAvailableError:
         raise
     except NoDocumentsFoundError:
