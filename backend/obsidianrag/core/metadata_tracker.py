@@ -1,9 +1,9 @@
 """Service for tracking file metadata and detecting changes for incremental indexing"""
 import json
+import logging
 import os
 from datetime import datetime
 from typing import Dict, Set, Tuple
-import logging
 
 logger = logging.getLogger(__name__)
 

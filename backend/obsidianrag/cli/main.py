@@ -60,6 +60,7 @@ def serve(
     
     # Start server
     import uvicorn
+
     from obsidianrag.api.server import create_app
     
     server_app = create_app(vault_path)
