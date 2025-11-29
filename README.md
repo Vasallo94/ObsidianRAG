@@ -5,7 +5,10 @@ A RAG (Retrieval-Augmented Generation) system for querying your Obsidian notes u
 ![Python](https://img.shields.io/badge/Python-3.11+-blue)
 ![LangGraph](https://img.shields.io/badge/LangGraph-0.2+-green)
 ![Ollama](https://img.shields.io/badge/Ollama-Local_LLMs-orange)
+![Tests](https://img.shields.io/badge/Tests-59%20passing-brightgreen)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
+
+> 🚧 **v3 in Development**: We're working on an Obsidian plugin! Check the [`v3-plugin`](https://github.com/Vasallo94/ObsidianRAG/tree/v3-plugin) branch for progress.
 
 <p align="center">
   <img src="img/demo.gif" alt="Demo" width="600">
