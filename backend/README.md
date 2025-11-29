@@ -1,11 +1,42 @@
 # ObsidianRAG Backend
 
+[![PyPI version](https://badge.fury.io/py/obsidianrag.svg)](https://badge.fury.io/py/obsidianrag)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 The Python backend for ObsidianRAG - a RAG system for querying Obsidian notes using LangGraph and local LLMs.
 
 ## Installation
 
+### For Users (via Obsidian Plugin)
+
+The plugin handles installation automatically. If you need to install manually:
+
 ```bash
 pip install obsidianrag
+```
+
+### For Developers
+
+We use [uv](https://docs.astral.sh/uv/) for fast, reliable dependency management:
+
+```bash
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Clone and setup
+git clone https://github.com/Vasallo94/ObsidianRAG.git
+cd ObsidianRAG/backend
+
+# Install dependencies (creates virtual environment automatically)
+uv sync
+
+# Install with dev dependencies
+uv sync --dev
+
+# Run commands via uv
+uv run obsidianrag serve --vault /path/to/vault
+uv run pytest tests/ -v
 ```
 
 ## Quick Start
@@ -50,10 +81,15 @@ print(f"Total notes: {stats['total_notes']}")
 
 ## Configuration
 
-Environment variables:
-- `OBSIDIAN_PATH`: Path to your Obsidian vault
-- `LLM_MODEL`: Ollama model to use (default: `gemma3`)
-- `EMBEDDING_PROVIDER`: `huggingface` or `ollama` (default: `huggingface`)
+Environment variables (prefix with `OBSIDIANRAG_` for settings):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OBSIDIAN_PATH` | - | Path to your Obsidian vault |
+| `LLM_MODEL` | `gemma3` | Ollama model to use |
+| `EMBEDDING_PROVIDER` | `huggingface` | `huggingface` or `ollama` |
+| `USE_RERANKER` | `true` | Enable CrossEncoder reranking |
+| `CHUNK_SIZE` | `1500` | Text chunk size for indexing |
 
 ## API Endpoints
 
@@ -65,6 +101,25 @@ When running the server:
 | `/health` | GET | System status, model info |
 | `/stats` | GET | Vault statistics |
 | `/rebuild_db` | POST | Force reindex all notes |
+
+## Development
+
+```bash
+cd backend
+
+# Run tests
+uv run pytest tests/ -v
+
+# Run with coverage
+uv run pytest tests/ --cov=obsidianrag --cov-report=html
+
+# Lint and format
+uv run ruff check obsidianrag/ tests/
+uv run ruff format obsidianrag/ tests/
+
+# Build package
+uv build
+```
 
 ## License
 
