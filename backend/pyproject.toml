@@ -1,0 +1,120 @@
+[project]
+name = "obsidianrag"
+version = "3.0.0"
+description = "RAG system for querying Obsidian notes using LangGraph and local LLMs"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "Enrique Vasallo"}
+]
+keywords = ["obsidian", "rag", "langchain", "langgraph", "ollama", "chromadb", "plugin"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Text Processing :: Indexing",
+]
+
+dependencies = [
+    # Core LangChain ecosystem
+    "langchain>=0.3.0",
+    "langchain-community>=0.3.0",
+    "langchain-core>=0.3.0",
+    "langchain-ollama>=0.2.0",
+    "langchain-chroma>=0.2.0",
+    "langchain-huggingface>=0.1.0",
+    "langchain-text-splitters>=0.3.0",
+    "langgraph>=0.2.0",
+    
+    # Vector store and retrieval
+    "chromadb>=0.5.0",
+    "rank-bm25>=0.2.2",
+    "sentence-transformers>=3.0.0",
+    
+    # API
+    "fastapi>=0.112.0",
+    "uvicorn>=0.30.0",
+    "httpx>=0.27.0",
+    "requests>=2.32.0",
+    
+    # ML and embeddings
+    "torch>=2.0.0",
+    "transformers>=4.40.0",
+    
+    # Configuration and utilities
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-dotenv>=1.0.0",
+    
+    # CLI
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.0.0",
+    "black>=24.0.0",
+    "ruff>=0.3.0",
+    "mypy>=1.8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Vasallo94/ObsidianRAG"
+Repository = "https://github.com/Vasallo94/ObsidianRAG"
+Documentation = "https://github.com/Vasallo94/ObsidianRAG#readme"
+Issues = "https://github.com/Vasallo94/ObsidianRAG/issues"
+
+[project.scripts]
+obsidianrag = "obsidianrag.cli.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["obsidianrag"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/obsidianrag",
+    "/README.md",
+    "/LICENSE",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "black>=25.11.0",
+    "mypy>=1.19.0",
+    "pytest>=9.0.1",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.14.7",
+]
