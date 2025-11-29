@@ -2,12 +2,15 @@ import logging
 from typing import List, Tuple
 
 from langchain_classic.chains import ConversationalRetrievalChain
-from langchain_core.prompts import PromptTemplate
-from langchain_classic.retrievers import ContextualCompressionRetriever, EnsembleRetriever
+from langchain_classic.retrievers import (
+    ContextualCompressionRetriever,
+    EnsembleRetriever,
+)
 from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
 from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
+from langchain_core.prompts import PromptTemplate
 from langchain_ollama import OllamaLLM
 
 from config.settings import settings

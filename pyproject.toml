@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
-    {name = "Vasallo94"}
+    {name = "Enrique Vasallo"}
 ]
 keywords = ["obsidian", "rag", "langchain", "langgraph", "ollama", "chromadb"]
 

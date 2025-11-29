@@ -6,13 +6,13 @@ import shutil
 import uuid
 from typing import Optional, Union
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import ObsidianLoader
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_ollama import OllamaEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from config.settings import settings
 from services.metadata_tracker import FileMetadataTracker
