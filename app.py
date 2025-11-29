@@ -1,10 +1,9 @@
 import time
-
 import requests
 import streamlit as st
 
 # Configuración de la página con el ícono de Obsidian
-st.set_page_config(page_title="Obsidian RAG", page_icon="assets/obsidian-icon.svg")
+st.set_page_config(page_title="Obsidian RAG", page_icon="assets/obsidian-icon.svg", layout="wide")
 
 # Cargar el archivo CSS personalizado
 def load_css(file_name):
@@ -12,63 +11,92 @@ def load_css(file_name):
         st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
 
 load_css("assets/styles.css")
-st.markdown("# Obsidian RAG")
+st.markdown("# Obsidian RAG Chat")
 
-# Campo de entrada para la pregunta
-question = st.text_input("Haz una pregunta:", key="question_input")
+# Sidebar para acciones administrativas
+with st.sidebar:
+    st.header("Administración")
+    if st.button("Reindexar Base de Datos"):
+        with st.spinner("Reconstruyendo base de datos... Esto puede tardar unos minutos."):
+            try:
+                response = requests.post("http://localhost:8000/rebuild_db")
+                if response.status_code == 200:
+                    st.success("Base de datos reindexada correctamente.")
+                else:
+                    st.error(f"Error al reindexar: {response.text}")
+            except Exception as e:
+                st.error(f"Error de conexión: {e}")
 
-# Botón para enviar la pregunta
-if st.button("Enviar"):
-    if question:
-        try:
-            url = "http://localhost:8000/ask"  # Actualiza si estás usando una dirección diferente
-            headers = {"Content-Type": "application/json"}
-            payload = {"text": question}
+# Inicializar historial de chat
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-            with st.spinner("Procesando..."):
+# Inicializar session_id
+if "session_id" not in st.session_state:
+    st.session_state.session_id = None
+
+# Mostrar mensajes de chat del historial
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+        if "sources" in message:
+            with st.expander("Fuentes y Detalles"):
+                for source in message["sources"]:
+                    st.markdown(f"- {source['source']}")
+                if "process_time" in message:
+                    st.caption(f"Tiempo de procesamiento: {message['process_time']:.2f}s")
+
+# Entrada de chat
+if prompt := st.chat_input("Haz una pregunta sobre tus notas..."):
+    # Mostrar mensaje del usuario
+    st.chat_message("user").markdown(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    # Preparar payload
+    url = "http://localhost:8000/ask"
+    payload = {"text": prompt}
+    if st.session_state.session_id:
+        payload["session_id"] = st.session_state.session_id
+
+    # Obtener respuesta
+    with st.chat_message("assistant"):
+        with st.spinner("Pensando..."):
+            try:
                 start_time = time.time()
-                response = requests.post(url, json=payload, headers=headers)
+                response = requests.post(url, json=payload)
                 end_time = time.time()
-                elapsed_time = end_time - start_time
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    result = data["result"]
+                    sources = data.get("sources", [])
+                    process_time = data.get("process_time", 0)
+                    
+                    # Actualizar session_id si es nuevo
+                    if not st.session_state.session_id and "session_id" in data:
+                        st.session_state.session_id = data["session_id"]
 
-            if response.status_code == 200:
-                data = response.json()
-
-                # Crear dos columnas con una distribución 70/30
-                col1, col2 = st.columns([7, 3])
-
-                # Columna 1: Respuesta
-                with col1:
-                    st.markdown("## Respuesta:")
-                    st.markdown(data["result"])
-
-                # Columna 2: Detalles
-                with col2:
-                    st.markdown("### Fuentes y Bloques de Texto:")
-                    if data.get("sources"):
-                        if data.get("text_blocks"):
-                            for source, block in zip(data["sources"], data["text_blocks"]):
+                    st.markdown(result)
+                    
+                    # Mostrar fuentes
+                    if sources:
+                        with st.expander("Fuentes y Detalles"):
+                            for source in sources:
                                 st.markdown(f"- {source['source']}")
-                                with st.expander("Bloque de texto"):
-                                    st.markdown(block)
-                        else:
-                            for source in data["sources"]:
-                                st.markdown(f"- {source['source']}")
-                            st.markdown("No se encontraron bloques de texto.")
-                    else:
-                        st.markdown("No se encontraron fuentes.")
-                        
-                    st.markdown("### Detalles de la solicitud:")
-                    process_time = data.get("process_time", None)
-                    if isinstance(process_time, (int, float)):
-                        st.markdown(f"*Tiempo de procesamiento en la API:* {process_time:.2f} *segundos*")
-                    else:
-                        st.markdown(f"*Tiempo de procesamiento en la API:* {process_time}")
-
-                    st.markdown(f"_Tiempo total de solicitud:_ {elapsed_time:.2f} *segundos*")
-            else:
-                st.error(f"Error en la solicitud: {response.status_code} - {response.text}")
-        except Exception as e:
-            st.error(f"Ocurrió un error: {e}")
-    else:
-        st.warning("Por favor, ingresa una pregunta.")
+                            st.caption(f"Tiempo de procesamiento API: {process_time:.2f}s")
+                    
+                    # Guardar en historial
+                    st.session_state.messages.append({
+                        "role": "assistant", 
+                        "content": result,
+                        "sources": sources,
+                        "process_time": process_time
+                    })
+                else:
+                    error_msg = f"Error: {response.status_code} - {response.text}"
+                    st.error(error_msg)
+                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
+            except Exception as e:
+                error_msg = f"Ocurrió un error: {e}"
+                st.error(error_msg)
+                st.session_state.messages.append({"role": "assistant", "content": error_msg})

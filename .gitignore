@@ -220,5 +220,16 @@ pip-selfcheck.json
 
 # Ignorar archivos de base de datos
 /db
-
 db
+
+# Project-specific ignores
+*.txt
+*.log
+!requirements.txt
+scripts/debug/*.sh
+scripts/tests/output/
+migration_output.txt
+error.log
+test_links_output.txt
+debug_output.txt
+
