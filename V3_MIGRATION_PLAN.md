@@ -1222,19 +1222,20 @@ Semana 7+
 Fase 0: Preparación          [██████████] 100% ✅
 Fase 1: Backend              [██████████] 100% ✅
 Fase 2: Testing Backend      [██████████] 100% ✅
-Fase 3: PyPI                 [░░░░░░░░░░]   0%
+Fase 3: PyPI                 [██████████] 100% ✅
 Fase 4: Plugin               [░░░░░░░░░░]   0%
 Fase 5: Testing Plugin       [░░░░░░░░░░]   0%
 Fase 6: Documentación        [█░░░░░░░░░]  10%
 Fase 7: Publicación          [░░░░░░░░░░]   0%
 ─────────────────────────────────────────────
-TOTAL                        [███░░░░░░░]  ~30%
+TOTAL                        [████░░░░░░]  ~40%
 ```
 
 ### Últimas Actualizaciones
 
 | Fecha | Actualización |
 |-------|---------------|
+| 2025-11-29 | ✅ Fase 3 completada: PyPI publicado v3.0.1, Trusted Publishers, workflow automático (#23 cerrado) |
 | 2025-01-14 | ✅ Fase 2 completada: 59 tests, CI/CD configurado, ruff aplicado (#22 cerrado) |
 | 2025-01-14 | ✅ Fase 1 completada: Backend reestructurado como paquete PyPI (#20 cerrado) |
 | 2025-11-29 | ✅ Fase 0 completada: Issues creados (#20-#28), Epic #21 activo |
@@ -1244,9 +1245,9 @@ TOTAL                        [███░░░░░░░]  ~30%
 
 > **Nota**: Este documento es una guía viva. Actualízalo conforme avance el proyecto.
 > 
-> **Próxima Acción**: Comenzar con la Fase 3 - Publicación del Backend en PyPI (Issue #23).
+> **Próxima Acción**: Comenzar con la Fase 4 - Desarrollo del Plugin de Obsidian (Issue #24).
 
 ---
 
 *Documento generado el 29 de noviembre de 2025*  
-*Última actualización: 14 de enero de 2025*
+*Última actualización: 29 de noviembre de 2025*
