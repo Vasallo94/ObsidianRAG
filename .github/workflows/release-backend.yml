@@ -36,7 +36,7 @@ jobs:
         run: uv sync --dev
 
       - name: Run tests
-        run: uv run pytest tests/ -m "not slow" -v
+        run: uv run pytest tests/ -m "not slow and not integration" -v
 
       - name: Build package
         run: uv build

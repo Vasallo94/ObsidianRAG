@@ -1,6 +1,6 @@
 [project]
 name = "obsidianrag"
-version = "3.0.0"
+version = "3.0.1"
 description = "RAG system for querying Obsidian notes using LangGraph and local LLMs"
 readme = "README.md"
 requires-python = ">=3.11"
