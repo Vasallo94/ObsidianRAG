@@ -9,7 +9,7 @@ from typing import List, Optional, Dict, Tuple
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -99,7 +99,8 @@ class Question(BaseModel):
 
 class Source(BaseModel):
     source: str = Field(..., description="La fuente de la información")
-    score: float = Field(0.0, description="Puntuación de relevancia (menor es mejor para L2, mayor para Cosine)")
+    score: float = Field(0.0, description="Puntuación de relevancia del reranker (mayor es mejor)")
+    retrieval_type: str = Field("retrieved", description="Tipo de recuperación: 'retrieved' o 'graphrag_link'")
 
 class Answer(BaseModel):
     question: str
@@ -154,15 +155,20 @@ async def ask(question: Question, request: Request):
         logger.info(f"Respuesta generada en {process_time:.4f} segundos")
         text_blocks = [source.page_content for source in sources]
         
+        # Create source list and sort by score (highest first)
+        source_list = [
+            Source(
+                source=source.metadata.get('source', 'Desconocido'),
+                score=source.metadata.get('score', 0.0),
+                retrieval_type=source.metadata.get('retrieval_type', 'retrieved')
+            ) for source in sources
+        ]
+        source_list.sort(key=lambda x: x.score, reverse=True)
+        
         return Answer(
             question=question.text,
             result=result,
-            sources=[
-                Source(
-                    source=source.metadata.get('source', 'Desconocido'),
-                    score=source.metadata.get('score', 0.0)
-                ) for source in sources
-            ],
+            sources=source_list,
             text_blocks=text_blocks,
             process_time=process_time,
             session_id=session_id
@@ -180,71 +186,6 @@ async def ask(question: Question, request: Request):
         logger.error(f"Error inesperado: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
-
-@app.post("/ask_stream", summary="Haz una pregunta con streaming", description="Endpoint con streaming de respuestas en tiempo real")
-async def ask_stream(question: Question):
-    """
-    Endpoint para hacer una pregunta con respuesta en streaming
-    - **question**: La pregunta que quieres hacer
-    - **session_id**: Opcional. Si no se envía, se genera uno nuevo
-    """
-    if not settings.enable_streaming:
-        raise HTTPException(status_code=501, detail="Streaming deshabilitado en configuración")
-    
-    if qa_app is None:
-        raise HTTPException(status_code=503, detail="Sistema no inicializado")
-    
-    async def generate():
-        """Generator function for SSE streaming"""
-        try:
-            # Gestión de sesión
-            session_id = question.session_id or str(uuid.uuid4())
-            # Get chat history
-            history = chat_histories.get(session_id, [])
-            
-            # Send session ID first
-            yield f"data: {{'type': 'session_id', 'value': '{session_id}'}}\n\n"
-            
-            # Ask question using Graph
-            async with db_lock:
-                if qa_app is None:
-                    raise HTTPException(status_code=503, detail="System not initialized")
-                
-                # Run in thread pool since LangGraph might be blocking
-                loop = asyncio.get_event_loop()
-                result, sources = await loop.run_in_executor(
-                    None, 
-                    lambda: ask_question_graph(qa_app, question.text, history)
-                )
-            
-            # Stream answer in chunks
-            chunk_size = 50  # characters per chunk
-            for i in range(0, len(result), chunk_size):
-                chunk = result[i:i+chunk_size]
-                import json
-                yield f"data: {json.dumps({'type': 'chunk', 'value': chunk})}\n\n"
-                await asyncio.sleep(0.01)  # Small delay for smooth streaming
-            
-            # Send sources
-            sources_data = [{
-                'source': s.metadata.get('source', 'Desconocido'),
-                'score': s.metadata.get('score', 0.0)
-            } for s in sources]
-            yield f"data: {json.dumps({'type': 'sources', 'value': sources_data})}\n\n"
-            
-            # Update history
-            history.append((question.text, result))
-            chat_histories[session_id] = history
-            
-            # Send completion
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
-            
-        except Exception as e:
-            logger.error(f"Error en streaming: {e}", exc_info=True)
-            import json
-            yield f"data: {json.dumps({'type': 'error', 'value': str(e)})}\n\n"
-    
-    return StreamingResponse(generate(), media_type="text/event-stream")
 
 @app.post("/rebuild_db", summary="Reconstruir base de datos", description="Fuerza la reconstrucción de la base de datos vectorial para indexar nuevos archivos.")
 async def rebuild_db():

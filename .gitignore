@@ -223,13 +223,20 @@ pip-selfcheck.json
 db
 
 # Project-specific ignores
-*.txt
 *.log
 !requirements.txt
 scripts/debug/*.sh
 scripts/tests/output/
+logs/*.txt
+logs/*.log
+
+# Temporary test outputs (keep in logs/ folder)
 migration_output.txt
 error.log
 test_links_output.txt
 debug_output.txt
+
+# Database files
+/db/
+db/
 

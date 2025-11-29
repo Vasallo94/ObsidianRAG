@@ -1,14 +1,14 @@
 import logging
-from typing import Tuple, List
+from typing import List, Tuple
 
 from langchain.chains import ConversationalRetrievalChain
 from langchain.prompts import PromptTemplate
-from langchain_ollama import OllamaLLM
-from langchain.retrievers import EnsembleRetriever, ContextualCompressionRetriever
-from langchain_community.retrievers import BM25Retriever
+from langchain.retrievers import ContextualCompressionRetriever, EnsembleRetriever
 from langchain.retrievers.document_compressors import CrossEncoderReranker
 from langchain_community.cross_encoders import HuggingFaceCrossEncoder
+from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
+from langchain_ollama import OllamaLLM
 
 from config.settings import settings
 
@@ -84,7 +84,9 @@ def create_retriever_with_reranker(db):
     Returns:
         Configured retriever (with or without reranker)
     """
-    logger.info("Configurando Hybrid Search (BM25 + Vector)")
+    logger.info("=" * 50)
+    logger.info("📦 Configurando Hybrid Search (BM25 + Vector)")
+    logger.info("=" * 50)
     
     # Obtener documentos de la DB para BM25
     try:
@@ -96,25 +98,34 @@ def create_retriever_with_reranker(db):
             logger.warning("No se encontraron documentos en la DB")
             raise NoDocumentsFoundError("Base de datos vacía")
         
+        # Log stats about links in metadata
+        docs_with_links = sum(1 for m in metadatas if m.get('links', ''))
+        total_links = sum(len(m.get('links', '').split(',')) for m in metadatas if m.get('links', ''))
+        logger.info(f"📊 DB Stats: {len(texts)} chunks, {docs_with_links} con enlaces, {total_links} enlaces totales")
+        
         # Create BM25 retriever
         docs = [Document(page_content=t, metadata=m) for t, m in zip(texts, metadatas)]
         bm25_retriever = BM25Retriever.from_documents(docs)
         bm25_retriever.k = settings.bm25_k
+        logger.info(f"   BM25 k={settings.bm25_k}")
         
         # Create vector retriever
         chroma_retriever = db.as_retriever(search_kwargs={"k": settings.retrieval_k})
+        logger.info(f"   Vector k={settings.retrieval_k}")
         
         # Combine with ensemble
         ensemble_retriever = EnsembleRetriever(
             retrievers=[bm25_retriever, chroma_retriever],
             weights=[settings.bm25_weight, settings.vector_weight]
         )
+        logger.info(f"   Ensemble weights: BM25={settings.bm25_weight}, Vector={settings.vector_weight}")
         
-        logger.info("EnsembleRetriever creado exitosamente")
+        logger.info("✅ EnsembleRetriever creado exitosamente")
         
         # Add reranker if enabled
         if settings.use_reranker:
-            logger.info(f"Añadiendo reranker: {settings.reranker_model}")
+            logger.info(f"🔄 Añadiendo reranker: {settings.reranker_model}")
+            logger.info(f"   Reranker top_n={settings.reranker_top_n}")
             try:
                 model = HuggingFaceCrossEncoder(model_name=settings.reranker_model)
                 compressor = CrossEncoderReranker(model=model, top_n=settings.reranker_top_n)
@@ -123,19 +134,20 @@ def create_retriever_with_reranker(db):
                     base_compressor=compressor,
                     base_retriever=ensemble_retriever
                 )
-                logger.info("Reranker configurado exitosamente")
+                logger.info("✅ Reranker configurado exitosamente")
+                logger.info("=" * 50)
                 return retriever
             except Exception as e:
-                logger.warning(f"No se pudo configurar reranker: {e}. Usando ensemble sin reranker")
+                logger.warning(f"⚠️ No se pudo configurar reranker: {e}. Usando ensemble sin reranker")
                 return ensemble_retriever
         else:
-            logger.info("Reranker deshabilitado en configuración")
+            logger.info("ℹ️ Reranker deshabilitado en configuración")
             return ensemble_retriever
             
     except NoDocumentsFoundError:
         raise
     except Exception as e:
-        logger.error(f"Error creando retriever: {e}. Usando solo Vector Search")
+        logger.error(f"❌ Error creando retriever: {e}. Usando solo Vector Search")
         return db.as_retriever(search_kwargs={"k": settings.retrieval_k})
 
 

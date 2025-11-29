@@ -1,20 +1,36 @@
+import gc
 import logging
 import os
+import re
 import shutil
 import uuid
-import gc
 from typing import Optional
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import ObsidianLoader
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.document_loaders import ObsidianLoader
 from langchain_core.documents import Document
+from langchain_huggingface import HuggingFaceEmbeddings
 
 from config.settings import settings
 from services.metadata_tracker import FileMetadataTracker
 
 logger = logging.getLogger(__name__)
+
+
+def extract_obsidian_links(content: str) -> list[str]:
+    """Extract Obsidian wikilinks [[Note]] or [[Note|Alias]] from content"""
+    links = re.findall(r'\[\[(.*?)\]\]', content)
+    # Clean links (remove alias like [[Note|Alias]] -> Note)
+    cleaned_links = [link.split('|')[0].strip() for link in links]
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_links = []
+    for link in cleaned_links:
+        if link and link not in seen:
+            seen.add(link)
+            unique_links.append(link)
+    return unique_links
 
 
 def get_embeddings() -> HuggingFaceEmbeddings:
@@ -36,7 +52,7 @@ def get_text_splitter() -> RecursiveCharacterTextSplitter:
 
 
 def load_documents_from_paths(filepaths: set[str]) -> list[Document]:
-    """Load documents from specific file paths"""
+    """Load documents from specific file paths with link extraction"""
     documents = []
     
     for filepath in filepaths:
@@ -44,11 +60,21 @@ def load_documents_from_paths(filepaths: set[str]) -> list[Document]:
             with open(filepath, 'r', encoding='utf-8') as f:
                 content = f.read()
             
+            # Extract Obsidian links
+            links = extract_obsidian_links(content)
+            
             doc = Document(
                 page_content=content,
-                metadata={'source': filepath}
+                metadata={
+                    'source': filepath,
+                    'links': ','.join(links) if links else ''
+                }
             )
             documents.append(doc)
+            
+            if links:
+                logger.debug(f"Extracted {len(links)} links from {filepath}")
+                
         except Exception as e:
             logger.warning(f"Could not load {filepath}: {e}")
     
@@ -63,6 +89,7 @@ def load_all_obsidian_documents(obsidian_path: str) -> list[Document]:
     documents = []
     total_files = 0
     loaded_files = 0
+    total_links_found = 0
     
     for root, _, files in os.walk(obsidian_path):
         for file in files:
@@ -71,10 +98,6 @@ def load_all_obsidian_documents(obsidian_path: str) -> list[Document]:
                 filepath = os.path.join(root, file)
                 
                 try:
-                    # Debug specific file
-                    if "Fractales.md" in file:
-                        logger.info(f"!!! FOUND Fractales.md at {filepath} !!!")
-
                     # Try UTF-8 first
                     try:
                         with open(filepath, 'r', encoding='utf-8') as f:
@@ -86,31 +109,29 @@ def load_all_obsidian_documents(obsidian_path: str) -> list[Document]:
                             content = f.read()
                     
                     if content.strip():  # Skip empty files
-                        # Extract links
-                        import re
-                        links = re.findall(r'\[\[(.*?)\]\]', content)
-                        # Clean links (remove alias like [[Note|Alias]])
-                        cleaned_links = [link.split('|')[0] for link in links]
+                        # Extract links using centralized function
+                        links = extract_obsidian_links(content)
+                        total_links_found += len(links)
                         
                         doc = Document(
                             page_content=content,
                             metadata={
                                 'source': filepath,
-                                'links': ','.join(cleaned_links)
+                                'links': ','.join(links) if links else ''
                             }
                         )
                         documents.append(doc)
                         loaded_files += 1
-                        if "Fractales.md" in file:
-                            logger.info(f"!!! LOADED Fractales.md successfully. Content len: {len(content)} !!!")
-                    else:
-                        if "Fractales.md" in file:
-                            logger.warning(f"!!! Fractales.md is empty !!!")
+                        
+                        # Debug logging for files with many links
+                        if len(links) > 5:
+                            logger.debug(f"Note '{file}' has {len(links)} links: {links[:5]}...")
                         
                 except Exception as e:
                     logger.error(f"Error cargando archivo {filepath}: {e}")
     
     logger.info(f"Se cargaron {loaded_files} de {total_files} notas de Obsidian")
+    logger.info(f"Total de enlaces extraídos: {total_links_found}")
     return documents
 
 

@@ -1,8 +1,9 @@
 """Centralized configuration for ObsidianRAG using Pydantic Settings"""
 import os
 from typing import Optional
-from pydantic_settings import BaseSettings
+
 from pydantic import Field
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -31,17 +32,17 @@ class Settings(BaseSettings):
         default="BAAI/bge-reranker-v2-m3",
         description="Cross-encoder model for reranking (Multilingual)"
     )
-    reranker_top_n: int = Field(default=3, description="Number of docs after reranking")
+    reranker_top_n: int = Field(default=6, description="Number of docs after reranking (increased from 3)")
     
     # ========== Retrieval Configuration ==========
-    chunk_size: int = Field(default=800, description="Text chunk size")
-    chunk_overlap: int = Field(default=200, description="Overlap between chunks")
-    retrieval_k: int = Field(default=8, description="Number of documents to retrieve")
-    bm25_k: int = Field(default=3, description="Number of BM25 results")
+    chunk_size: int = Field(default=1500, description="Text chunk size (increased for better context)")
+    chunk_overlap: int = Field(default=300, description="Overlap between chunks")
+    retrieval_k: int = Field(default=12, description="Number of documents to retrieve before reranking")
+    bm25_k: int = Field(default=5, description="Number of BM25 results")
     
     # Ensemble weights
-    bm25_weight: float = Field(default=0.5, description="Weight for BM25 retriever")
-    vector_weight: float = Field(default=0.5, description="Weight for vector retriever")
+    bm25_weight: float = Field(default=0.4, description="Weight for BM25 retriever")
+    vector_weight: float = Field(default=0.6, description="Weight for vector retriever")
     
     # ========== API Configuration ==========
     api_host: str = Field(default="0.0.0.0", description="FastAPI host")
@@ -55,7 +56,6 @@ class Settings(BaseSettings):
     )
     
     # ========== Feature Flags ==========
-    enable_streaming: bool = Field(default=True, description="Enable streaming responses")
     enable_incremental_indexing: bool = Field(default=True, description="Enable incremental DB updates")
     enable_analytics: bool = Field(default=True, description="Enable analytics logging")
     

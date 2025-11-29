@@ -1,297 +1,248 @@
-# ObsidianRAG Project
+# ObsidianRAG 🧠
 
-## Description
-ObsidianRAG (Retrieval-Augmented Generation) is a powerful system to query notes stored in Obsidian with a local language model. It uses an advanced LangChain-based pipeline with **hybrid search** (BM25 + Vector), **reranking**, and **incremental indexing** for optimal performance.
+Sistema RAG (Retrieval-Augmented Generation) para consultar notas de Obsidian usando **LangGraph** y **LLMs locales** con Ollama.
 
-## ✨ Features
+![Python](https://img.shields.io/badge/Python-3.11+-blue)
+![LangGraph](https://img.shields.io/badge/LangGraph-0.2+-green)
+![Ollama](https://img.shields.io/badge/Ollama-Local_LLMs-orange)
+![License](https://img.shields.io/badge/License-MIT-yellow)
 
-### 🔍 **Advanced Retrieval**
-- **Hybrid Search**: Combines BM25 (keyword-based) and Vector Search (semantic) for better results
-- **Reranker**: CrossEncoder reranking for improved relevance (20-30% accuracy boost)
-- **Better Embeddings**: Multilingual model optimized for Spanish (`paraphrase-multilingual-mpnet-base-v2`)
+## ✨ Características
 
-### ⚡ **Performance**
-- **Incremental Indexing**: Only reindex changed files (10x faster updates)
-- **Smart Chunking**: Optimized for Markdown structure (800 chars, 200 overlap)
-- **Metadata Tracking**: Automatic change detection
+### 🔍 Búsqueda Híbrida Avanzada
+- **Vectorial + BM25**: Combina embeddings semánticos con búsqueda léxica
+- **CrossEncoder Reranker**: BAAI/bge-reranker-v2-m3 para reordenar por relevancia
+- **GraphRAG**: Expansión de contexto siguiendo enlaces `[[wikilinks]]` de Obsidian
 
-### 🎯 **User Experience**
-- **Streaming Responses**: Real-time answer generation via Server-Sent Events
-- **Session Management**: Maintains conversation context
-- **CORS Support**: Easy integration with web frontends
-- **Better Error Handling**: Specific exceptions for different error cases
+### 🤖 Integración LLM
+- **Ollama Local**: Modelos seleccionables (qwen2.5, qwen3, gemma3, deepseek-r1)
+- **Sin dependencias cloud**: Todo corre localmente
+- **Streaming deshabilitado**: Respuestas completas para mayor estabilidad
 
-### 🛠️ **Developer Experience**
-- **Centralized Configuration**: All settings in one place (`config/settings.py`)
-- **Feature Flags**: Enable/disable features easily
-- **Comprehensive Logging**: Track everything that happens
-- **Type Hints**: Full typing support
+### 📊 Análisis y Métricas
+- **Scores de relevancia**: Cada fuente muestra su score de reranker (0-100%)
+- **Logging detallado**: Trazabilidad completa de cada consulta
+- **Indexación incremental**: Solo procesa notas modificadas
 
-## Components
-- **cerebro.py**: FastAPI service (v2.0) with streaming support and advanced error handling
-- **app.py**: Streamlit interface for queries and responses
-- **config/settings.py**: Centralized configuration management
-- **services/db_service.py**: Vector DB with incremental indexing
-- **services/qa_service.py**: QA chain with reranker support
-- **services/metadata_tracker.py**: File change detection
+## 🏗️ Arquitectura
 
-## Installation
-
-Clone the repository:
-```sh
-git clone <https://github.com/Vasallo94/ObsidianRAG.git>
-cd <PROJECT_DIRECTORY>
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+│  Streamlit  │────▶│   FastAPI    │────▶│  LangGraph  │
+│    (UI)     │◀────│   (API)      │◀────│   (Agent)   │
+└─────────────┘     └──────────────┘     └─────────────┘
+                           │                    │
+                           ▼                    ▼
+                    ┌──────────────┐     ┌─────────────┐
+                    │   ChromaDB   │     │   Ollama    │
+                    │  (Vectores)  │     │   (LLM)     │
+                    └──────────────┘     └─────────────┘
 ```
 
-Create a virtual environment and activate it:
-```sh
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\\Scripts\\activate
-```
+### Componentes Principales
 
-Install the dependencies:
-```sh
-pip install -r requirements.txt
-# or using uv
+| Archivo | Descripción |
+|---------|-------------|
+| `cerebro.py` | Servidor FastAPI, punto de entrada principal |
+| `app.py` | Interfaz Streamlit (opcional) |
+| `services/qa_agent.py` | Agente LangGraph con nodos retrieve→generate |
+| `services/qa_service.py` | Configuración del retriever híbrido |
+| `services/db_service.py` | Gestión de ChromaDB e indexación |
+| `config/settings.py` | Configuración centralizada (Pydantic) |
+
+## 🚀 Instalación
+
+### Requisitos Previos
+- Python 3.11+
+- [Ollama](https://ollama.ai/) instalado y corriendo
+- UV (gestor de paquetes recomendado)
+
+### Pasos
+
+```bash
+# Clonar repositorio
+git clone https://github.com/tu-usuario/ObsidianRAG.git
+cd ObsidianRAG
+
+# Instalar dependencias
 uv sync
+
+# Configurar variables de entorno
+cp .env.example .env
+# Editar .env con tu configuración
 ```
 
-## Configuration
+### Variables de Entorno (.env)
 
-### 1. Install Ollama and Qwen 2.5
+```env
+# Ruta a tu vault de Obsidian
+OBSIDIAN_PATH=/ruta/a/tu/vault
 
-Visit [OLLAMA](https://ollama.com) and download the appropriate version for your OS.
+# Modelo LLM (Ollama)
+LLM_MODEL=qwen2.5
 
-Once installed, download the Qwen 2.5 model:
-```sh
+# Modelo de embeddings
+EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-mpnet-base-v2
+
+# Reranker
+USE_RERANKER=true
+RERANKER_MODEL=BAAI/bge-reranker-v2-m3
+RERANKER_TOP_N=6
+
+# Chunking
+CHUNK_SIZE=1500
+CHUNK_OVERLAP=300
+
+# Retrieval
+RETRIEVAL_K=12
+BM25_K=5
+BM25_WEIGHT=0.4
+VECTOR_WEIGHT=0.6
+```
+
+## 📖 Uso
+
+### Iniciar el Servidor API
+
+```bash
+uv run cerebro.py
+```
+
+El servidor estará disponible en `http://localhost:8000`
+
+### Iniciar la Interfaz Web (Opcional)
+
+```bash
+uv run streamlit run app.py
+```
+
+La UI estará en `http://localhost:8501`
+
+### API Endpoints
+
+#### POST /ask
+Realiza una consulta al sistema RAG.
+
+```bash
+curl -X POST http://localhost:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "¿Cuáles son mis notas sobre Python?"}'
+```
+
+**Respuesta:**
+```json
+{
+  "answer": "Según tus notas...",
+  "sources": [
+    {
+      "source": "Programación/Python Basics.md",
+      "score": 0.92,
+      "preview": "..."
+    }
+  ],
+  "timing": {
+    "total": 2.5,
+    "retrieval": 0.8,
+    "generation": 1.7
+  }
+}
+```
+
+#### GET /health
+Verifica el estado del servidor.
+
+#### GET /stats
+Obtiene estadísticas de la base de datos.
+
+## ⚙️ Configuración Avanzada
+
+### Parámetros Clave (settings.py)
+
+| Parámetro | Descripción | Default |
+|-----------|-------------|---------|
+| `reranker_top_n` | Documentos finales tras reranking | 6 |
+| `retrieval_k` | Documentos antes del reranking | 12 |
+| `chunk_size` | Tamaño de chunks de texto | 1500 |
+| `chunk_overlap` | Solapamiento entre chunks | 300 |
+| `bm25_weight` | Peso de búsqueda léxica | 0.4 |
+| `vector_weight` | Peso de búsqueda vectorial | 0.6 |
+
+### Modelos Disponibles
+
+**LLM (Ollama):**
+- `qwen2.5` - Recomendado para español
+- `qwen3` - Nueva versión con mejor razonamiento
+- `gemma3` - Modelo de Google
+- `deepseek-r1` - Optimizado para razonamiento
+
+**Embeddings:**
+- `sentence-transformers/paraphrase-multilingual-mpnet-base-v2` - Default multilingüe
+- `embeddinggemma` (Ollama) - 300M params, 100+ idiomas
+
+## 🔧 Solución de Problemas
+
+### Ollama no disponible
+```bash
+# Verificar que Ollama esté corriendo
+ollama serve
+
+# Descargar modelo si es necesario
 ollama pull qwen2.5
 ```
 
-Verify installation:
-```sh
-ollama list
+### Base de datos corrupta
+```bash
+# Eliminar y reconstruir
+rm -rf db/
+uv run cerebro.py
 ```
 
-### 2. Environment Configuration
+### Contexto fragmentado
+El sistema detecta automáticamente documentos fragmentados y lee el contenido completo usando `read_full_document()`.
 
-Create a `.env` file in the project's root directory:
-
-```env
-# Required
-OBSIDIAN_PATH=/path/to/your/obsidian/vault
-
-# Optional (defaults shown)
-# Model Configuration
-LLM_MODEL=qwen2.5
-EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-mpnet-base-v2
-RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
-
-# Retrieval Configuration
-CHUNK_SIZE=800
-CHUNK_OVERLAP=200
-RETRIEVAL_K=4
-BM25_K=3
-
-# Feature Flags
-USE_RERANKER=true
-ENABLE_STREAMING=true
-ENABLE_INCREMENTAL_INDEXING=true
-
-# API Configuration
-API_HOST=0.0.0.0
-API_PORT=8000
+### Enlaces vacíos en metadata
+Si la base de datos fue creada antes de la extracción de enlaces:
+```bash
+rm -rf db/
+uv run cerebro.py
 ```
 
-## Usage
-
-### Run the API
-To start the FastAPI backend:
-```sh
-python cerebro.py
-```
-
-The API will be available at http://localhost:8000.
-
-**API Documentation**: Visit http://localhost:8000/docs for interactive Swagger UI.
-
-### Run the UI
-To start the Streamlit interface:
-```sh
-streamlit run app.py
-```
-
-The Streamlit application will be available at http://localhost:8501.
-
-## API Endpoints
-
-### POST /ask
-Standard question endpoint with full response.
-
-**Request**:
-```json
-{
-  "text": "¿Qué notas tengo sobre Python?",
-  "session_id": "optional-session-id"
-}
-```
-
-**Response**:
-```json
-{
-  "question": "¿Qué notas tengo sobre Python?",
-  "result": "Basado en tus notas...",
-  "sources": [{"source": "/path/to/note.md"}],
-  "text_blocks": ["..."],
-  "process_time": 1.23,
-  "session_id": "uuid"
-}
-```
-
-### POST /ask_stream
-Streaming endpoint for real-time responses via Server-Sent Events.
-
-**Usage**:
-```javascript
-const eventSource = new EventSource('/ask_stream', {
-  method: 'POST',
-  body: JSON.stringify({text: "¿Qué es Python?"})
-});
-
-eventSource.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  if (data.type === 'chunk') {
-    console.log(data.value); // Stream chunk
-  } else if (data.type === 'done') {
-    eventSource.close();
-  }
-};
-```
-
-### POST /rebuild_db
-Force complete database rebuild.
-
-**Response**:
-```json
-{
-  "message": "Base de datos reconstruida exitosamente"
-}
-```
-
-## What Can You Ask?
-
-- Summaries of content across multiple notes
-- Specific information stored in your notes with exact quotes
-- Context-aware responses combining multiple sources
-- Follow-up questions maintaining conversation context
-
-## Architecture
+## 📂 Estructura del Proyecto
 
 ```
-┌─────────────┐
-│  Streamlit  │ ← User Interface
-│   (app.py)  │
-└──────┬──────┘
-       │ HTTP/SSE
-       ▼
-┌─────────────────┐
-│    FastAPI      │ ← API Layer (cerebro.py)
-│   + CORS        │
-└──────┬──────────┘
-       │
-   ┌───┴────────────────────┐
-   │                        │
-   ▼                        ▼
-┌──────────────┐    ┌─────────────────┐
-│  QA Service  │    │   DB Service    │
-│  + Reranker  │    │  + Incremental  │
-└──────┬───────┘    └────────┬────────┘
-       │                     │
-       ▼                     ▼
-┌──────────────┐    ┌─────────────────┐
-│ Ollama LLM   │    │   ChromaDB      │
-│  (Qwen 2.5)  │    │  + Embeddings   │
-└──────────────┘    └─────────────────┘
-```
-
-## Performance Benchmarks
-
-| Operation | Before | After | Improvement |
-|-----------|--------|-------|-------------|
-| Initial Index (100 notes) | ~45s | ~45s | Baseline |
-| Reindex (no changes) | ~45s | ~0.5s | **90x faster** |
-| Reindex (5 new notes) | ~45s | ~3s | **15x faster** |
-| Query Accuracy | 65% | 85% | **+20%** (reranker) |
-
-## Troubleshooting
-
-### Error: "Ollama no está corriendo"
-Make sure Ollama is running:
-```sh
-ollama serve
-```
-
-### Error: "OBSIDIAN_PATH environment variable is not set"
-Create a `.env` file with your Obsidian vault path.
-
-### Slow first query after startup
-First query loads the embedding model. Subsequent queries are faster.
-
-### Database doesn't update with new notes
-Click "Reindexar Base de Datos" in the Streamlit sidebar, or disable incremental indexing in settings.
-
-## Contributing
-If you wish to contribute to the project, please open an issue or submit a pull request. Make sure to follow best practices and provide a clear description of the changes made.
-
-## Recent Improvements (v2.0)
-
-### ✅ Implemented
-- ✅ Centralized configuration system
-- ✅ Incremental indexing (10-90x faster updates)
-- ✅ CrossEncoder reranker (+20-30% accuracy)
-- ✅ Better multilingual embeddings
-- ✅ Streaming responses (Server-Sent Events)
-- ✅ Improved error handling
-- ✅ CORS support
-- ✅ Session management
-
-### 🔮 Future Improvements
-- Search by note similarity
-- Export conversations to Markdown
-- Analytics dashboard
-- Support for multiple LLM providers
-- Advanced metadata filtering
-- Obsidian plugin integration
-
-## License
-This project is licensed under the MIT License. See the LICENSE file for more information.
-
-## File Structure
-```
-.
-├── app.py                    # Streamlit interface
-├── cerebro.py                # FastAPI backend (v2.0)
+ObsidianRAG/
+├── cerebro.py              # FastAPI server
+├── app.py                  # Streamlit UI
 ├── config/
-│   ├── __init__.py
-│   └── settings.py          # Centralized configuration
+│   └── settings.py         # Configuración Pydantic
 ├── services/
-│   ├── db_service.py        # Vector DB + incremental indexing
-│   ├── qa_service.py        # QA chain + reranker
-│   └── metadata_tracker.py  # File change detection
+│   ├── qa_agent.py         # LangGraph agent
+│   ├── qa_service.py       # Retriever híbrido
+│   ├── db_service.py       # ChromaDB + indexación
+│   └── metadata_tracker.py # Detección de cambios
 ├── utils/
-│   └── logger.py            # Logging utilities
-├── db/                      # Vector database storage
-│   ├── metadata.json        # File metadata tracker
-│   └── cache/              # Embedding cache (future)
-├── logs/                    # Application logs
-├── requirements.txt         # Python dependencies
-├── pyproject.toml          # Project metadata
-└── README.md               # This file
+│   └── logger.py           # Configuración de logging
+├── scripts/
+│   ├── debug/              # Utilidades de debug
+│   └── tests/              # Tests de integración
+└── db/                     # Base de datos ChromaDB
 ```
 
-## Credits
-Built with ❤️ using:
-- [LangChain](https://python.langchain.com/)
-- [ChromaDB](https://www.trychroma.com/)
-- [FastAPI](https://fastapi.tiangolo.com/)
-- [Streamlit](https://streamlit.io/)
-- [Ollama](https://ollama.com/)
+## 🔮 Roadmap
+
+- [ ] Selector de modelos en UI (qwen3, gemma3, deepseek)
+- [ ] Integración de embeddinggemma desde Ollama
+- [ ] Soporte para APIs externas (Google AI)
+- [ ] Modo conversacional con memoria
+- [ ] Dashboard de analytics
+
+## 📄 Licencia
+
+MIT License - ver [LICENSE](LICENSE)
+
+## 🙏 Créditos
+
+- [LangGraph](https://github.com/langchain-ai/langgraph) - Framework de agentes
+- [Ollama](https://ollama.ai/) - LLMs locales
+- [ChromaDB](https://www.trychroma.com/) - Base de datos vectorial
+- [Streamlit](https://streamlit.io/) - Framework de UI
