@@ -6,7 +6,7 @@ import shutil
 import uuid
 from typing import Optional, Union
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import ObsidianLoader
 from langchain_core.documents import Document
