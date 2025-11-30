@@ -422,6 +422,8 @@ obsidianrag/
   - [x] `obsidianrag config [--show] [--set KEY VALUE]`
 - [x] Crear `__main__.py` para `python -m obsidianrag`
 - [x] Agregar entry points en `pyproject.toml`
+- [x] **🆕 Añadir `--model` arg** para especificar modelo LLM
+- [x] **🆕 Añadir `--reranker/--no-reranker` flag** para activar/desactivar reranker
 
 #### 1.4 Mejorar Configuración
 - [x] Hacer que `--vault` sea obligatorio si no hay `.env`
@@ -528,6 +530,8 @@ obsidianrag/
 - [x] Spawn automático desde plugin (child_process)
 - [x] Restart automático si el proceso muere (con exponential backoff)
 - [x] Soporte multi-plataforma (Windows, macOS, Linux)
+- [x] **🆕 Stop mejorado** - Mata proceso por puerto (`lsof -ti:PORT | xargs kill`)
+- [x] **🆕 CLI args pasados correctamente** (`--model`, `--reranker/--no-reranker`)
 
 #### 4.3 API Client
 - [x] Implementar cliente HTTP integrado en `main.ts`
@@ -561,14 +565,16 @@ obsidianrag/
 
 #### 4.6 UI: Settings Tab
 - [x] Implementar `SettingsTab`
-  - [x] Configuración del modelo LLM desde UI (dropdown)
+  - [x] Configuración del modelo LLM desde UI (dropdown **dinámico desde Ollama**)
   - [x] Configuración del puerto del servidor
   - [x] Toggle para auto-start del servidor
   - [x] Botón para reindexar vault
-  - [x] Mostrar estado del servidor (indicador visual live)
+  - [x] Mostrar estado del servidor (indicador visual live, **auto-refresh cada 3s**)
   - [x] Mostrar estadísticas del vault (tabla con métricas)
   - [x] Toggle para usar/deshabilitar reranker
   - [x] Reset Setup Wizard
+  - [x] **🆕 Reset to Defaults** - Restaurar todas las configuraciones
+  - [x] **🆕 Modelos dinámicos desde Ollama** - Solo muestra modelos instalados
 
 #### 4.7 UI: Status Bar
 - [x] Implementar status bar item (separado)
@@ -577,7 +583,7 @@ obsidianrag/
   - [x] Click para abrir chat (online) o iniciar server (offline)
 
 #### 4.8 UI: Modals
-- [x] Setup Modal - Guía de primera instalación (3 pasos)
+- [x] Setup Modal - Guía de primera instalación (3 pasos, **modelos dinámicos**)
 - [x] Ask Modal - Modal rápido para preguntas (Cmd+P)
 - [x] Error Modal - Errores amigables con sugerencias
 
@@ -615,6 +621,12 @@ obsidianrag/
 - [x] Verificación de existencia de archivos antes de mostrar
 - [x] Búsqueda fallback por nombre de archivo
 - [x] Ocultar fuentes que no existen en el vault
+
+#### 4.13 🆕 Ollama Integration (No planificado originalmente)
+- [x] **Fetch de modelos disponibles** desde API de Ollama (`/api/tags`)
+- [x] **Dropdown dinámico** solo muestra modelos instalados por el usuario
+- [x] **Fallback a text input** si Ollama no está corriendo
+- [x] **Auto-switch de modelo** si el seleccionado ya no existe
 
 ### Fase 5: Testing del Plugin
 > **Estado**: 🔄 En progreso  

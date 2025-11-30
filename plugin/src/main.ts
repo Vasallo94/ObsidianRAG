@@ -160,6 +160,20 @@ interface StatsResponse {
 }
 
 // ============================================================================
+// Ollama Models Interface
+// ============================================================================
+
+interface OllamaModel {
+  name: string;
+  modified_at: string;
+  size: number;
+}
+
+interface OllamaModelsResponse {
+  models: OllamaModel[];
+}
+
+// ============================================================================
 // Main Plugin Class
 // ============================================================================
 
@@ -352,6 +366,7 @@ export default class ObsidianRAGPlugin extends Plugin {
           String(this.settings.serverPort),
           "--model",
           this.settings.llmModel,
+          this.settings.useReranker ? "--reranker" : "--no-reranker",
         ];
       } else {
         // macOS and Linux
@@ -364,6 +379,7 @@ export default class ObsidianRAGPlugin extends Plugin {
           String(this.settings.serverPort),
           "--model",
           this.settings.llmModel,
+          this.settings.useReranker ? "--reranker" : "--no-reranker",
         ];
       }
 
@@ -430,11 +446,36 @@ export default class ObsidianRAGPlugin extends Plugin {
 
   async stopServer(): Promise<void> {
     this.isRestarting = true; // Prevent auto-restart
+    
+    // First, try to kill the tracked process
     if (this.serverProcess) {
       this.serverProcess.kill();
       this.serverProcess = null;
-      new Notice("ObsidianRAG server stopped");
     }
+    
+    // Also try to kill any process on the port (in case server was started externally)
+    try {
+      const { exec } = require("child_process");
+      const platform = process.platform;
+      
+      if (platform === 'win32') {
+        // Windows: use netstat and taskkill
+        exec(`for /f "tokens=5" %a in ('netstat -aon ^| find ":${this.settings.serverPort}" ^| find "LISTENING"') do taskkill /F /PID %a`, 
+          (error: Error | null) => {
+            if (error) console.log("[ObsidianRAG] No process found on port (Windows)");
+          });
+      } else {
+        // macOS/Linux: use lsof and kill
+        exec(`lsof -ti:${this.settings.serverPort} | xargs kill -9 2>/dev/null`, 
+          (error: Error | null) => {
+            if (error) console.log("[ObsidianRAG] No process found on port");
+          });
+      }
+    } catch (e) {
+      console.log("[ObsidianRAG] Could not kill process by port:", e);
+    }
+    
+    new Notice("ObsidianRAG server stopped");
     this.isRestarting = false;
     this.updateStatusBar();
   }
@@ -448,6 +489,30 @@ export default class ObsidianRAGPlugin extends Plugin {
       return response.ok;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Fetch available models from Ollama
+   */
+  async getOllamaModels(): Promise<string[]> {
+    try {
+      const response = await fetch("http://localhost:11434/api/tags", {
+        method: "GET",
+        signal: AbortSignal.timeout(5000),
+      });
+      
+      if (!response.ok) {
+        console.warn("[ObsidianRAG] Failed to fetch Ollama models");
+        return [];
+      }
+      
+      const data: OllamaModelsResponse = await response.json();
+      // Extract model names (remove :latest suffix for cleaner display)
+      return data.models.map(m => m.name.replace(":latest", ""));
+    } catch (error) {
+      console.warn("[ObsidianRAG] Ollama not available:", error);
+      return [];
     }
   }
 
@@ -697,18 +762,22 @@ class SetupModal extends Modal {
   plugin: ObsidianRAGPlugin;
   private currentStep: number = 0;
   private contentEl_modal!: HTMLElement;
+  private availableModels: string[] = [];
 
   constructor(app: App, plugin: ObsidianRAGPlugin) {
     super(app);
     this.plugin = plugin;
   }
 
-  onOpen() {
+  async onOpen() {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("obsidianrag-setup-modal");
 
     contentEl.createEl("h2", { text: "🤖 Welcome to ObsidianRAG!" });
+
+    // Fetch available models
+    this.availableModels = await this.plugin.getOllamaModels();
 
     this.contentEl_modal = contentEl.createDiv("setup-content");
     this.showStep(0);
@@ -780,19 +849,42 @@ class SetupModal extends Modal {
           await this.plugin.saveSettings();
         }));
 
-    // Model
-    new Setting(el)
-      .setName("LLM Model")
-      .addDropdown(dropdown => dropdown
-        .addOption("gemma3", "Gemma 3")
-        .addOption("llama3.2", "Llama 3.2")
-        .addOption("mistral", "Mistral")
-        .addOption("qwen2.5", "Qwen 2.5")
-        .setValue(this.plugin.settings.llmModel)
-        .onChange(async (value) => {
+    // Model - populated from Ollama
+    const modelSetting = new Setting(el)
+      .setName("LLM Model");
+    
+    if (this.availableModels.length > 0) {
+      modelSetting.addDropdown(dropdown => {
+        this.availableModels.forEach(model => {
+          dropdown.addOption(model, model);
+        });
+        
+        // Set current value, or first available if current not in list
+        const currentModel = this.plugin.settings.llmModel;
+        if (this.availableModels.includes(currentModel)) {
+          dropdown.setValue(currentModel);
+        } else if (this.availableModels.length > 0) {
+          dropdown.setValue(this.availableModels[0]);
+          this.plugin.settings.llmModel = this.availableModels[0];
+          this.plugin.saveSettings();
+        }
+        
+        dropdown.onChange(async (value) => {
           this.plugin.settings.llmModel = value;
           await this.plugin.saveSettings();
-        }));
+        });
+      });
+    } else {
+      modelSetting
+        .setDesc("⚠️ Ollama not detected. Make sure Ollama is running.")
+        .addText(text => text
+          .setPlaceholder("gemma3")
+          .setValue(this.plugin.settings.llmModel)
+          .onChange(async (value) => {
+            this.plugin.settings.llmModel = value;
+            await this.plugin.saveSettings();
+          }));
+    }
 
     // Auto-start
     new Setting(el)
@@ -1476,17 +1568,21 @@ class ChatView extends ItemView {
 class ObsidianRAGSettingTab extends PluginSettingTab {
   plugin: ObsidianRAGPlugin;
   private statusRefreshInterval: number | null = null;
+  private availableModels: string[] = [];
 
   constructor(app: App, plugin: ObsidianRAGPlugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
 
-  display(): void {
+  async display(): Promise<void> {
     const { containerEl } = this;
     containerEl.empty();
 
     containerEl.createEl("h2", { text: "ObsidianRAG Settings" });
+
+    // Fetch available models from Ollama
+    this.availableModels = await this.plugin.getOllamaModels();
 
     // Server Status Section (live)
     this.renderServerStatus(containerEl);
@@ -1523,23 +1619,49 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
           })
       );
 
-    // LLM Model
-    new Setting(containerEl)
+    // LLM Model - dynamically populated from Ollama
+    const modelSetting = new Setting(containerEl)
       .setName("LLM Model")
-      .setDesc("Ollama model to use for answering questions")
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOption("gemma3", "Gemma 3 (recommended)")
-          .addOption("llama3.2", "Llama 3.2")
-          .addOption("mistral", "Mistral")
-          .addOption("qwen2.5", "Qwen 2.5")
-          .addOption("phi3", "Phi 3")
-          .setValue(this.plugin.settings.llmModel)
-          .onChange(async (value) => {
-            this.plugin.settings.llmModel = value;
-            await this.plugin.saveSettings();
-          })
-      );
+      .setDesc("Ollama model to use for answering questions");
+
+    if (this.availableModels.length > 0) {
+      modelSetting.addDropdown((dropdown) => {
+        // Add all available models from Ollama
+        this.availableModels.forEach(model => {
+          dropdown.addOption(model, model);
+        });
+        
+        // Set current value, or first available if current not in list
+        const currentModel = this.plugin.settings.llmModel;
+        if (this.availableModels.includes(currentModel)) {
+          dropdown.setValue(currentModel);
+        } else if (this.availableModels.length > 0) {
+          // Current model not available, switch to first available
+          dropdown.setValue(this.availableModels[0]);
+          this.plugin.settings.llmModel = this.availableModels[0];
+          this.plugin.saveSettings();
+          new Notice(`Model '${currentModel}' not found. Switched to '${this.availableModels[0]}'`);
+        }
+        
+        dropdown.onChange(async (value) => {
+          this.plugin.settings.llmModel = value;
+          await this.plugin.saveSettings();
+        });
+      });
+    } else {
+      // Ollama not available - show warning and text input
+      modelSetting
+        .setDesc("⚠️ Could not connect to Ollama. Make sure Ollama is running (ollama serve).")
+        .addText((text) =>
+          text
+            .setPlaceholder("gemma3")
+            .setValue(this.plugin.settings.llmModel)
+            .onChange(async (value) => {
+              this.plugin.settings.llmModel = value;
+              await this.plugin.saveSettings();
+            })
+        );
+    }
 
     // RAG Settings Section
     containerEl.createEl("h3", { text: "RAG Settings" });
@@ -1636,12 +1758,41 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
 
     // Reset Setup
     containerEl.createEl("h3", { text: "Advanced" });
+    
+    new Setting(containerEl)
+      .setName("Reset to Defaults")
+      .setDesc("Reset all settings to their default values")
+      .addButton((button) =>
+        button
+          .setButtonText("Reset All Settings")
+          .setWarning()
+          .onClick(async () => {
+            // Keep hasCompletedSetup true so wizard doesn't show again
+            const keepSetupComplete = this.plugin.settings.hasCompletedSetup;
+            
+            // Reset to defaults
+            this.plugin.settings = {
+              pythonPath: "/usr/local/bin/obsidianrag-server",
+              serverPort: 8000,
+              llmModel: "gemma3",
+              autoStartServer: true,
+              showSourceLinks: true,
+              useReranker: true,
+              hasCompletedSetup: keepSetupComplete,
+            };
+            
+            await this.plugin.saveSettings();
+            new Notice("Settings reset to defaults");
+            this.display(); // Refresh the settings page
+          })
+      );
+
     new Setting(containerEl)
       .setName("Reset Setup Wizard")
       .setDesc("Show the setup wizard again on next reload")
       .addButton((button) =>
         button
-          .setButtonText("Reset")
+          .setButtonText("Reset Wizard")
           .onClick(async () => {
             this.plugin.settings.hasCompletedSetup = false;
             await this.plugin.saveSettings();
@@ -1656,36 +1807,46 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
     
     const statusEl = statusContainer.createDiv("status-display");
     
+    // Initial render
+    await this.updateServerStatusDisplay(statusEl);
+    
+    // Set up periodic refresh (every 3 seconds)
+    if (this.statusRefreshInterval) {
+      window.clearInterval(this.statusRefreshInterval);
+    }
+    this.statusRefreshInterval = window.setInterval(async () => {
+      await this.updateServerStatusDisplay(statusEl);
+    }, 3000);
+  }
+
+  private async updateServerStatusDisplay(statusEl: HTMLElement): Promise<void> {
     const running = await this.plugin.isServerRunning();
+    
+    // Clear previous classes and content
+    statusEl.removeClass("status-online", "status-offline");
+    statusEl.empty();
     
     if (running) {
       statusEl.addClass("status-online");
-      statusEl.innerHTML = `
-        <span class="status-indicator">●</span>
-        <span class="status-text">Server is running</span>
-      `;
+      statusEl.createSpan({ cls: "status-indicator", text: "●" });
+      statusEl.createSpan({ cls: "status-text", text: " Server is running" });
       
       // Fetch and display health info
       try {
         const response = await fetch(`http://127.0.0.1:${this.plugin.settings.serverPort}/health`);
         if (response.ok) {
           const health: HealthResponse = await response.json();
-          statusEl.innerHTML += `
-            <div class="status-details">
-              <div>Version: ${health.version}</div>
-              <div>Model: ${health.model}</div>
-            </div>
-          `;
+          const detailsEl = statusEl.createDiv("status-details");
+          detailsEl.createDiv({ text: `Version: ${health.version || "unknown"}` });
+          detailsEl.createDiv({ text: `Model: ${health.model || "unknown"}` });
         }
       } catch {
         // Ignore fetch errors
       }
     } else {
       statusEl.addClass("status-offline");
-      statusEl.innerHTML = `
-        <span class="status-indicator">●</span>
-        <span class="status-text">Server is offline</span>
-      `;
+      statusEl.createSpan({ cls: "status-indicator", text: "●" });
+      statusEl.createSpan({ cls: "status-text", text: " Server is offline" });
     }
   }
 
