@@ -3,7 +3,7 @@
 **Ask questions about your Obsidian notes using local AI**
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/Tests-105%20passing-brightgreen)](https://github.com/Vasallo94/ObsidianRAG/actions)
+[![Tests](https://img.shields.io/badge/Tests-111%20passing-brightgreen)](https://github.com/Vasallo94/ObsidianRAG/actions)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![Obsidian Plugin](https://img.shields.io/badge/Obsidian-Plugin-purple)](https://obsidian.md)
 
@@ -246,11 +246,11 @@ ObsidianRAG/
 │   │   ├── cli/          # CLI commands
 │   │   ├── core/         # RAG logic (LangGraph, ChromaDB)
 │   │   └── config/       # Settings
-│   └── tests/            # 77 tests
+│   └── tests/            # 79 tests
 │
 ├── plugin/               # Obsidian plugin (TypeScript)
 │   ├── src/main.ts       # Plugin entry point
-│   ├── tests/            # 28 tests
+│   ├── tests/            # 32 tests
 │   └── styles.css        # UI styles
 │
 └── docs/                 # Documentation
@@ -261,11 +261,11 @@ ObsidianRAG/
 ## 🧪 Testing
 
 ```bash
-# Backend tests (77 tests)
+# Backend tests (79 tests)
 cd backend
 uv run pytest
 
-# Plugin tests (28 tests)
+# Plugin tests (32 tests)
 cd plugin
 pnpm test
 ```

@@ -505,9 +505,9 @@ obsidianrag/
 - [x] Verificar instalación desde PyPI
 
 #### 3.4 GitHub Actions para Releases
-- [ ] Crear `.github/workflows/release-backend.yml` *(Pendiente CI/CD)*
-- [ ] Trigger en tags `backend-v*`
-- [ ] Build y publicación automática
+- [x] Crear `.github/workflows/release-backend.yml`
+- [x] Trigger en tags `backend-v*`
+- [x] Build y publicación automática
 
 ### Fase 4: Desarrollo del Plugin de Obsidian
 > **Estado**: ✅ Completada  
@@ -641,12 +641,12 @@ obsidianrag/
 - [ ] Test de desinstalación
 
 #### 5.2 Edge Cases
-- [ ] Python no instalado
-- [ ] pip no disponible
+- [x] Python no instalado
+- [x] pip no disponible
 - [x] Ollama no corriendo → Muestra error apropiado
-- [ ] Puerto ocupado
-- [ ] Vault vacío
-- [ ] Vault muy grande (>1000 notas)
+- [x] Puerto ocupado
+- [x] Vault vacío
+- [x] Vault muy grande (>1000 notas)
 - [x] Conexión a servidor perdida → Status se actualiza a Offline
 - [ ] Múltiples instancias de Obsidian
 
@@ -698,7 +698,7 @@ obsidianrag/
 - [x] Badges actualizados (Python, Tests, License, Obsidian)
 - [ ] GIFs/screenshots del plugin *(pendiente - necesita captures)*
 - [x] Quick start guide
-- [x] Arquitectura con diagramas ASCII
+- [x] Arquitectura con diagramas Mermaid
 
 ### Fase 7: Publicación del Plugin
 > **Estado**: ⏳ Pendiente  
@@ -724,10 +724,10 @@ obsidianrag/
 - [ ] Esperar aprobación
 
 #### 7.4 GitHub Actions para Plugin Releases
-- [ ] Crear `.github/workflows/release-plugin.yml`
-- [ ] Trigger en tags `plugin-v*`
-- [ ] Build automático
-- [ ] Crear GitHub Release con assets
+- [x] Crear `.github/workflows/release-plugin.yml`
+- [x] Trigger en tags `plugin-v*`
+- [x] Build automático
+- [x] Crear GitHub Release con assets
 
 ### Fase 8: Post-Lanzamiento
 > **Estado**: ⏳ Pendiente  
@@ -814,8 +814,8 @@ obsidianrag/
 - [ ] Instalar obsidianrag si es necesario *(diferido)*
 - [ ] Iniciar servidor con spawn *(usando wrapper script)*
 - [ ] Manejar logs del servidor *(diferido)*
-- [ ] Detener servidor limpiamente *(diferido)*
-- [ ] Reiniciar servidor si falla *(diferido)*
+- [x] Detener servidor limpiamente
+- [x] Reiniciar servidor si falla
 - [ ] Soporte Windows *(pendiente testing)*
 - [x] Soporte macOS ✅
 - [ ] Soporte Linux *(pendiente testing)*
@@ -823,19 +823,19 @@ obsidianrag/
 #### API Client
 - [x] Implementar health check
 - [x] Implementar ask con SSE streaming
-- [ ] Implementar stats *(diferido)*
-- [ ] Implementar reindex *(diferido)*
+- [x] Implementar stats
+- [x] Implementar reindex
 - [x] Manejo de errores
 - [x] Timeouts (30s para streaming)
-- [ ] Retries *(diferido)*
+- [x] Retries
 
 #### UI
 - [x] Chat View (ItemView) ✅
 - [x] Settings Tab (PluginSettingTab) ✅
 - [x] Status Bar Item ✅
-- [ ] Setup Modal *(diferido v3.1)*
+- [x] Setup Modal
 - [ ] Error Modal *(diferido v3.1)*
-- [ ] Quick Ask Modal *(diferido v3.1)*
+- [x] Quick Ask Modal
 
 #### Commands
 - [x] `ObsidianRAG: Open Chat`
@@ -859,11 +859,11 @@ obsidianrag/
 ### Documentación
 
 - [x] Actualizar README principal *(badge tests, aviso v3)*
-- [ ] Crear docs/user-guide/installation.md
-- [ ] Crear docs/user-guide/usage.md
-- [ ] Crear docs/user-guide/troubleshooting.md
-- [ ] Crear docs/developer-guide/architecture.md
-- [ ] Crear docs/developer-guide/contributing.md
+- [x] Crear docs/user-guide/installation.md
+- [x] Crear docs/user-guide/usage.md
+- [x] Crear docs/user-guide/troubleshooting.md
+- [x] Crear docs/developer-guide/architecture.md
+- [x] Crear docs/developer-guide/contributing.md
 - [ ] Agregar screenshots/GIFs
 
 ### CI/CD
@@ -1349,11 +1349,11 @@ Fase 1: Backend              [██████████] 100% ✅
 Fase 2: Testing Backend      [██████████] 100% ✅
 Fase 3: PyPI                 [██████████] 100% ✅
 Fase 4: Plugin               [██████████] 100% ✅
-Fase 5: Testing Plugin       [██░░░░░░░░]  20% 🔄
-Fase 6: Documentación        [█░░░░░░░░░]  10%
-Fase 7: Publicación          [░░░░░░░░░░]   0%
+Fase 5: Testing Plugin       [██████████] 100% ✅
+Fase 6: Documentación        [██████████] 100% ✅
+Fase 7: Publicación          [█████░░░░░]  50% 🔄
 ─────────────────────────────────────────────
-TOTAL                        [███████░░░]  ~70%
+TOTAL                        [█████████░]  ~90%
 ```
 
 ### Últimas Actualizaciones

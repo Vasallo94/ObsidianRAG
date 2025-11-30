@@ -1,0 +1,40 @@
+name: Release Plugin
+
+on:
+  push:
+    tags:
+      - "plugin-v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+
+      - name: Install dependencies
+        working-directory: ./plugin
+        run: npm install
+
+      - name: Build plugin
+        working-directory: ./plugin
+        run: npm run build
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            plugin/main.js
+            plugin/manifest.json
+            plugin/styles.css
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

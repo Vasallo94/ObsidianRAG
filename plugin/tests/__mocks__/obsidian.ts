@@ -2,6 +2,11 @@
 export class Plugin {
   app: any;
   manifest: any;
+
+  constructor(app: any, manifest: any) {
+    this.app = app;
+    this.manifest = manifest;
+  }
   
   async loadData() { return {}; }
   async saveData(data: any) {}
@@ -9,6 +14,19 @@ export class Plugin {
   addRibbonIcon(icon: string, title: string, callback: () => void) {}
   addSettingTab(tab: any) {}
   registerView(type: string, viewCreator: any) {}
+}
+
+export class Modal {
+  app: any;
+  contentEl: any = document.createElement('div');
+  
+  constructor(app: any) {
+    this.app = app;
+  }
+  
+  open() {}
+  close() {}
+  setContent(content: string) {}
 }
 
 export class ItemView {
