@@ -19,6 +19,7 @@ from typing_extensions import TypedDict
 from obsidianrag.config import get_settings
 from obsidianrag.core.qa_service import create_retriever_with_reranker, verify_ollama_available
 from obsidianrag.utils.logger import setup_logger
+from obsidianrag.utils.ollama import get_available_ollama_models, pull_ollama_model
 
 logger = setup_logger(__name__)
 
@@ -351,23 +352,10 @@ def generate_node(state: AgentState, llm_chain):
 # --- Graph Construction ---
 
 
-def get_available_ollama_models() -> List[str]:
-    """Get list of available models in Ollama"""
-    settings = get_settings()
-    try:
-        import httpx
-
-        response = httpx.get(f"{settings.ollama_base_url}/api/tags", timeout=5.0)
-        if response.status_code == 200:
-            return [m["name"].split(":")[0] for m in response.json().get("models", [])]
-    except Exception as e:
-        logger.warning(f"Could not get Ollama models: {e}")
-    return []
-
-
 def verify_llm_model(model: str) -> str:
-    """Verify LLM model is available, return fallback if not"""
-    available_models = get_available_ollama_models()
+    """Verify LLM model is available, download if needed, return fallback if not"""
+    settings = get_settings()
+    available_models = get_available_ollama_models(settings.ollama_base_url)
 
     if not available_models:
         logger.warning("⚠️ Could not get list of Ollama models")
@@ -377,7 +365,13 @@ def verify_llm_model(model: str) -> str:
         logger.info(f"✅ LLM model '{model}' available in Ollama")
         return model
 
-    logger.warning(f"⚠️ Model '{model}' not found in Ollama")
+    # Model not available, try to download it (15 min timeout for large LLMs)
+    logger.warning(f"⚠️ Model '{model}' not found in Ollama. Attempting to download...")
+    if pull_ollama_model(model, timeout=900):
+        return model  # Downloaded successfully
+
+    # Download failed, try fallbacks
+    logger.warning(f"⚠️ Could not download '{model}'. Looking for alternatives...")
     logger.warning(f"   Available models: {available_models}")
 
     fallback_models = ["gemma3", "qwen2.5", "llama3.2", "mistral", "llama2"]

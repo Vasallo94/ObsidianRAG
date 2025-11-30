@@ -6,15 +6,15 @@
  */
 
 import {
-    App,
-    ItemView,
-    MarkdownRenderer,
-    Modal,
-    Notice,
-    Plugin,
-    PluginSettingTab,
-    Setting,
-    WorkspaceLeaf,
+  App,
+  ItemView,
+  MarkdownRenderer,
+  Modal,
+  Notice,
+  Plugin,
+  PluginSettingTab,
+  Setting,
+  WorkspaceLeaf,
 } from "obsidian";
 
 // ============================================================================

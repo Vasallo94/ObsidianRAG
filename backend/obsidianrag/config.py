@@ -23,18 +23,18 @@ class Settings(BaseSettings):
     llm_model: str = Field(default="gemma3", description="Ollama LLM model")
     ollama_base_url: str = Field(default="http://localhost:11434", description="Ollama API URL")
 
-    # Embeddings: default HuggingFace (works without additional configuration)
+    # Embeddings: default Ollama with embeddinggemma (fast, multilingual)
     embedding_provider: str = Field(
-        default="huggingface",
-        description="Embeddings provider: 'huggingface' (recommended) or 'ollama'",
+        default="ollama",
+        description="Embeddings provider: 'ollama' (recommended) or 'huggingface'",
     )
     embedding_model: str = Field(
         default="sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
-        description="HuggingFace embeddings model",
+        description="HuggingFace embeddings model (fallback)",
     )
     ollama_embedding_model: str = Field(
-        default="nomic-embed-text",
-        description="Ollama embeddings model (if embedding_provider=ollama)",
+        default="embeddinggemma",
+        description="Ollama embeddings model (default: embeddinggemma)",
     )
 
     # Reranker configuration

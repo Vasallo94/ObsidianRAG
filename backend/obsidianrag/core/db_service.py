@@ -17,6 +17,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from obsidianrag.config import get_settings
 from obsidianrag.core.metadata_tracker import FileMetadataTracker
+from obsidianrag.utils.ollama import pull_ollama_model
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,8 @@ def extract_obsidian_links(content: str) -> List[str]:
 def get_embeddings() -> Embeddings:
     """Get configured embeddings model based on provider setting.
 
-    Falls back to HuggingFace if Ollama embedding model is not available.
+    Automatically downloads the model if not available in Ollama.
+    Falls back to HuggingFace if download fails.
     """
     settings = get_settings()
     provider = settings.embedding_provider.lower()
@@ -59,11 +61,18 @@ def get_embeddings() -> Embeddings:
                 ]
                 if model not in available_models:
                     logger.warning(
-                        f"⚠️ Model '{model}' not found in Ollama. Available models: {available_models}"
+                        f"⚠️ Model '{model}' not found in Ollama. Attempting to download..."
                     )
-                    logger.warning(f"💡 Run: ollama pull {model}")
-                    logger.info("🔄 Falling back to HuggingFace embeddings...")
-                    provider = "huggingface"  # Fallback
+                    # Try to pull the model automatically (10 min timeout for embeddings)
+                    if pull_ollama_model(model, timeout=600):
+                        embeddings = OllamaEmbeddings(
+                            model=model, base_url=settings.ollama_base_url
+                        )
+                        logger.info(f"✅ Ollama embeddings ({model}) loaded successfully")
+                        return embeddings
+                    else:
+                        logger.warning("🔄 Falling back to HuggingFace embeddings...")
+                        provider = "huggingface"  # Fallback
                 else:
                     embeddings = OllamaEmbeddings(model=model, base_url=settings.ollama_base_url)
                     logger.info(f"✅ Ollama embeddings ({model}) loaded successfully")
