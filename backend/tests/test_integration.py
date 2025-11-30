@@ -57,6 +57,7 @@ class TestFullRAGPipeline:
 class TestAPIIntegration:
     """Integration tests for API endpoints with full backend."""
 
+    @pytest.mark.integration
     def test_ask_endpoint_full_flow(self, test_client, mock_vault, mock_ollama_available):
         """Test /ask endpoint with complete backend."""
 
