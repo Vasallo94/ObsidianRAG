@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-ObsidianRAG is a RAG (Retrieval-Augmented Generation) system for querying Obsidian notes. Version 3 restructures it as:
+ObsidianRAG is a RAG (Retrieval-Augmented Generation) system for querying Obsidian notes. Version 3 is structured as:
 - **Backend**: Python package (`obsidianrag`) distributed via PyPI with CLI
-- **Frontend**: TypeScript Obsidian plugin (planned)
+- **Frontend**: TypeScript Obsidian plugin with native chat UI
 
 ## Repository Structure
 
@@ -15,100 +15,111 @@ ObsidianRAG/
 │   │   ├── __init__.py        # Package exports, version
 │   │   ├── __main__.py        # python -m obsidianrag entry
 │   │   ├── config.py          # Pydantic Settings
-│   │   ├── api/server.py      # FastAPI server
+│   │   ├── api/server.py      # FastAPI server + SSE streaming
 │   │   ├── cli/main.py        # Typer CLI
 │   │   └── core/              # Business logic
 │   │       ├── db_service.py      # ChromaDB management
 │   │       ├── qa_agent.py        # LangGraph RAG agent
 │   │       ├── qa_service.py      # Hybrid retriever
 │   │       └── metadata_tracker.py # Incremental indexing
-│   ├── tests/                 # pytest tests
-│   ├── pyproject.toml         # Package config
-│   └── uv.lock
-├── plugin/                    # Obsidian plugin (TypeScript) - PLANNED
-├── docs/                      # Documentation - PLANNED
-├── .github/
-│   ├── workflows/             # CI/CD
-│   └── instructions/          # Development guidelines
-└── V3_MIGRATION_PLAN.md       # Full migration plan
+│   └── tests/                 # pytest tests (77 tests)
+│
+├── plugin/                    # Obsidian plugin (TypeScript)
+│   ├── src/main.ts           # All-in-one plugin (1800+ lines)
+│   ├── tests/                # Jest tests (28 tests)
+│   └── styles.css            # UI styles
+│
+├── docs/                     # User documentation
+│   ├── CONTRIBUTING.md
+│   ├── TESTING_GUIDE.md
+│   └── TROUBLESHOOTING.md
+│
+└── .github/instructions/     # Development guidelines (for AI agents)
 ```
 
 ## Quick Reference
 
-### Run Commands (from `backend/`)
+### Backend Commands (from `backend/`)
 ```bash
-uv run obsidianrag serve --vault-path /path/to/vault  # Start server
-uv run obsidianrag index --vault-path /path/to/vault  # Index vault
-uv run obsidianrag status --vault-path /path/to/vault # Check status
-uv run obsidianrag ask --vault-path /path "question"  # CLI query
-uv run pytest tests/ -v                                # Run tests
-uv run ruff check obsidianrag/ tests/                 # Lint
-uv run ruff format obsidianrag/ tests/                # Format
+uv run obsidianrag serve --vault /path --model gemma3   # Start server
+uv run obsidianrag serve --vault /path --no-reranker    # Without reranker
+uv run pytest tests/ -v                                  # Run tests
+uv run ruff check obsidianrag/ tests/ --fix             # Lint + fix
 ```
 
-### Key Technologies
-- **Python**: 3.11+ with uv for dependency management
-- **LLM**: Ollama (local) with langchain-ollama
-- **Embeddings**: HuggingFace sentence-transformers
-- **Vector DB**: ChromaDB (persistent)
-- **Reranker**: BAAI/bge-reranker-v2-m3
-- **API**: FastAPI with uvicorn
-- **CLI**: Typer with Rich
-- **Tests**: pytest with pytest-asyncio, pytest-cov
+### Plugin Commands (from `plugin/`)
+```bash
+pnpm install          # Install deps
+pnpm run dev          # Watch mode build
+pnpm run build        # Production build
+pnpm test             # Run Jest tests
+```
 
-### API Endpoints
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/health` | GET | Health check |
-| `/ask` | POST | Ask question (JSON: `{"question": "..."}`) |
-| `/stats` | GET | Vault statistics |
-| `/rebuild_db` | POST | Force reindex |
+## Key Technologies
+- **Python**: 3.11+ with uv, FastAPI, LangGraph, ChromaDB
+- **TypeScript**: Obsidian API, esbuild, Jest
+- **LLM**: Ollama (local) - models fetched via `/api/tags`
+- **Streaming**: SSE (Server-Sent Events) for real-time responses
+
+## Architecture Patterns
+
+### Data Flow
+```
+Question → Hybrid Search (BM25+Vector) → Rerank → GraphRAG → LLM → Stream Answer
+```
+
+### Plugin ↔ Backend Communication
+- Plugin spawns backend via `child_process.spawn()`
+- Communication via HTTP (`localhost:8000`)
+- Streaming via SSE (`/ask/stream` endpoint)
+- Models fetched from Ollama API (`localhost:11434/api/tags`)
+
+### CLI Args from Plugin
+Plugin passes settings to backend via CLI:
+```typescript
+spawn(pythonPath, ["serve", "--vault", path, "--model", model, "--reranker"]);
+```
 
 ## Development Guidelines
 
-📚 **See detailed instructions in `.github/instructions/`:**
+📚 **See `.github/instructions/` for detailed patterns:**
 
 | File | Topics |
 |------|--------|
-| [python-backend.md](instructions/python-backend.md) | Python code style, patterns, imports, error handling |
-| [testing.md](instructions/testing.md) | pytest fixtures, mocking, coverage, test patterns |
-| [obsidian-plugin.md](instructions/obsidian-plugin.md) | TypeScript plugin structure, Obsidian API, UI components |
-| [rag-patterns.md](instructions/rag-patterns.md) | LangGraph, hybrid search, reranking, GraphRAG |
-| [ci-cd.md](instructions/ci-cd.md) | GitHub Actions, releases, PyPI publishing |
+| `python-backend.md` | Python code style, Pydantic, FastAPI patterns |
+| `testing.md` | pytest fixtures, mocking ChromaDB/Ollama |
+| `obsidian-plugin.md` | TypeScript, Obsidian API, UI components |
+| `rag-patterns.md` | LangGraph nodes, hybrid search, reranking |
+| `streaming-patterns.md` | **SSE streaming, Ollama API, dynamic UI** |
+| `ci-cd.md` | GitHub Actions, PyPI publishing |
 
-## Data Flow
+## Critical Patterns
 
+### Ollama Model Detection
+```typescript
+// Fetch available models from Ollama
+const response = await fetch("http://localhost:11434/api/tags");
+const { models } = await response.json();
 ```
-Question → Retrieve (hybrid search) → Rerank → GraphRAG expansion → Generate (LLM) → Answer
+
+### Kill Server by Port (cross-platform)
+```typescript
+// macOS/Linux
+exec(`lsof -ti:${port} | xargs kill -9`);
+// Windows
+exec(`for /f "tokens=5" %a in ('netstat -aon | find ":${port}"') do taskkill /F /PID %a`);
 ```
 
-## Configuration
+### Auto-refresh Settings Status
+```typescript
+setInterval(() => this.updateStatusDisplay(), 3000);
+```
 
-All settings via Pydantic `BaseSettings` in `config.py`:
-- Environment variables with `OBSIDIANRAG_` prefix
-- `.env` file support
-- CLI arguments override environment
+## Project Status
 
-### Key Settings
-| Setting | Default | Purpose |
-|---------|---------|---------|
-| `llm_model` | gemma3 | Ollama model name |
-| `use_reranker` | true | Enable CrossEncoder reranking |
-| `reranker_top_n` | 6 | Docs after reranking |
-| `retrieval_k` | 12 | Docs before reranking |
-| `chunk_size` | 1500 | Text chunk size |
-| `bm25_weight` | 0.4 | BM25 weight in hybrid search |
-| `vector_weight` | 0.6 | Vector weight in hybrid search |
+- ✅ Phase 1-4: Backend + Plugin complete
+- ✅ Phase 5: Testing (macOS ✅, Windows/Linux pending)
+- ✅ Phase 6: Documentation complete
+- ⏳ Phase 7: Community Plugins submission
 
-## Phase Status (v3 Migration)
-
-- ✅ Phase 0: Planning & Issues
-- ✅ Phase 1: Backend restructure
-- 🔄 Phase 2: Testing (in progress)
-- ⏳ Phase 3: Obsidian Plugin
-- ⏳ Phase 4: Integration
-- ⏳ Phase 5: Polish
-- ⏳ Phase 6: Documentation
-- ⏳ Phase 7: Release
-
-See `V3_MIGRATION_PLAN.md` and GitHub Issues #20-#28 for details.
+See `V3_MIGRATION_PLAN.md` for full details.

@@ -1,336 +1,345 @@
-# Guía de Testing - ObsidianRAG Plugin v1.0.0
+# Testing Guide - ObsidianRAG Plugin v1.0.0
 
-## ✅ Estado Actual
+## ✅ Current Status
 
 **Version**: 1.0.0  
-**Build**: Completado (47KB main.js)  
-**Commit**: Pusheado a `v3-plugin`
+**Build**: Completed (47KB main.js)  
+**Commit**: Pushed to `v3-plugin`
 
 ---
 
-## 🧪 Testing en Windows
+## 🧪 Testing on Windows
 
-### Prerequisitos
+### Prerequisites
 
 1. **Windows 10/11**
-2. **Obsidian instalado**: [Descargar aquí](https://obsidian.md/download)
+2. **Obsidian installed**: [Download here](https://obsidian.md/download)
 3. **Python 3.11+**: [python.org](https://www.python.org/downloads/)
 4. **Ollama**: [ollama.com/download](https://ollama.com/download)
 
-### Pasos de Instalación
+### Installation Steps
 
-#### 1. Instalar Backend
+#### 1. Install Backend
 
 ```powershell
-# Abrir PowerShell como usuario normal (no admin)
+# Open PowerShell as normal user (not admin)
 
-# Verificar Python
-python --version  # Debe ser 3.11+
+# Verify Python
+python --version  # Should be 3.11+
 
-# Instalar backend
+# Install backend
 pip install obsidianrag
 
-# Verificar instalación
+# Verify installation
 pip show obsidianrag
 ```
 
-#### 2. Instalar y Configurar Ollama
+#### 2. Install and Configure Ollama
 
 ```powershell
-# Descargar modelo LLM
+# Download LLM model
 ollama pull gemma3
 
-# Verificar que Ollama está corriendo
-# Debe abrirse automáticamente tras instalación
-# Verificar con:
+# Verify Ollama is running
+# Should open automatically after installation
+# Verify with:
 curl http://localhost:11434/api/tags
 ```
 
-#### 3. Instalar Plugin Manualmente
+#### 3. Install Plugin Manually
 
 ```powershell
-# Navegar a tu vault de Obsidian
-cd "C:\Users\TuUsuario\Documents\MiVault"
+# Navigate to your Obsidian vault
+cd "C:\Users\YourUser\Documents\MyVault"
 
-# Crear directorio del plugin
+# Create plugin directory
 mkdir -p .obsidian\plugins\obsidianrag
 
-# Copiar archivos del release
-# (Descargar de GitHub release: main.js, manifest.json, styles.css)
-# Y copiarlos a .obsidian\plugins\obsidianrag\
+# Copy release files
+# (Download from GitHub release: main.js, manifest.json, styles.css)
+# And copy to .obsidian\plugins\obsidianrag\
 ```
 
-#### 4. Activar Plugin en Obsidian
+#### 4. Enable Plugin in Obsidian
 
-1. Abrir Obsidian
+1. Open Obsidian
 2. Settings → Community Plugins → Browse
-3. Buscar "ObsidianRAG" en la lista local
+3. Find "ObsidianRAG" in the local list
 4. Enable
 
-### Tests a Realizar en Windows
+### Tests to Run on Windows
 
-#### ✅ Test 1: Auto-start del servidor
+#### ✅ Test 1: Server Auto-start
 
-1. **Cerrar Obsidian completamente**
-2. **Abrir Obsidian**
-3. **Verificar**: 
-   - Ribbon icon 🧠 aparece
-   - Click en el icon
-   - Status debería mostrar "● Online" (puede tardar 5-10 segundos)
+1. **Close Obsidian completely**
+2. **Open Obsidian**
+3. **Verify**: 
+   - Ribbon icon 🧠 appears
+   - Click on the icon
+   - Status should show "● Online" (may take 5-10 seconds)
 
-**Si falla**:
-- Abrir PowerShell: `obsidianrag serve --vault "C:\path\to\vault"`
-- Verificar errores
+**If it fails**:
+- Open PowerShell: `obsidianrag serve --vault "C:\path\to\vault"`
+- Check for errors
 
-#### ✅ Test 2: Hacer una pregunta
+#### ✅ Test 2: Ask a Question
 
-1. **Click en 🧠 o Command Palette → "ObsidianRAG: Open Chat"**
-2. **Escribir**: "What notes do I have about testing?"
-3. **Verificar**:
-   - Status cambia a "Retrieving..."
-   - Respuesta aparece (puede tardar 10-30s la primera vez)
-   - Fuentes se muestran con 🟢/🟡/🟠 indicators
-   - Links a notas son clickeables
+1. **Click on 🧠 or Command Palette → "ObsidianRAG: Open Chat"**
+2. **Type**: "What notes do I have about testing?"
+3. **Verify**:
+   - Status changes to "Retrieving..."
+   - Answer appears (may take 10-30s the first time)
+   - Sources are shown with 🟢/🟡/🟠 indicators
+   - Note links are clickable
 
-**Si falla**:
+**If it fails**:
 - Settings → ObsidianRAG → Check Status
-- Verificar puerto 8000 no esté ocupado
+- Verify port 8000 is not occupied
 
-#### ✅ Test 3: Source links funcionan
+#### ✅ Test 3: Source Links Work
 
-1. **Hacer una pregunta**
-2. **Click en una fuente (nota linkada)**
-3. **Verificar**: Se abre la nota correspondiente
+1. **Ask a question**
+2. **Click on a source (linked note)**
+3. **Verify**: The corresponding note opens
 
 #### ✅ Test 4: Settings UI
 
 1. **Settings → ObsidianRAG**
-2. **Verificar**:
-   - Dropdown de modelos muestra modelos instalados (gemma3)
-   - Server Status muestra "Online"
-   - Vault stats muestran número de notas
-3. **Cambiar modelo**: Seleccionar otro modelo (si tienes varios)
+2. **Verify**:
+   - Model dropdown shows installed models (gemma3)
+   - Server Status shows "Online"
+   - Vault stats show number of notes
+3. **Change model**: Select another model (if you have several)
 4. **Stop Server** → **Start Server**
-5. **Verificar**: Server reinicia correctamente
+5. **Verify**: Server restarts correctly
 
 #### ✅ Test 5: Edge Cases
 
-**Puerto ocupado**:
+**Occupied port**:
 ```powershell
-# En PowerShell, iniciar servidor en puerto 8000
+# In PowerShell, start a server on port 8000
 python -m http.server 8000
 ```
-- Abrir Obsidian
-- Settings → ObsidianRAG → Server Port → cambiar a `8001`
+- Open Obsidian
+- Settings → ObsidianRAG → Server Port → change to `8001`
 - Stop → Start Server
-- Verificar funciona en nuevo puerto
+- Verify it works on the new port
 
-**Ollama no corriendo**:
-- Cerrar Ollama (Task Manager → cerrar proceso)
-- Intentar hacer pregunta
-- Verificar: Error message claro sobre Ollama
+**Ollama not running**:
+- Close Ollama (Task Manager → end process)
+- Try to ask a question
+- Verify: Clear error message about Ollama
 
 ---
 
-## 🐧 Testing en Linux
+## 🐧 Testing on Linux
 
-### Prerequisitos
+### Prerequisites
 
 1. **Ubuntu 22.04+ / Debian / Fedora / Arch**
-2. **Obsidian AppImage**: [Descargar aquí](https://obsidian.md/download)
+2. **Obsidian AppImage**: [Download here](https://obsidian.md/download)
 3. **Python 3.11+**
 4. **Ollama**
 
-### Pasos de Instalación
+### Installation Steps
 
-#### 1. Instalar Backend
+#### 1. Install Backend
 
 ```bash
-# Verificar Python
-python3 --version  # Debe ser 3.11+
+# Verify Python
+python3 --version  # Should be 3.11+
 
-# Instalar backend
+# Install backend
 pip3 install obsidianrag
-# o con user flag si no tienes permisos
+# or with user flag if you don't have permissions
 pip3 install --user obsidianrag
 
-# Agregar a PATH si es necesario
+# Add to PATH if needed
 export PATH="$HOME/.local/bin:$PATH"
 
-# Verificar
+# Verify
 obsidianrag --help
 ```
 
-#### 2. Instalar Ollama
+#### 2. Install Ollama
 
 ```bash
-# Instalación rápida
+# Quick installation
 curl -fsSL https://ollama.com/install.sh | sh
 
-# Iniciar servicio
+# Start service
 sudo systemctl start ollama
-# o manualmente
+# or manually
 ollama serve
 
-# Descargar modelo
+# Download model
 ollama pull gemma3
 ```
 
-#### 3. Instalar Plugin
+#### 3. Install Plugin
 
 ```bash
-# Navegar a vault
-cd ~/Documents/ObsidianVault  # o donde esté tu vault
+# Navigate to vault
+cd ~/Documents/ObsidianVault  # or wherever your vault is
 
-# Crear directorio
+# Create directory
 mkdir -p .obsidian/plugins/obsidianrag
 
-# Descargar release files desde GitHub
+# Download release files from GitHub
 cd .obsidian/plugins/obsidianrag
 wget https://github.com/Vasallo94/ObsidianRAG/releases/download/v1.0.0/main.js
 wget https://github.com/Vasallo94/ObsidianRAG/releases/download/v1.0.0/manifest.json
 wget https://github.com/Vasallo94/ObsidianRAG/releases/download/v1.0.0/styles.css
 ```
 
-#### 4. Dar Permisos a Obsidian AppImage
+#### 4. Give Permissions to Obsidian AppImage
 
 ```bash
 chmod +x Obsidian-*.AppImage
 ./Obsidian-*.AppImage
 ```
 
-### Tests en Linux (Mismos que Windows)
+### Tests to Run on Linux
 
-Los tests son idénticos a Windows. Verificar:
+Same tests as Windows, but with Linux-specific commands:
 
-1. ✅ Auto-start
-2. ✅ Query funcionando
-3. ✅ Source links
-4. ✅ Settings UI
-5. ✅ Edge cases
-
-### Tests Adicionales Linux-Específicos
-
-#### ✅ Test 6: Permisos
+#### ✅ Test 1: Check Port
 
 ```bash
-# Verificar backend tiene permisos de ejecución
-which obsidianrag
-ls -la $(which obsidianrag)
+# Check if port 8000 is in use
+lsof -i :8000
+
+# Kill process if needed
+lsof -ti:8000 | xargs kill -9
 ```
 
-#### ✅ Test 7: Systemd (si Ollama se instaló como servicio)
+#### ✅ Test 2: Check Ollama Service
 
 ```bash
-# Verificar Ollama service
-sudo systemctl status ollama
+# Check Ollama status
+systemctl status ollama
 
-# Si no está corriendo
+# If not running
 sudo systemctl start ollama
-```
-
----
-
-## 📊 Checklist Completo de Testing
-
-### Windows
-
-- [ ] Python 3.11+ instalado y en PATH
-- [ ] `pip install obsidianrag` funciona
-- [ ] Ollama descargado e instalado
-- [ ] `ollama pull gemma3` exitoso
-- [ ] Plugin copiado a `.obsidian/plugins/obsidianrag/`
-- [ ] Plugin habilitado en Settings
-- [ ] Auto-start funciona
-- [ ] Query básica retorna respuesta
-- [ ] Source links clickeables
-- [ ] Settings UI funciona
-- [ ] Cambio de modelo funciona
-- [ ] Restart server funciona
-- [ ] Error handling correcto (Ollama offline)
-
-### Linux
-
-- [ ] Python 3.11+ instalado
-- [ ] `pip3 install obsidianrag` funciona
-- [ ] `obsidianrag` en PATH
-- [ ] Ollama instalado (curl script)
-- [ ] Ollama service corriendo o `ollama serve` manual
-- [ ] `ollama pull gemma3` exitoso
-- [ ] Plugin descargado a `.obsidian/plugins/obsidianrag/`
-- [ ] Obsidian AppImage tiene permisos de ejecución
-- [ ] Plugin habilitado en Settings
-- [ ] Auto-start funciona
-- [ ] Query básica retorna respuesta
-- [ ] Source links clickeables
-- [ ] Settings UI funciona
-- [ ] Cambio de modelo funciona
-- [ ] Restart server funciona
-- [ ] Error handling correcto
-
----
-
-## 🐛 Problemas Comunes y Soluciones
-
-### Windows
-
-**"python no encontrado"**:
-```powershell
-# Instalar desde python.org
-# Marcar "Add to PATH" durante instalación
-```
-
-**"pip no es un comando reconocido"**:
-```powershell
-python -m pip install obsidianrag
-```
-
-**"Port 8000 already in use"**:
-- Settings → ObsidianRAG → Server Port → 8001
-
-### Linux
-
-**"command not found: obsidianrag"**:
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-# Agregar a ~/.bashrc o ~/.zshrc para permanencia
-```
-
-**"Permission denied"**:
-```bash
-# Usar --user
-pip3 install --user obsidianrag
-```
-
-**Ollama no inicia**:
-```bash
-# Ver logs
-sudo journalctl -u ollama -f
-
-# Iniciar manualmente
+# or
 ollama serve
 ```
 
----
+#### ✅ Test 3: Manual Server Start
 
-## 📝 Reportar Resultados
+```bash
+# If auto-start fails, start manually
+obsidianrag serve --vault ~/Documents/ObsidianVault --port 8000
 
-Para cada OS, reportar:
-
-1. **Python version**: `python --version`
-2. **Obsidian version**: Help → About
-3. **Ollama version**: `ollama --version`
-4. **Backend version**: `pip show obsidianrag`
-5. **Tests passed**: Lista de ✅/❌
-6. **Errores encontrados**: Screenshots/logs
+# Check logs for errors
+```
 
 ---
 
-## 🚀 Próximos Pasos Tras Testing
+## 🍎 Testing on macOS
 
-Si todo funciona:
-1. ✅ Marcar tests como completos
-2. ✅ Crear GitHub Release v1.0.0
-3. ✅ PR a `obsidianmd/obsidian-releases`
-4. ⏳ Esperar review (1-2 semanas)
-5. 🎉 Plugin disponible en Community Plugins
+### Prerequisites
+
+1. **macOS 12+ (Monterey or later)**
+2. **Obsidian**: [Download here](https://obsidian.md/download)
+3. **Python 3.11+**: via Homebrew or python.org
+4. **Ollama**: [ollama.ai](https://ollama.ai)
+
+### Installation Steps
+
+#### 1. Install Backend
+
+```bash
+# Using pip
+pip3 install obsidianrag
+
+# Or using pipx (recommended)
+brew install pipx
+pipx install obsidianrag
+```
+
+#### 2. Install Ollama
+
+1. Download from [ollama.ai](https://ollama.ai)
+2. Open Ollama.app
+3. Pull a model:
+   ```bash
+   ollama pull gemma3
+   ```
+
+#### 3. Install Plugin
+
+```bash
+# Navigate to vault
+cd ~/Documents/ObsidianVault
+
+# Create plugin directory
+mkdir -p .obsidian/plugins/obsidianrag
+
+# Copy files from release
+# Or symlink for development:
+ln -s /path/to/ObsidianRAG/plugin .obsidian/plugins/obsidianrag
+```
+
+### macOS-Specific Tests
+
+#### ✅ Test 1: Gatekeeper / Security
+
+- First time opening may require allowing the app in System Preferences → Security
+
+#### ✅ Test 2: Port Conflicts
+
+```bash
+# Check port usage
+lsof -i :8000
+
+# Kill if needed
+lsof -ti:8000 | xargs kill -9
+```
+
+---
+
+## 📋 Test Checklist
+
+### Core Functionality
+
+| Test | Windows | Linux | macOS |
+|------|---------|-------|-------|
+| Plugin loads | ⬜ | ⬜ | ✅ |
+| Server auto-starts | ⬜ | ⬜ | ✅ |
+| Ask question works | ⬜ | ⬜ | ✅ |
+| Streaming works | ⬜ | ⬜ | ✅ |
+| Source links work | ⬜ | ⬜ | ✅ |
+| Settings UI works | ⬜ | ⬜ | ✅ |
+| Model dropdown loads from Ollama | ⬜ | ⬜ | ✅ |
+| Stop server works | ⬜ | ⬜ | ✅ |
+| Start server works | ⬜ | ⬜ | ✅ |
+| Reindex works | ⬜ | ⬜ | ✅ |
+
+### Edge Cases
+
+| Test | Windows | Linux | macOS |
+|------|---------|-------|-------|
+| Ollama not running | ⬜ | ⬜ | ✅ |
+| Port occupied | ⬜ | ⬜ | ✅ |
+| Large vault (>500 notes) | ⬜ | ⬜ | ⬜ |
+| Empty vault | ⬜ | ⬜ | ⬜ |
+| Server crash recovery | ⬜ | ⬜ | ✅ |
+
+---
+
+## 🐛 Reporting Issues
+
+When reporting issues, please include:
+
+1. **OS and version** (e.g., Windows 11, Ubuntu 22.04, macOS 14)
+2. **Obsidian version**
+3. **Plugin version**
+4. **Python version** (`python --version`)
+5. **Ollama version** (`ollama --version`)
+6. **Error messages** from:
+   - Obsidian Developer Console (Cmd+Option+I / Ctrl+Shift+I)
+   - Terminal where server is running
+7. **Steps to reproduce**
+
+Open an issue at: https://github.com/Vasallo94/ObsidianRAG/issues

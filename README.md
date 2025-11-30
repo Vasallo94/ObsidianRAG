@@ -207,7 +207,7 @@ flowchart LR
 
 ## 🔧 Troubleshooting
 
-See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
+See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for detailed solutions.
 
 ### Quick Fixes
 
@@ -286,7 +286,7 @@ We welcome contributions!
 4. Push: `git push origin feature/awesome-feature`
 5. Open a Pull Request
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
 
 ---
 
