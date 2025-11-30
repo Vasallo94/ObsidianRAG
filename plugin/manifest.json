@@ -1,7 +1,7 @@
 {
   "id": "obsidian-rag",
   "name": "ObsidianRAG",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "minAppVersion": "1.5.0",
   "description": "Ask questions about your Obsidian notes using local AI (Ollama + LangGraph)",
   "author": "Enrique Vasallo",
