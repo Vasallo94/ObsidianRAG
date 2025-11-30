@@ -43,19 +43,29 @@ def serve(
     vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host to bind to"),
     port: int = typer.Option(8000, "--port", "-p", help="Port to bind to"),
-    model: Optional[str] = typer.Option(None, "--model", "-m", help="LLM model to use (e.g., gemma3, llama3.2)"),
+    model: Optional[str] = typer.Option(
+        None, "--model", "-m", help="LLM model to use (e.g., gemma3, llama3.2)"
+    ),
+    reranker: Optional[bool] = typer.Option(
+        None, "--reranker/--no-reranker", help="Enable/disable reranker"
+    ),
     reload: bool = typer.Option(False, "--reload", "-r", help="Enable auto-reload"),
 ):
     """Start the ObsidianRAG API server."""
     vault_path = get_vault_path(vault)
 
     model_info = f"\n🤖 Model: [yellow]{model}[/yellow]" if model else ""
+    reranker_info = (
+        f"\n🔍 Reranker: [yellow]{'Enabled' if reranker else 'Disabled'}[/yellow]"
+        if reranker is not None
+        else ""
+    )
 
     console.print(
         Panel.fit(
             f"🧠 [bold cyan]ObsidianRAG Server[/bold cyan]\n\n"
             f"📁 Vault: [green]{vault_path}[/green]\n"
-            f"🌐 URL: [blue]http://{host}:{port}[/blue]{model_info}",
+            f"🌐 URL: [blue]http://{host}:{port}[/blue]{model_info}{reranker_info}",
             title="Starting Server",
         )
     )
@@ -65,10 +75,12 @@ def serve(
 
     configure_from_vault(vault_path)
 
-    # Override model if specified
+    # Override settings if specified via CLI
+    settings = get_settings()
     if model:
-        settings = get_settings()
         settings.llm_model = model
+    if reranker is not None:
+        settings.use_reranker = reranker
 
     # Start server
     import uvicorn
