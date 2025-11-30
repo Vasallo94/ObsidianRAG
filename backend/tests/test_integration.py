@@ -84,7 +84,9 @@ class TestCLIIntegration:
     @patch("uvicorn.run")
     @patch("obsidianrag.api.server.create_app")
     @patch("obsidianrag.config.configure_from_vault")
-    def test_cli_serve_starts_server(self, mock_configure, mock_create_app, mock_run, cli_runner, mock_vault):
+    def test_cli_serve_starts_server(
+        self, mock_configure, mock_create_app, mock_run, cli_runner, mock_vault
+    ):
         """Test that CLI serve command configures and starts server."""
         from obsidianrag.cli.main import app
 

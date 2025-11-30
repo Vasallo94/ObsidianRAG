@@ -228,6 +228,74 @@
   margin: 5px 0;
 }
 
+/* Settings Status Section */
+.obsidianrag-settings-status {
+  margin-bottom: 20px;
+}
+
+.status-display {
+  padding: 15px;
+  border-radius: 8px;
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.status-display.status-online .status-indicator {
+  color: var(--text-success);
+}
+
+.status-display.status-offline .status-indicator {
+  color: var(--text-error);
+}
+
+.status-display .status-text {
+  margin-left: 8px;
+  font-weight: 500;
+}
+
+.status-display .status-details {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--background-modifier-border);
+  font-size: 0.9em;
+  color: var(--text-muted);
+}
+
+.status-display .status-details div {
+  margin: 4px 0;
+}
+
+/* Vault Stats Table */
+.obsidianrag-vault-stats {
+  padding: 15px;
+  border-radius: 8px;
+  background-color: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.stats-table td {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.stats-table tr:last-child td {
+  border-bottom: none;
+}
+
+.stats-label {
+  color: var(--text-muted);
+}
+
+.stats-value {
+  text-align: right;
+  font-weight: 500;
+}
+
 /* ============================================================================
    Streaming Content
    ============================================================================ */
@@ -252,4 +320,227 @@
 /* When streaming is complete, hide the cursor */
 .streaming-content.complete::after {
   display: none;
+}
+
+/* ============================================================================
+   Header Controls
+   ============================================================================ */
+
+.obsidianrag-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.obsidianrag-clear-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+  opacity: 0.7;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.obsidianrag-clear-btn:hover {
+  opacity: 1;
+  background-color: var(--background-modifier-hover);
+}
+
+/* ============================================================================
+   Status Bar
+   ============================================================================ */
+
+.obsidianrag-status-bar {
+  cursor: pointer;
+  padding: 0 8px;
+  border-radius: 4px;
+  transition: background-color 0.15s ease;
+}
+
+.obsidianrag-status-bar:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.obsidianrag-status-bar.status-online {
+  color: var(--text-success);
+}
+
+.obsidianrag-status-bar.status-offline {
+  color: var(--text-muted);
+}
+
+/* ============================================================================
+   Setup Modal
+   ============================================================================ */
+
+.obsidianrag-setup-modal {
+  max-width: 500px;
+}
+
+.obsidianrag-setup-modal h2 {
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.obsidianrag-setup-modal h3 {
+  margin: 15px 0 10px 0;
+  font-size: 1.1em;
+}
+
+.obsidianrag-setup-modal ul {
+  margin: 10px 0;
+  padding-left: 20px;
+}
+
+.obsidianrag-setup-modal li {
+  margin: 8px 0;
+  line-height: 1.5;
+}
+
+.obsidianrag-setup-modal code {
+  background-color: var(--background-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.setup-content {
+  min-height: 300px;
+}
+
+/* ============================================================================
+   Ask Modal
+   ============================================================================ */
+
+.obsidianrag-ask-modal {
+  width: 600px;
+  max-width: 90vw;
+}
+
+.obsidianrag-ask-modal .modal-content {
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.obsidianrag-modal-input {
+  width: 100%;
+  min-height: 80px;
+  max-height: 200px;
+  resize: vertical;
+  margin: 15px 0;
+  padding: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background-color: var(--background-primary);
+  font-family: inherit;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.obsidianrag-modal-input:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+}
+
+.obsidianrag-modal-result {
+  margin-top: 15px;
+  padding: 15px;
+  border-radius: 8px;
+  background-color: var(--background-secondary);
+  min-height: 60px;
+  max-height: 400px;
+  overflow-y: auto;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.obsidianrag-modal-result:empty {
+  display: none;
+}
+
+.obsidianrag-modal-result .loading {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Fix for markdown content in modals */
+.obsidianrag-modal-result p {
+  margin: 0 0 1em 0;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.obsidianrag-modal-result p:last-child {
+  margin-bottom: 0;
+}
+
+/* ============================================================================
+   Error Modal
+   ============================================================================ */
+
+.obsidianrag-error-modal {
+  max-width: 450px;
+}
+
+.obsidianrag-error-modal h2 {
+  color: var(--text-error);
+}
+
+.obsidianrag-error-modal .error-message {
+  padding: 15px;
+  background-color: var(--background-secondary);
+  border-radius: 8px;
+  border-left: 4px solid var(--text-error);
+}
+
+.obsidianrag-error-modal h4 {
+  margin: 20px 0 10px 0;
+}
+
+.obsidianrag-error-modal ul {
+  margin: 10px 0;
+  padding-left: 20px;
+}
+
+.obsidianrag-error-modal li {
+  margin: 5px 0;
+}
+
+/* ============================================================================
+   Button Containers
+   ============================================================================ */
+
+.modal-button-container {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.modal-button-container button {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background-color: var(--background-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.15s ease;
+}
+
+.modal-button-container button:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.modal-button-container button.mod-cta {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+}
+
+.modal-button-container button.mod-cta:hover {
+  background-color: var(--interactive-accent-hover);
 }

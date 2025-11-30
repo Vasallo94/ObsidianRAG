@@ -43,24 +43,32 @@ def serve(
     vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host to bind to"),
     port: int = typer.Option(8000, "--port", "-p", help="Port to bind to"),
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="LLM model to use (e.g., gemma3, llama3.2)"),
     reload: bool = typer.Option(False, "--reload", "-r", help="Enable auto-reload"),
 ):
     """Start the ObsidianRAG API server."""
     vault_path = get_vault_path(vault)
 
+    model_info = f"\n🤖 Model: [yellow]{model}[/yellow]" if model else ""
+
     console.print(
         Panel.fit(
             f"🧠 [bold cyan]ObsidianRAG Server[/bold cyan]\n\n"
             f"📁 Vault: [green]{vault_path}[/green]\n"
-            f"🌐 URL: [blue]http://{host}:{port}[/blue]",
+            f"🌐 URL: [blue]http://{host}:{port}[/blue]{model_info}",
             title="Starting Server",
         )
     )
 
     # Configure settings
-    from obsidianrag.config import configure_from_vault
+    from obsidianrag.config import configure_from_vault, get_settings
 
     configure_from_vault(vault_path)
+
+    # Override model if specified
+    if model:
+        settings = get_settings()
+        settings.llm_model = model
 
     # Start server
     import uvicorn

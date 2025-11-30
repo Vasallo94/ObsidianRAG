@@ -221,6 +221,7 @@ def test_client(mock_vault: Path, mock_embeddings):
 
     # Create app with mocked embeddings and LLM
     from langchain_core.runnables import RunnableLambda
+
     mock_llm = RunnableLambda(lambda x: "Integrated answer")
 
     with patch("obsidianrag.core.db_service.HuggingFaceEmbeddings", return_value=mock_embeddings):
