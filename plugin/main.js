@@ -723,8 +723,16 @@ var ChatView = class extends import_obsidian.ItemView {
     const header = container.createDiv("obsidianrag-header");
     header.createEl("h4", { text: "\u{1F916} ObsidianRAG" });
     const headerControls = header.createDiv("obsidianrag-header-controls");
+    const reindexBtn = headerControls.createEl("button", {
+      cls: "obsidianrag-header-btn",
+      attr: { "aria-label": "Reindex vault" }
+    });
+    reindexBtn.innerHTML = "\u{1F504}";
+    reindexBtn.addEventListener("click", async () => {
+      await this.plugin.reindexVault();
+    });
     const clearBtn = headerControls.createEl("button", {
-      cls: "obsidianrag-clear-btn",
+      cls: "obsidianrag-header-btn",
       attr: { "aria-label": "Clear chat history" }
     });
     clearBtn.innerHTML = "\u{1F5D1}\uFE0F";

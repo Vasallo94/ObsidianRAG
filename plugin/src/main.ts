@@ -1122,9 +1122,19 @@ class ChatView extends ItemView {
     // Header controls
     const headerControls = header.createDiv("obsidianrag-header-controls");
 
+    // Reindex button
+    const reindexBtn = headerControls.createEl("button", {
+      cls: "obsidianrag-header-btn",
+      attr: { "aria-label": "Reindex vault" }
+    });
+    reindexBtn.innerHTML = "🔄";
+    reindexBtn.addEventListener("click", async () => {
+      await this.plugin.reindexVault();
+    });
+
     // Clear history button
     const clearBtn = headerControls.createEl("button", {
-      cls: "obsidianrag-clear-btn",
+      cls: "obsidianrag-header-btn",
       attr: { "aria-label": "Clear chat history" }
     });
     clearBtn.innerHTML = "🗑️";
