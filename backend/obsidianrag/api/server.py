@@ -339,8 +339,8 @@ def _register_routes(application: FastAPI):
                 else "Unknown",
             }
         except Exception as e:
-            logger.error(f"Error getting stats: {e}")
-            return {"error": str(e)}
+            logger.exception("Error getting stats")
+            return {"error": "An internal error has occurred."}
 
     @application.post("/rebuild_db", summary="Rebuild database")
     async def rebuild_db():
