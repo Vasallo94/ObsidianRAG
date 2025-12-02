@@ -263,7 +263,7 @@ def _register_routes(application: FastAPI):
 
             except Exception as e:
                 logger.error(f"Streaming error: {e}", exc_info=True)
-                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+                yield f"data: {json.dumps({'type': 'error', 'message': 'An error occurred while processing your request'})}\\n\\n"
 
             # Send end event
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
