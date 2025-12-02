@@ -260,3 +260,7 @@ plugin/node_modules/
 .npm/
 .pnpm-store/
 
+# Markdowns
+RELEASE_GUIDE.md
+PENDING_TASKS.md
+V3_MIGRATION_PLAN.md
