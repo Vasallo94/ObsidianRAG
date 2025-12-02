@@ -339,8 +339,8 @@ def _register_routes(application: FastAPI):
                 else "Unknown",
             }
         except Exception as e:
-            logger.error(f"Error getting stats: {e}")
-            return {"error": str(e)}
+            logger.error(f"Error getting stats: {e}", exc_info=True)
+            return {"error": "Failed to retrieve vault statistics"}
 
     @application.post("/rebuild_db", summary="Rebuild database")
     async def rebuild_db():
@@ -371,8 +371,8 @@ def _register_routes(application: FastAPI):
                 "total_chunks": total_chunks
             }
         except Exception as e:
-            logger.error(f"Error rebuilding DB: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
+            logger.error(f"Error rebuilding DB: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Failed to rebuild database")
 
 
 # Default app for direct uvicorn usage

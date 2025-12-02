@@ -5,6 +5,9 @@ on:
     tags:
       - "plugin-v*"
 
+permissions:
+  contents: write  # Required for creating releases
+
 jobs:
   build:
     runs-on: ubuntu-latest
