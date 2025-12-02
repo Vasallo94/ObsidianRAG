@@ -1,7 +1,7 @@
 """QA Service with hybrid search and reranking"""
 
 import logging
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from langchain_classic.chains import ConversationalRetrievalChain
 from langchain_classic.retrievers import (
@@ -244,7 +244,7 @@ def retrieve_with_links(retriever, query: str) -> List[Document]:
 
 
 def ask_question(
-    qa_chain, question: str, chat_history: List[Tuple[str, str]] = None
+    qa_chain, question: str, chat_history: Optional[List[Tuple[str, str]]] = None
 ) -> Tuple[str, List[Document]]:
     """
     Ask a question using the QA chain

@@ -121,31 +121,25 @@ class TestRebuildEndpoint:
 
 
 class TestErrorHandling:
-    """Tests for API error handling."""
+    """Tests for error handling."""
 
     def test_not_found_endpoint(self, fast_test_client):
-        """Test 404 response for unknown endpoint."""
+        """Test accessing non-existent endpoint."""
         response = fast_test_client.get("/nonexistent")
         assert response.status_code == 404
 
     def test_invalid_json_body(self, fast_test_client):
-        """Test handling of invalid JSON."""
+        """Test sending invalid JSON."""
         response = fast_test_client.post(
-            "/ask",
-            content="not valid json",
-            headers={"Content-Type": "application/json"},
+            "/ask", data="not json", headers={"Content-Type": "application/json"}
         )
+        # Should fail to parse
         assert response.status_code in [400, 422]
 
     def test_wrong_content_type(self, fast_test_client):
-        """Test handling of wrong content type."""
-        response = fast_test_client.post(
-            "/ask",
-            content="question=test",
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        # FastAPI might accept or reject this
-        assert response.status_code in [200, 415, 422]
+        """Test sending wrong content type."""
+        response = fast_test_client.post("/ask", data="text", headers={"Content-Type": "text/plain"})
+        assert response.status_code in [400, 422, 415]
 
 
 class TestCORS:

@@ -5,7 +5,7 @@ import os
 import re
 import time
 from datetime import datetime
-from typing import Annotated, List, Sequence, Tuple
+from typing import Annotated, List, Optional, Sequence, Tuple
 
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -446,7 +446,7 @@ CONTEXT (User's Obsidian Notes):
 
 
 def ask_question_graph(
-    app, question: str, chat_history: List[Tuple[str, str]] = None
+    app, question: str, chat_history: Optional[List[Tuple[str, str]]] = None
 ) -> Tuple[str, List[Document]]:
     """Adapter to call the graph from the API"""
     if chat_history is None:
@@ -488,7 +488,11 @@ def ask_question_graph(
 
 
 async def ask_question_graph_streaming(
-    app, question: str, chat_history: List[Tuple[str, str]] = None, retriever=None, db=None
+    app,
+    question: str,
+    chat_history: Optional[List[Tuple[str, str]]] = None,
+    retriever=None,
+    db=None,
 ):
     """Streaming version that yields events including token-by-token LLM output.
 
