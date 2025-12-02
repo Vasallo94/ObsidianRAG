@@ -35,9 +35,11 @@ The backend is a Python package that handles the heavy lifting (RAG, embeddings,
 1.  Open Obsidian.
 2.  Go to **Settings** > **Community Plugins**.
 3.  Ensure **Restricted mode** is **OFF**.
-4.  Click **Browse** and search for `ObsidianRAG`.
+4.  Click **Browse** and search for `Vault RAG`.
 5.  Click **Install**.
 6.  Once installed, click **Enable**.
+
+> **Note**: The plugin is currently pending approval for Community Plugins. For now, you can install manually by downloading from [GitHub Releases](https://github.com/Vasallo94/ObsidianRAG/releases) and placing the files in your `.obsidian/plugins/vault-rag/` folder.
 
 ## Step 3: Initial Configuration
 

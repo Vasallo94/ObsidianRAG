@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![Obsidian Plugin](https://img.shields.io/badge/Obsidian-Plugin-purple)](https://obsidian.md)
 
-> 🎉 **v3 Now Available!** - Native Obsidian plugin with local AI. Install directly from Community Plugins.
+> 🎉 **v3 Now Available!** - Native Obsidian plugin with local AI. Manual installation or via Community Plugins (pending approval).
 
 A RAG (Retrieval-Augmented Generation) system for querying your Obsidian vault using **LangGraph** and **local LLMs** (Ollama). Get intelligent answers based on your personal knowledge base, with full privacy and offline capability.
 
@@ -32,8 +32,10 @@ A RAG (Retrieval-Augmented Generation) system for querying your Obsidian vault u
 #### 1. Install the Obsidian Plugin
 
 1. Open Obsidian → Settings → Community Plugins
-2. Browse and search for "ObsidianRAG"
+2. Browse and search for "Vault RAG"
 3. Click Install → Enable
+
+> **Note**: The plugin is currently pending approval for Community Plugins. For now, install manually by downloading from [GitHub Releases](https://github.com/Vasallo94/ObsidianRAG/releases).
 
 #### 2. Install Backend
 
@@ -122,16 +124,15 @@ Access via Settings → ObsidianRAG:
 The backend auto-configures from your vault, but you can customize via CLI:
 
 ```bash
-obsidianrag serve --vault /path/to/vault --port 8000 --model qwen2.5
+obsidianrag serve --vault /path/to/vault --port 8000 --model qwen2.5 --reranker
 ```
 
-Or create `~/.config/obsidianrag/config.toml`:
+Available CLI options:
+- `--vault`: Path to your Obsidian vault (required)
+- `--port`: Server port (default: 8000)
+- `--model`: Ollama model to use (default: gemma3)
+- `--reranker` / `--no-reranker`: Enable/disable reranking (default: enabled)
 
-```toml
-llm_model = "qwen2.5"
-use_reranker = true
-retrieval_k = 12
-```
 
 ---
 

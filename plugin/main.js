@@ -56,7 +56,7 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     await this.loadSettings();
     this.apiBaseUrl = `http://127.0.0.1:${this.settings.serverPort}`;
     this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
-    this.addRibbonIcon("message-circle", "ObsidianRAG Chat", () => {
+    this.addRibbonIcon("message-circle", "Vault RAG Chat", () => {
       this.activateChatView();
     });
     this.statusBarItem = this.addStatusBarItem();
@@ -124,12 +124,12 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     this.statusBarItem.empty();
     if (running) {
       this.statusBarItem.setText("\u{1F916} RAG \u25CF");
-      this.statusBarItem.setAttribute("title", "ObsidianRAG: Online - Click to open chat");
+      this.statusBarItem.setAttribute("title", "Vault RAG: Online - Click to open chat");
       this.statusBarItem.addClass("status-online");
       this.statusBarItem.removeClass("status-offline");
     } else {
       this.statusBarItem.setText("\u{1F916} RAG \u25CB");
-      this.statusBarItem.setAttribute("title", "ObsidianRAG: Offline - Click to start server");
+      this.statusBarItem.setAttribute("title", "Vault RAG: Offline - Click to start server");
       this.statusBarItem.addClass("status-offline");
       this.statusBarItem.removeClass("status-online");
     }
@@ -164,10 +164,10 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
   async startServer() {
     var _a, _b;
     if (await this.isServerRunning()) {
-      new import_obsidian.Notice("ObsidianRAG server is already running");
+      new import_obsidian.Notice("Vault RAG server is already running");
       return true;
     }
-    new import_obsidian.Notice("Starting ObsidianRAG server...");
+    new import_obsidian.Notice("Starting Vault RAG server...");
     try {
       const vaultPath = this.app.vault.adapter.basePath;
       const { spawn } = require("child_process");
@@ -222,7 +222,7 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
       const ready = await this.waitForServer(3e4);
       if (ready) {
         this.restartAttempts = 0;
-        new import_obsidian.Notice("ObsidianRAG server started successfully!");
+        new import_obsidian.Notice("Vault RAG server started successfully!");
         this.updateStatusBar();
         return true;
       } else {
@@ -278,7 +278,7 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     } catch (e) {
       console.log("[ObsidianRAG] Could not kill process by port:", e);
     }
-    new import_obsidian.Notice("ObsidianRAG server stopped");
+    new import_obsidian.Notice("Vault RAG server stopped");
     this.isRestarting = false;
     this.updateStatusBar();
   }
@@ -519,7 +519,7 @@ var SetupModal = class extends import_obsidian.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("obsidianrag-setup-modal");
-    contentEl.createEl("h2", { text: "\u{1F916} Welcome to ObsidianRAG!" });
+    contentEl.createEl("h2", { text: "\u{1F916} Welcome to Vault RAG!" });
     this.availableModels = await this.plugin.getOllamaModels();
     this.contentEl_modal = contentEl.createDiv("setup-content");
     this.showStep(0);
@@ -603,7 +603,7 @@ var SetupModal = class extends import_obsidian.Modal {
   renderComplete() {
     const el = this.contentEl_modal;
     el.createEl("h3", { text: "\u2705 Setup Complete!" });
-    el.createEl("p", { text: "You're all set to use ObsidianRAG." });
+    el.createEl("p", { text: "You're all set to use Vault RAG." });
     const tips = el.createEl("ul");
     tips.createEl("li", { text: "Click the \u{1F916} icon in the ribbon to open the chat" });
     tips.createEl("li", { text: "Use Cmd/Ctrl+P and search 'ObsidianRAG' for all commands" });
@@ -637,7 +637,7 @@ var AskQuestionModal = class extends import_obsidian.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("obsidianrag-ask-modal");
-    contentEl.createEl("h2", { text: "\u{1F916} Ask ObsidianRAG" });
+    contentEl.createEl("h2", { text: "\u{1F916} Ask Vault RAG" });
     this.inputEl = contentEl.createEl("textarea", {
       placeholder: "Ask a question about your notes...",
       cls: "obsidianrag-modal-input"
@@ -711,7 +711,7 @@ var ChatView = class extends import_obsidian.ItemView {
     return VIEW_TYPE_CHAT;
   }
   getDisplayText() {
-    return "ObsidianRAG Chat";
+    return "Vault RAG Chat";
   }
   getIcon() {
     return "message-circle";
@@ -721,7 +721,7 @@ var ChatView = class extends import_obsidian.ItemView {
     container.empty();
     container.addClass("obsidianrag-chat-container");
     const header = container.createDiv("obsidianrag-header");
-    header.createEl("h4", { text: "\u{1F916} ObsidianRAG" });
+    header.createEl("h4", { text: "\u{1F916} Vault RAG" });
     const headerControls = header.createDiv("obsidianrag-header-controls");
     const reindexBtn = headerControls.createEl("button", {
       cls: "obsidianrag-header-btn",
@@ -1081,11 +1081,11 @@ var ObsidianRAGSettingTab = class extends import_obsidian.PluginSettingTab {
   async display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "ObsidianRAG Settings" });
+    containerEl.createEl("h2", { text: "Vault RAG Settings" });
     this.availableModels = await this.plugin.getOllamaModels();
     this.renderServerStatus(containerEl);
     containerEl.createEl("h3", { text: "Configuration" });
-    new import_obsidian.Setting(containerEl).setName("ObsidianRAG Command").setDesc("Path to obsidianrag-server script or command").addText(
+    new import_obsidian.Setting(containerEl).setName("Vault RAG Command").setDesc("Path to obsidianrag-server script or command").addText(
       (text) => text.setPlaceholder("/usr/local/bin/obsidianrag-server").setValue(this.plugin.settings.pythonPath).onChange(async (value) => {
         this.plugin.settings.pythonPath = value;
         await this.plugin.saveSettings();
