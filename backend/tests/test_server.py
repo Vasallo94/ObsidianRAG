@@ -113,7 +113,7 @@ class TestRebuildEndpoint:
 
         # Should accept the request
         assert response.status_code in [200, 202, 204]
-        
+
         # Should return total_chunks in response
         if response.status_code == 200:
             data = response.json()

@@ -360,13 +360,13 @@ def _register_routes(application: FastAPI):
                     raise HTTPException(status_code=500, detail="Error rebuilding database")
 
                 _qa_app = create_qa_graph(_db)
-                
+
                 # Get statistics to return
                 db_data = _db.get()
                 total_chunks = len(db_data.get("documents", []))
 
             return {
-                "status": "success", 
+                "status": "success",
                 "message": "Database rebuilt and graph updated",
                 "total_chunks": total_chunks
             }
