@@ -368,7 +368,7 @@ def _register_routes(application: FastAPI):
             return {
                 "status": "success",
                 "message": "Database rebuilt and graph updated",
-                "total_chunks": total_chunks
+                "total_chunks": total_chunks,
             }
         except Exception as e:
             logger.error(f"Error rebuilding DB: {e}", exc_info=True)
