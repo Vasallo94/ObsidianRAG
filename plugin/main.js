@@ -27,6 +27,7 @@ __export(main_exports, {
   default: () => ObsidianRAGPlugin
 });
 module.exports = __toCommonJS(main_exports);
+var import_child_process = require("child_process");
 var import_obsidian = require("obsidian");
 var VIEW_TYPE_CHAT = "obsidianrag-chat-view";
 var DEFAULT_PORT = 8e3;
@@ -52,12 +53,12 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     this.statusBarItem = null;
   }
   async onload() {
-    console.log("Loading ObsidianRAG plugin");
+    console.info("Loading ObsidianRAG plugin");
     await this.loadSettings();
     this.apiBaseUrl = `http://127.0.0.1:${this.settings.serverPort}`;
     this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
     this.addRibbonIcon("message-circle", "Vault RAG Chat", () => {
-      this.activateChatView();
+      this.activateChatView().catch((e) => console.error(e));
     });
     this.statusBarItem = this.addStatusBarItem();
     this.statusBarItem.addClass("obsidianrag-status-bar");
@@ -65,22 +66,30 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     this.addCommand({
       id: "open-chat",
       name: "Open Chat",
-      callback: () => this.activateChatView()
+      callback: () => {
+        this.activateChatView().catch((e) => console.error(e));
+      }
     });
     this.addCommand({
       id: "start-server",
       name: "Start Backend Server",
-      callback: () => this.startServer()
+      callback: () => {
+        this.startServer().catch((e) => console.error(e));
+      }
     });
     this.addCommand({
       id: "stop-server",
       name: "Stop Backend Server",
-      callback: () => this.stopServer()
+      callback: () => {
+        this.stopServer().catch((e) => console.error(e));
+      }
     });
     this.addCommand({
       id: "check-status",
       name: "Check Server Status",
-      callback: () => this.checkServerStatus()
+      callback: () => {
+        this.checkServerStatus().catch((e) => console.error(e));
+      }
     });
     this.addCommand({
       id: "ask-question",
@@ -90,21 +99,27 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     this.addCommand({
       id: "reindex-vault",
       name: "Reindex Vault",
-      callback: () => this.reindexVault()
+      callback: () => {
+        this.reindexVault().catch((e) => console.error(e));
+      }
     });
     this.addSettingTab(new ObsidianRAGSettingTab(this.app, this));
     if (!this.settings.hasCompletedSetup) {
       new SetupModal(this.app, this).open();
     }
     if (this.settings.autoStartServer) {
-      setTimeout(() => this.startServer(), 2e3);
+      setTimeout(() => {
+        this.startServer().catch((e) => console.error(e));
+      }, 2e3);
     }
     this.registerInterval(
-      window.setInterval(() => this.updateStatusBar(), 1e4)
+      window.setInterval(() => {
+        this.updateStatusBar().catch((e) => console.error(e));
+      }, 1e4)
     );
   }
   async onunload() {
-    console.log("Unloading ObsidianRAG plugin");
+    console.info("Unloading ObsidianRAG plugin");
     await this.stopServer();
   }
   async loadSettings() {
@@ -135,9 +150,9 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     }
     this.statusBarItem.onClickEvent(() => {
       if (running) {
-        this.activateChatView();
+        this.activateChatView().catch((e) => console.error(e));
       } else {
-        this.startServer();
+        this.startServer().catch((e) => console.error(e));
       }
     });
   }
@@ -169,8 +184,8 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     }
     new import_obsidian.Notice("Starting Vault RAG server...");
     try {
-      const vaultPath = this.app.vault.adapter.basePath;
-      const { spawn } = require("child_process");
+      const adapter = this.app.vault.adapter;
+      const vaultPath = adapter.getBasePath();
       const platform = process.platform;
       const spawnOptions = this.getSpawnOptionsForPlatform(platform);
       let command;
@@ -201,9 +216,16 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
           this.settings.useReranker ? "--reranker" : "--no-reranker"
         ];
       }
-      this.serverProcess = spawn(command, args, spawnOptions);
+      console.debug(`[ObsidianRAG] Spawning: ${command} ${args.join(" ")}`);
+      try {
+        this.serverProcess = (0, import_child_process.spawn)(command, args, spawnOptions);
+      } catch (spawnError) {
+        console.error("[ObsidianRAG] Spawn failed synchronously:", spawnError);
+        new import_obsidian.Notice(`Failed to launch server process: ${spawnError}`);
+        return false;
+      }
       (_a = this.serverProcess.stdout) == null ? void 0 : _a.on("data", (data) => {
-        console.log(`[ObsidianRAG] ${data.toString()}`);
+        console.debug(`[ObsidianRAG] ${data.toString()}`);
       });
       (_b = this.serverProcess.stderr) == null ? void 0 : _b.on("data", (data) => {
         console.error(`[ObsidianRAG] ${data.toString()}`);
@@ -213,10 +235,10 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
         new import_obsidian.Notice(`Failed to start server: ${error.message}`);
       });
       this.serverProcess.on("exit", (code) => {
-        console.log(`[ObsidianRAG] Server exited with code ${code}`);
+        console.debug(`[ObsidianRAG] Server exited with code ${code}`);
         this.serverProcess = null;
         if (this.settings.autoStartServer && !this.isRestarting) {
-          this.handleServerCrash(code);
+          this.handleServerCrash(code).catch((e) => console.error(e));
         }
       });
       const ready = await this.waitForServer(3e4);
@@ -256,27 +278,26 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
       this.serverProcess = null;
     }
     try {
-      const { exec } = require("child_process");
       const platform = process.platform;
       if (platform === "win32") {
-        exec(
+        (0, import_child_process.exec)(
           `for /f "tokens=5" %a in ('netstat -aon ^| find ":${this.settings.serverPort}" ^| find "LISTENING"') do taskkill /F /PID %a`,
           (error) => {
             if (error)
-              console.log("[ObsidianRAG] No process found on port (Windows)");
+              console.debug("[ObsidianRAG] No process found on port (Windows)");
           }
         );
       } else {
-        exec(
+        (0, import_child_process.exec)(
           `lsof -ti:${this.settings.serverPort} | xargs kill -9 2>/dev/null`,
           (error) => {
             if (error)
-              console.log("[ObsidianRAG] No process found on port");
+              console.debug("[ObsidianRAG] No process found on port");
           }
         );
       }
     } catch (e) {
-      console.log("[ObsidianRAG] Could not kill process by port:", e);
+      console.warn("[ObsidianRAG] Could not kill process by port:", e);
     }
     new import_obsidian.Notice("Vault RAG server stopped");
     this.isRestarting = false;
@@ -284,11 +305,11 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
   }
   async isServerRunning() {
     try {
-      const response = await fetch(`${this.apiBaseUrl}/health`, {
-        method: "GET",
-        signal: AbortSignal.timeout(2e3)
+      const response = await (0, import_obsidian.requestUrl)({
+        url: `${this.apiBaseUrl}/health`,
+        method: "GET"
       });
-      return response.ok;
+      return response.status === 200;
     } catch (e) {
       return false;
     }
@@ -298,15 +319,15 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
    */
   async getOllamaModels() {
     try {
-      const response = await fetch("http://localhost:11434/api/tags", {
-        method: "GET",
-        signal: AbortSignal.timeout(5e3)
+      const response = await (0, import_obsidian.requestUrl)({
+        url: "http://localhost:11434/api/tags",
+        method: "GET"
       });
-      if (!response.ok) {
+      if (response.status !== 200) {
         console.warn("[ObsidianRAG] Failed to fetch Ollama models");
         return [];
       }
-      const data = await response.json();
+      const data = response.json;
       return data.models.map((m) => m.name.replace(":latest", ""));
     } catch (error) {
       console.warn("[ObsidianRAG] Ollama not available:", error);
@@ -325,9 +346,12 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
   }
   async checkServerStatus() {
     try {
-      const response = await fetch(`${this.apiBaseUrl}/health`);
-      if (response.ok) {
-        const data = await response.json();
+      const response = await (0, import_obsidian.requestUrl)({
+        url: `${this.apiBaseUrl}/health`,
+        method: "GET"
+      });
+      if (response.status === 200) {
+        const data = response.json;
         new import_obsidian.Notice(
           `Server OK
 Version: ${data.version}
@@ -345,15 +369,16 @@ Model: ${data.model}`
   // ==========================================================================
   async askQuestion(question) {
     try {
-      const response = await fetch(`${this.apiBaseUrl}/ask`, {
+      const response = await (0, import_obsidian.requestUrl)({
+        url: `${this.apiBaseUrl}/ask`,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: question })
       });
-      if (!response.ok) {
+      if (response.status !== 200) {
         throw new Error(`Server error: ${response.status}`);
       }
-      return await response.json();
+      return response.json;
     } catch (error) {
       return {
         result: "",
@@ -424,13 +449,12 @@ Model: ${data.model}`
     }
     new import_obsidian.Notice("Reindexing vault... This may take a while.");
     try {
-      const response = await fetch(`${this.apiBaseUrl}/rebuild_db`, {
-        method: "POST",
-        signal: AbortSignal.timeout(3e5)
-        // 5 min timeout for large vaults
+      const response = await (0, import_obsidian.requestUrl)({
+        url: `${this.apiBaseUrl}/rebuild_db`,
+        method: "POST"
       });
-      if (response.ok) {
-        const data = await response.json();
+      if (response.status === 200) {
+        const data = response.json;
         new import_obsidian.Notice(`Reindexing complete! Indexed ${data.total_chunks || "unknown"} chunks.`);
         return true;
       } else {
@@ -449,12 +473,16 @@ Model: ${data.model}`
     let lastError = null;
     for (let i = 0; i < attempts; i++) {
       try {
-        const response = await fetch(url, {
-          ...options,
-          signal: AbortSignal.timeout(1e4)
+        const validBody = options.body ? String(options.body) : void 0;
+        const validHeaders = options.headers ? options.headers : void 0;
+        const response = await (0, import_obsidian.requestUrl)({
+          url,
+          method: options.method || "GET",
+          body: validBody,
+          headers: validHeaders
         });
-        if (response.ok) {
-          return await response.json();
+        if (response.status === 200) {
+          return response.json;
         }
         lastError = new Error(`HTTP ${response.status}`);
       } catch (error) {
@@ -540,10 +568,20 @@ var SetupModal = class extends import_obsidian.Modal {
     const el = this.contentEl_modal;
     el.createEl("h3", { text: "Step 1: Check Requirements" });
     const requirements = el.createEl("ul");
-    requirements.createEl("li").innerHTML = "<strong>Python 3.11+</strong> - Required for the backend";
-    requirements.createEl("li").innerHTML = "<strong>obsidianrag</strong> package - <code>pip install obsidianrag</code>";
-    requirements.createEl("li").innerHTML = "<strong>Ollama</strong> - Local LLM server from <a href='https://ollama.ai'>ollama.ai</a>";
-    requirements.createEl("li").innerHTML = "At least one Ollama model - <code>ollama pull gemma3</code>";
+    const r1 = requirements.createEl("li");
+    r1.createEl("strong", { text: "Python 3.11+" });
+    r1.appendText(" - Required for the backend");
+    const r2 = requirements.createEl("li");
+    r2.createEl("strong", { text: "obsidianrag" });
+    r2.appendText(" package - ");
+    r2.createEl("code", { text: "pip install obsidianrag" });
+    const r3 = requirements.createEl("li");
+    r3.createEl("strong", { text: "Ollama" });
+    r3.appendText(" - Local LLM server from ");
+    r3.createEl("a", { text: "ollama.ai", href: "https://ollama.ai" });
+    const r4 = requirements.createEl("li");
+    r4.appendText("At least one Ollama model - ");
+    r4.createEl("code", { text: "ollama pull gemma3" });
     el.createEl("p", {
       text: "Make sure you have all requirements installed before proceeding.",
       cls: "setting-item-description"
@@ -552,7 +590,9 @@ var SetupModal = class extends import_obsidian.Modal {
     const nextBtn = buttons.createEl("button", { text: "Next \u2192", cls: "mod-cta" });
     nextBtn.addEventListener("click", () => this.showStep(1));
     const skipBtn = buttons.createEl("button", { text: "Skip Setup" });
-    skipBtn.addEventListener("click", () => this.completeSetup());
+    skipBtn.addEventListener("click", () => {
+      this.completeSetup().catch((e) => console.error(e));
+    });
   }
   renderConfiguration() {
     const el = this.contentEl_modal;
@@ -612,11 +652,13 @@ var SetupModal = class extends import_obsidian.Modal {
     const startBtn = buttons.createEl("button", { text: "Start Server & Open Chat", cls: "mod-cta" });
     startBtn.addEventListener("click", async () => {
       await this.plugin.startServer();
-      this.completeSetup();
-      this.plugin.activateChatView();
+      await this.completeSetup();
+      await this.plugin.activateChatView();
     });
     const laterBtn = buttons.createEl("button", { text: "Maybe Later" });
-    laterBtn.addEventListener("click", () => this.completeSetup());
+    laterBtn.addEventListener("click", () => {
+      this.completeSetup().catch((e) => console.error(e));
+    });
   }
   async completeSetup() {
     this.plugin.settings.hasCompletedSetup = true;
@@ -644,18 +686,20 @@ var AskQuestionModal = class extends import_obsidian.Modal {
     });
     const buttonContainer = contentEl.createDiv("modal-button-container");
     const askBtn = buttonContainer.createEl("button", { text: "Ask", cls: "mod-cta" });
-    askBtn.addEventListener("click", () => this.askQuestion());
+    askBtn.addEventListener("click", () => {
+      this.askQuestion().catch((e) => console.error(e));
+    });
     const openChatBtn = buttonContainer.createEl("button", { text: "Open Full Chat" });
     openChatBtn.addEventListener("click", () => {
       this.close();
-      this.plugin.activateChatView();
+      this.plugin.activateChatView().catch((e) => console.error(e));
     });
     this.resultEl = contentEl.createDiv("obsidianrag-modal-result");
     this.inputEl.focus();
     this.inputEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        this.askQuestion();
+        this.askQuestion().catch((e2) => console.error(e2));
       }
     });
   }
@@ -727,7 +771,7 @@ var ChatView = class extends import_obsidian.ItemView {
       cls: "obsidianrag-header-btn",
       attr: { "aria-label": "Reindex vault" }
     });
-    reindexBtn.innerHTML = "\u{1F504}";
+    reindexBtn.setText("\u{1F504}");
     reindexBtn.addEventListener("click", async () => {
       await this.plugin.reindexVault();
     });
@@ -735,11 +779,13 @@ var ChatView = class extends import_obsidian.ItemView {
       cls: "obsidianrag-header-btn",
       attr: { "aria-label": "Clear chat history" }
     });
-    clearBtn.innerHTML = "\u{1F5D1}\uFE0F";
+    clearBtn.setText("\u{1F5D1}\uFE0F");
     clearBtn.addEventListener("click", () => this.clearHistory());
     this.statusEl = headerControls.createSpan("obsidianrag-status");
     this.updateStatus();
-    this.statusInterval = window.setInterval(() => this.updateStatus(), 5e3);
+    this.statusInterval = window.setInterval(() => {
+      this.updateStatus().catch((e) => console.error(e));
+    }, 5e3);
     this.containerEl_messages = container.createDiv("obsidianrag-messages");
     this.addMessage({
       role: "assistant",
@@ -755,11 +801,13 @@ var ChatView = class extends import_obsidian.ItemView {
       text: "Send",
       cls: "obsidianrag-send-button"
     });
-    sendButton.addEventListener("click", () => this.sendMessage());
+    sendButton.addEventListener("click", () => {
+      this.sendMessage().catch((e) => console.error(e));
+    });
     this.inputEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        this.sendMessage();
+        this.sendMessage().catch((e2) => console.error(e2));
       }
     });
   }
@@ -808,9 +856,17 @@ var ChatView = class extends import_obsidian.ItemView {
       "obsidianrag-message assistant loading"
     );
     const progressContent = progressEl.createDiv("progress-content");
-    progressContent.innerHTML = "\u{1F504} <strong>Starting...</strong>";
+    const spinSpan = progressContent.createSpan();
+    spinSpan.setText("\u{1F504} ");
+    progressContent.createEl("strong", { text: "Starting..." });
     const updateProgress = (step, details) => {
-      progressContent.innerHTML = `\u{1F504} <strong>${step}</strong>${details ? `<br><span class="progress-details">${details}</span>` : ""}`;
+      progressContent.empty();
+      progressContent.createSpan({ text: "\u{1F504} " });
+      progressContent.createEl("strong", { text: step });
+      if (details) {
+        progressContent.createEl("br");
+        progressContent.createSpan({ cls: "progress-details", text: details });
+      }
       this.containerEl_messages.scrollTop = this.containerEl_messages.scrollHeight;
     };
     let streamingEl = null;
@@ -836,11 +892,11 @@ var ChatView = class extends import_obsidian.ItemView {
                   var _a;
                   return `\u2022 ${((_a = s.source.split("/").pop()) == null ? void 0 : _a.replace(".md", "")) || s.source}`;
                 }
-              ).join("<br>")
+              ).join("\n")
             );
             break;
           case "ttft":
-            console.log(`\u26A1 [ObsidianRAG] Time to First Token: ${event.seconds}s`);
+            console.debug(`\u26A1 [ObsidianRAG] Time to First Token: ${event.seconds}s`);
             ttftLogged = true;
             break;
           case "token":
@@ -933,7 +989,7 @@ var ChatView = class extends import_obsidian.ItemView {
                 exists: true
               });
             } else {
-              console.log(`[ObsidianRAG] Skipping non-existent source: ${displayPath}`);
+              console.debug(`[ObsidianRAG] Skipping non-existent source: ${displayPath}`);
             }
           }
         }
@@ -1014,6 +1070,7 @@ var ChatView = class extends import_obsidian.ItemView {
       `obsidianrag-message ${message.role}`
     );
     const contentEl = messageEl.createDiv("message-content");
+    const textContent = message.content || "";
     import_obsidian.MarkdownRenderer.render(
       this.app,
       message.content,
@@ -1166,15 +1223,21 @@ var ObsidianRAGSettingTab = class extends import_obsidian.PluginSettingTab {
     this.renderVaultStats(containerEl);
     containerEl.createEl("h3", { text: "Requirements" });
     const helpEl = containerEl.createEl("div", { cls: "setting-item-description" });
-    helpEl.innerHTML = `
-      <p>This plugin requires:</p>
-      <ul>
-        <li><strong>Python 3.11+</strong> installed and accessible</li>
-        <li><strong>obsidianrag</strong> package: <code>pip install obsidianrag</code></li>
-        <li><strong>Ollama</strong> running locally with at least one model</li>
-      </ul>
-      <p>Install Ollama from <a href="https://ollama.ai">ollama.ai</a></p>
-    `;
+    helpEl.createEl("p", { text: "This plugin requires:" });
+    const ul = helpEl.createEl("ul");
+    const li1 = ul.createEl("li");
+    li1.createEl("strong", { text: "Python 3.11+" });
+    li1.appendText(" installed and accessible");
+    const li2 = ul.createEl("li");
+    li2.createEl("strong", { text: "obsidianrag" });
+    li2.appendText(" package: ");
+    li2.createEl("code", { text: "pip install obsidianrag" });
+    const li3 = ul.createEl("li");
+    li3.createEl("strong", { text: "Ollama" });
+    li3.appendText(" running locally with at least one model");
+    const pLink = helpEl.createEl("p");
+    pLink.appendText("Install Ollama from ");
+    pLink.createEl("a", { text: "ollama.ai", href: "https://ollama.ai" });
     containerEl.createEl("h3", { text: "Advanced" });
     new import_obsidian.Setting(containerEl).setName("Reset to Defaults").setDesc("Reset all settings to their default values").addButton(
       (button) => button.setButtonText("Reset All Settings").setWarning().onClick(async () => {
@@ -1222,9 +1285,12 @@ var ObsidianRAGSettingTab = class extends import_obsidian.PluginSettingTab {
       statusEl.createSpan({ cls: "status-indicator", text: "\u25CF" });
       statusEl.createSpan({ cls: "status-text", text: " Server is running" });
       try {
-        const response = await fetch(`http://127.0.0.1:${this.plugin.settings.serverPort}/health`);
-        if (response.ok) {
-          const health = await response.json();
+        const response = await (0, import_obsidian.requestUrl)({
+          url: `http://127.0.0.1:${this.plugin.settings.serverPort}/health`,
+          method: "GET"
+        });
+        if (response.status === 200) {
+          const health = response.json;
           const detailsEl = statusEl.createDiv("status-details");
           detailsEl.createDiv({ text: `Version: ${health.version || "unknown"}` });
           detailsEl.createDiv({ text: `Model: ${health.model || "unknown"}` });
