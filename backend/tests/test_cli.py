@@ -19,10 +19,12 @@ class TestVersionCommand:
 
     def test_version_displays_correct_format(self, runner):
         """Test that version command shows version number."""
+        from obsidianrag import __version__
+
         result = runner.invoke(app, ["version"])
         assert result.exit_code == 0
         assert "ObsidianRAG" in result.stdout
-        assert "3.0.0" in result.stdout
+        assert __version__ in result.stdout
 
     def test_version_shows_description(self, runner):
         """Test version command shows project description."""
