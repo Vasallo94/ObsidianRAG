@@ -1,6 +1,6 @@
 {
   "name": "obsidian-rag",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Ask questions about your Obsidian notes using local AI (RAG)",
   "main": "main.js",
   "scripts": {

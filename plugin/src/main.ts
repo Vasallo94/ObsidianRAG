@@ -5,16 +5,19 @@
  * Uses a Python backend (obsidianrag) with Ollama for LLM inference.
  */
 
+import { ChildProcess, exec, spawn } from "child_process";
 import {
-  App,
-  ItemView,
-  MarkdownRenderer,
-  Modal,
-  Notice,
-  Plugin,
-  PluginSettingTab,
-  Setting,
-  WorkspaceLeaf,
+    App,
+    ItemView,
+    MarkdownRenderer,
+    Modal,
+    Notice,
+    Plugin,
+    PluginSettingTab,
+    requestUrl,
+    RequestUrlParam,
+    Setting,
+    WorkspaceLeaf
 } from "obsidian";
 
 // ============================================================================
@@ -179,7 +182,7 @@ interface OllamaModelsResponse {
 
 export default class ObsidianRAGPlugin extends Plugin {
   settings!: ObsidianRAGSettings;
-  private serverProcess: any = null;
+  private serverProcess: ChildProcess | null = null;
   private apiBaseUrl: string = "";
   private restartAttempts: number = 0;
   private maxRestartAttempts: number = 3;
@@ -187,7 +190,7 @@ export default class ObsidianRAGPlugin extends Plugin {
   statusBarItem: HTMLElement | null = null;
 
   async onload() {
-    console.log("Loading ObsidianRAG plugin");
+    console.debug("Loading ObsidianRAG plugin");
 
     await this.loadSettings();
     this.apiBaseUrl = `http://127.0.0.1:${this.settings.serverPort}`;
@@ -196,7 +199,7 @@ export default class ObsidianRAGPlugin extends Plugin {
     this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
 
     // Add ribbon icon
-    this.addRibbonIcon("message-circle", "Vault RAG Chat", () => {
+    this.addRibbonIcon("message-circle", "Vault RAG chat", () => {
       this.activateChatView();
     });
 
@@ -208,37 +211,37 @@ export default class ObsidianRAGPlugin extends Plugin {
     // Add commands
     this.addCommand({
       id: "open-chat",
-      name: "Open Chat",
+      name: "Open chat",
       callback: () => this.activateChatView(),
     });
 
     this.addCommand({
       id: "start-server",
-      name: "Start Backend Server",
+      name: "Start backend server",
       callback: () => this.startServer(),
     });
 
     this.addCommand({
       id: "stop-server",
-      name: "Stop Backend Server",
+      name: "Stop backend server",
       callback: () => this.stopServer(),
     });
 
     this.addCommand({
       id: "check-status",
-      name: "Check Server Status",
+      name: "Check server status",
       callback: () => this.checkServerStatus(),
     });
 
     this.addCommand({
       id: "ask-question",
-      name: "Ask a Question",
+      name: "Ask a question",
       callback: () => new AskQuestionModal(this.app, this).open(),
     });
 
     this.addCommand({
       id: "reindex-vault",
-      name: "Reindex Vault",
+      name: "Reindex vault",
       callback: () => this.reindexVault(),
     });
 
@@ -263,7 +266,7 @@ export default class ObsidianRAGPlugin extends Plugin {
   }
 
   async onunload() {
-    console.log("Unloading ObsidianRAG plugin");
+    console.debug("Unloading ObsidianRAG plugin");
     await this.stopServer();
   }
 
@@ -345,7 +348,6 @@ export default class ObsidianRAGPlugin extends Plugin {
 
     try {
       const vaultPath = (this.app.vault.adapter as any).basePath;
-      const { spawn } = require("child_process");
       const platform = process.platform;
 
       // Get platform-specific spawn options
@@ -386,7 +388,7 @@ export default class ObsidianRAGPlugin extends Plugin {
       this.serverProcess = spawn(command, args, spawnOptions);
 
       this.serverProcess.stdout?.on("data", (data: Buffer) => {
-        console.log(`[ObsidianRAG] ${data.toString()}`);
+        console.debug(`[ObsidianRAG] ${data.toString()}`);
       });
 
       this.serverProcess.stderr?.on("data", (data: Buffer) => {
@@ -399,7 +401,7 @@ export default class ObsidianRAGPlugin extends Plugin {
       });
 
       this.serverProcess.on("exit", (code: number) => {
-        console.log(`[ObsidianRAG] Server exited with code ${code}`);
+        console.debug(`[ObsidianRAG] Server exited with code ${code}`);
         this.serverProcess = null;
         // Auto-restart if enabled and not manually stopped
         if (this.settings.autoStartServer && !this.isRestarting) {
@@ -455,24 +457,20 @@ export default class ObsidianRAGPlugin extends Plugin {
     
     // Also try to kill any process on the port (in case server was started externally)
     try {
-      const { exec } = require("child_process");
       const platform = process.platform;
       
-      if (platform === 'win32') {
-        // Windows: use netstat and taskkill
-        exec(`for /f "tokens=5" %a in ('netstat -aon ^| find ":${this.settings.serverPort}" ^| find "LISTENING"') do taskkill /F /PID %a`, 
-          (error: Error | null) => {
-            if (error) console.log("[ObsidianRAG] No process found on port (Windows)");
-          });
-      } else {
-        // macOS/Linux: use lsof and kill
-        exec(`lsof -ti:${this.settings.serverPort} | xargs kill -9 2>/dev/null`, 
-          (error: Error | null) => {
-            if (error) console.log("[ObsidianRAG] No process found on port");
-          });
-      }
+      const killCmd = platform === 'win32' 
+        ? `for /f "tokens=5" %a in ('netstat -aon ^| find ":${this.settings.serverPort}" ^| find "LISTENING"') do taskkill /F /PID %a`
+        : `lsof -ti:${this.settings.serverPort} | xargs kill -9 2>/dev/null`;
+
+      await new Promise<void>((resolve) => {
+        exec(killCmd, (error: Error | null) => {
+          if (error) console.debug("[ObsidianRAG] No process found on port");
+          resolve();
+        });
+      });
     } catch (e) {
-      console.log("[ObsidianRAG] Could not kill process by port:", e);
+      console.debug("[ObsidianRAG] Could not kill process by port:", e);
     }
     
     new Notice("Vault RAG server stopped");
@@ -482,11 +480,11 @@ export default class ObsidianRAGPlugin extends Plugin {
 
   async isServerRunning(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.apiBaseUrl}/health`, {
+      const response = await requestUrl({
+        url: `${this.apiBaseUrl}/health`,
         method: "GET",
-        signal: AbortSignal.timeout(2000),
       });
-      return response.ok;
+      return response.status >= 200 && response.status < 300;
     } catch {
       return false;
     }
@@ -497,17 +495,17 @@ export default class ObsidianRAGPlugin extends Plugin {
    */
   async getOllamaModels(): Promise<string[]> {
     try {
-      const response = await fetch("http://localhost:11434/api/tags", {
+      const response = await requestUrl({
+        url: "http://localhost:11434/api/tags",
         method: "GET",
-        signal: AbortSignal.timeout(5000),
       });
       
-      if (!response.ok) {
+      if (response.status < 200 || response.status >= 300) {
         console.warn("[ObsidianRAG] Failed to fetch Ollama models");
         return [];
       }
       
-      const data: OllamaModelsResponse = await response.json();
+      const data: OllamaModelsResponse = response.json;
       // Extract model names (remove :latest suffix for cleaner display)
       return data.models.map(m => m.name.replace(":latest", ""));
     } catch (error) {
@@ -529,9 +527,9 @@ export default class ObsidianRAGPlugin extends Plugin {
 
   async checkServerStatus(): Promise<void> {
     try {
-      const response = await fetch(`${this.apiBaseUrl}/health`);
-      if (response.ok) {
-        const data: HealthResponse = await response.json();
+      const response = await requestUrl(`${this.apiBaseUrl}/health`);
+      if (response.status >= 200 && response.status < 300) {
+        const data: HealthResponse = response.json;
         new Notice(
           `Server OK\nVersion: ${data.version}\nModel: ${data.model}`
         );
@@ -549,17 +547,18 @@ export default class ObsidianRAGPlugin extends Plugin {
 
   async askQuestion(question: string): Promise<AskResponse> {
     try {
-      const response = await fetch(`${this.apiBaseUrl}/ask`, {
+      const response = await requestUrl({
+        url: `${this.apiBaseUrl}/ask`,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: question }),
       });
 
-      if (!response.ok) {
+      if (response.status < 200 || response.status >= 300) {
         throw new Error(`Server error: ${response.status}`);
       }
 
-      return await response.json();
+      return response.json;
     } catch (error) {
       return {
         result: "",
@@ -642,13 +641,13 @@ export default class ObsidianRAGPlugin extends Plugin {
     new Notice("Reindexing vault... This may take a while.");
     
     try {
-      const response = await fetch(`${this.apiBaseUrl}/rebuild_db`, {
+      const response = await requestUrl({
+        url: `${this.apiBaseUrl}/rebuild_db`,
         method: "POST",
-        signal: AbortSignal.timeout(300000), // 5 min timeout for large vaults
       });
 
-      if (response.ok) {
-        const data = await response.json();
+      if (response.status >= 200 && response.status < 300) {
+        const data = response.json;
         new Notice(`Reindexing complete! Indexed ${data.total_chunks || 'unknown'} chunks.`);
         return true;
       } else {
@@ -666,20 +665,20 @@ export default class ObsidianRAGPlugin extends Plugin {
    */
   private async fetchWithRetry<T>(
     url: string,
-    options: RequestInit = {},
+    options: Omit<RequestUrlParam, "url"> = {},
     attempts: number = MAX_RETRY_ATTEMPTS
   ): Promise<T | null> {
     let lastError: Error | null = null;
 
     for (let i = 0; i < attempts; i++) {
       try {
-        const response = await fetch(url, {
+        const response = await requestUrl({
+          url,
           ...options,
-          signal: AbortSignal.timeout(10000),
         });
 
-        if (response.ok) {
-          return await response.json();
+        if (response.status >= 200 && response.status < 300) {
+          return response.json;
         }
         
         lastError = new Error(`HTTP ${response.status}`);
@@ -804,10 +803,23 @@ class SetupModal extends Modal {
     el.createEl("h3", { text: "Step 1: Check Requirements" });
     
     const requirements = el.createEl("ul");
-    requirements.createEl("li").innerHTML = "<strong>Python 3.11+</strong> - Required for the backend";
-    requirements.createEl("li").innerHTML = "<strong>obsidianrag</strong> package - <code>pip install obsidianrag</code>";
-    requirements.createEl("li").innerHTML = "<strong>Ollama</strong> - Local LLM server from <a href='https://ollama.ai'>ollama.ai</a>";
-    requirements.createEl("li").innerHTML = "At least one Ollama model - <code>ollama pull gemma3</code>";
+    const li1 = requirements.createEl("li");
+    li1.createEl("strong", { text: "Python 3.11+" });
+    li1.appendText(" - Required for the backend");
+
+    const li2 = requirements.createEl("li");
+    li2.createEl("strong", { text: "obsidianrag" });
+    li2.appendText(" package - ");
+    li2.createEl("code", { text: "pip install obsidianrag" });
+
+    const li3 = requirements.createEl("li");
+    li3.createEl("strong", { text: "Ollama" });
+    li3.appendText(" - Local LLM server from ");
+    li3.createEl("a", { text: "ollama.ai", href: "https://ollama.ai" });
+
+    const li4 = requirements.createEl("li");
+    li4.appendText("At least one Ollama model - ");
+    li4.createEl("code", { text: "ollama pull gemma3" });
 
     el.createEl("p", { 
       text: "Make sure you have all requirements installed before proceeding.",
@@ -830,7 +842,7 @@ class SetupModal extends Modal {
 
     // Server command
     new Setting(el)
-      .setName("Backend Command")
+      .setName("Backend command")
       .setDesc("Path to obsidianrag-server or 'obsidianrag' if installed globally")
       .addText(text => text
         .setValue(this.plugin.settings.pythonPath)
@@ -841,7 +853,7 @@ class SetupModal extends Modal {
 
     // Port
     new Setting(el)
-      .setName("Server Port")
+      .setName("Server port")
       .addText(text => text
         .setValue(String(this.plugin.settings.serverPort))
         .onChange(async (value) => {
@@ -851,7 +863,7 @@ class SetupModal extends Modal {
 
     // Model - populated from Ollama
     const modelSetting = new Setting(el)
-      .setName("LLM Model");
+      .setName("LLM model");
     
     if (this.availableModels.length > 0) {
       modelSetting.addDropdown(dropdown => {
@@ -1039,45 +1051,7 @@ class AskQuestionModal extends Modal {
   }
 }
 
-/**
- * Error Modal - Display errors with helpful suggestions
- */
-class ErrorModal extends Modal {
-  title: string;
-  message: string;
-  suggestions: string[];
 
-  constructor(app: App, title: string, message: string, suggestions: string[] = []) {
-    super(app);
-    this.title = title;
-    this.message = message;
-    this.suggestions = suggestions;
-  }
-
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass("obsidianrag-error-modal");
-
-    contentEl.createEl("h2", { text: `❌ ${this.title}` });
-    contentEl.createEl("p", { text: this.message, cls: "error-message" });
-
-    if (this.suggestions.length > 0) {
-      contentEl.createEl("h4", { text: "Suggestions:" });
-      const list = contentEl.createEl("ul");
-      this.suggestions.forEach(s => list.createEl("li", { text: s }));
-    }
-
-    const buttons = contentEl.createDiv("modal-button-container");
-    const okBtn = buttons.createEl("button", { text: "OK", cls: "mod-cta" });
-    okBtn.addEventListener("click", () => this.close());
-  }
-
-  onClose() {
-    const { contentEl } = this;
-    contentEl.empty();
-  }
-}
 
 // ============================================================================
 // Chat View
@@ -1103,7 +1077,7 @@ class ChatView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "Vault RAG Chat";
+    return "Vault RAG chat";
   }
 
   getIcon(): string {
@@ -1127,7 +1101,7 @@ class ChatView extends ItemView {
       cls: "obsidianrag-header-btn",
       attr: { "aria-label": "Reindex vault" }
     });
-    reindexBtn.innerHTML = "🔄";
+    reindexBtn.setText("🔄");
     reindexBtn.addEventListener("click", async () => {
       await this.plugin.reindexVault();
     });
@@ -1137,12 +1111,12 @@ class ChatView extends ItemView {
       cls: "obsidianrag-header-btn",
       attr: { "aria-label": "Clear chat history" }
     });
-    clearBtn.innerHTML = "🗑️";
+    clearBtn.setText("🗑️");
     clearBtn.addEventListener("click", () => this.clearHistory());
 
     // Status indicator
     this.statusEl = headerControls.createSpan("obsidianrag-status");
-    this.updateStatus();
+    await this.updateStatus();
 
     // Start periodic status check (every 5 seconds)
     this.statusInterval = window.setInterval(() => this.updateStatus(), 5000);
@@ -1237,19 +1211,25 @@ class ChatView extends ItemView {
       "obsidianrag-message assistant loading"
     );
     const progressContent = progressEl.createDiv("progress-content");
-    progressContent.innerHTML = "🔄 <strong>Starting...</strong>";
+    progressContent.setText("🔄 ");
+    progressContent.createEl("strong", { text: "Starting..." });
 
     // Track current step for animation
     const updateProgress = (step: string, details?: string) => {
-      progressContent.innerHTML = `🔄 <strong>${step}</strong>${details ? `<br><span class="progress-details">${details}</span>` : ""}`;
+      progressContent.empty();
+      progressContent.setText("🔄 ");
+      progressContent.createEl("strong", { text: step });
+      if (details) {
+        progressContent.createEl("br");
+        progressContent.createSpan({ cls: "progress-details", text: details });
+      }
       this.containerEl_messages.scrollTop = this.containerEl_messages.scrollHeight;
     };
 
     // For streaming tokens
     let streamingEl: HTMLElement | null = null;
     let streamingContent = "";
-    let retrievedSources: Array<{ source: string; score: number }> = [];
-    let ttftLogged = false;
+
 
     try {
       let finalAnswer: StreamEventAnswer | null = null;
@@ -1266,7 +1246,6 @@ class ChatView extends ItemView {
             break;
 
           case "retrieve_complete":
-            retrievedSources = event.sources;
             updateProgress(
               `📚 Retrieved ${event.docs_count} documents`,
               event.sources.slice(0, 3).map((s) => 
@@ -1277,8 +1256,7 @@ class ChatView extends ItemView {
 
           case "ttft":
             // Log Time To First Token
-            console.log(`⚡ [ObsidianRAG] Time to First Token: ${event.seconds}s`);
-            ttftLogged = true;
+            console.debug(`⚡ [ObsidianRAG] Time to First Token: ${event.seconds}s`);
             break;
 
           case "token":
@@ -1396,7 +1374,7 @@ class ChatView extends ItemView {
             } else {
               // File doesn't exist - still show but mark as non-existent
               // File doesn't exist - skip it entirely
-              console.log(`[ObsidianRAG] Skipping non-existent source: ${displayPath}`);
+              console.debug(`[ObsidianRAG] Skipping non-existent source: ${displayPath}`);
             }
           }
         }
@@ -1598,11 +1576,11 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
     this.renderServerStatus(containerEl);
 
     // Configuration Section
-    containerEl.createEl("h3", { text: "Configuration" });
+    new Setting(containerEl).setName("Configuration").setHeading();
 
     // Python Path
     new Setting(containerEl)
-      .setName("Vault RAG Command")
+      .setName("Vault RAG command")
       .setDesc("Path to obsidianrag-server script or command")
       .addText((text) =>
         text
@@ -1616,7 +1594,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
 
     // Server Port
     new Setting(containerEl)
-      .setName("Server Port")
+      .setName("Server port")
       .setDesc("Port for the backend API server")
       .addText((text) =>
         text
@@ -1631,7 +1609,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
 
     // LLM Model - dynamically populated from Ollama
     const modelSetting = new Setting(containerEl)
-      .setName("LLM Model")
+      .setName("LLM model")
       .setDesc("Ollama model to use for answering questions");
 
     if (this.availableModels.length > 0) {
@@ -1674,11 +1652,11 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
     }
 
     // RAG Settings Section
-    containerEl.createEl("h3", { text: "RAG Settings" });
+    new Setting(containerEl).setName("RAG settings").setHeading();
 
     // Use Reranker
     new Setting(containerEl)
-      .setName("Use Reranker")
+      .setName("Use reranker")
       .setDesc("Enable CrossEncoder reranking for better relevance (slower but more accurate)")
       .addToggle((toggle) =>
         toggle
@@ -1691,7 +1669,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
 
     // Auto-start
     new Setting(containerEl)
-      .setName("Auto-start Server")
+      .setName("Auto-start server")
       .setDesc("Automatically start the backend when Obsidian opens")
       .addToggle((toggle) =>
         toggle
@@ -1704,7 +1682,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
 
     // Show sources
     new Setting(containerEl)
-      .setName("Show Source Links")
+      .setName("Show source links")
       .setDesc("Display links to source notes in answers")
       .addToggle((toggle) =>
         toggle
@@ -1716,10 +1694,10 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
       );
 
     // Server controls
-    containerEl.createEl("h3", { text: "Server Controls" });
+    new Setting(containerEl).setName("Server controls").setHeading();
 
     new Setting(containerEl)
-      .setName("Start Server")
+      .setName("Start server")
       .setDesc("Manually start the backend server")
       .addButton((button) =>
         button.setButtonText("Start").onClick(async () => {
@@ -1729,7 +1707,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Stop Server")
+      .setName("Stop server")
       .setDesc("Stop the backend server")
       .addButton((button) =>
         button.setButtonText("Stop").onClick(async () => {
@@ -1739,7 +1717,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Reindex Vault")
+      .setName("Reindex vault")
       .setDesc("Force reindex all notes in the vault")
       .addButton((button) =>
         button
@@ -1754,23 +1732,32 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
     this.renderVaultStats(containerEl);
 
     // Help section
-    containerEl.createEl("h3", { text: "Requirements" });
+    new Setting(containerEl).setName("Requirements").setHeading();
     const helpEl = containerEl.createEl("div", { cls: "setting-item-description" });
-    helpEl.innerHTML = `
-      <p>This plugin requires:</p>
-      <ul>
-        <li><strong>Python 3.11+</strong> installed and accessible</li>
-        <li><strong>obsidianrag</strong> package: <code>pip install obsidianrag</code></li>
-        <li><strong>Ollama</strong> running locally with at least one model</li>
-      </ul>
-      <p>Install Ollama from <a href="https://ollama.ai">ollama.ai</a></p>
-    `;
+    helpEl.createEl("p", { text: "This plugin requires:" });
+    const ul = helpEl.createEl("ul");
+    
+    const hLi1 = ul.createEl("li");
+    hLi1.createEl("strong", { text: "Python 3.11+" });
+    hLi1.appendText(" installed and accessible");
+
+    const hLi2 = ul.createEl("li");
+    hLi2.createEl("strong", { text: "obsidianrag" });
+    hLi2.appendText(" package: ");
+    hLi2.createEl("code", { text: "pip install obsidianrag" });
+
+    const hLi3 = ul.createEl("li");
+    hLi3.createEl("strong", { text: "Ollama" });
+    hLi3.appendText(" running locally with at least one model");
+
+    const pLink = helpEl.createEl("p", { text: "Install Ollama from " });
+    pLink.createEl("a", { text: "ollama.ai", href: "https://ollama.ai" });
 
     // Reset Setup
-    containerEl.createEl("h3", { text: "Advanced" });
+    new Setting(containerEl).setName("Advanced").setHeading();
     
     new Setting(containerEl)
-      .setName("Reset to Defaults")
+      .setName("Reset to defaults")
       .setDesc("Reset all settings to their default values")
       .addButton((button) =>
         button
@@ -1798,7 +1785,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Reset Setup Wizard")
+      .setName("Reset setup wizard")
       .setDesc("Show the setup wizard again on next reload")
       .addButton((button) =>
         button
@@ -1813,7 +1800,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
 
   private async renderServerStatus(containerEl: HTMLElement) {
     const statusContainer = containerEl.createDiv("obsidianrag-settings-status");
-    statusContainer.createEl("h3", { text: "Server Status" });
+    new Setting(statusContainer).setName("Server status").setHeading();
     
     const statusEl = statusContainer.createDiv("status-display");
     
@@ -1843,9 +1830,9 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
       
       // Fetch and display health info
       try {
-        const response = await fetch(`http://127.0.0.1:${this.plugin.settings.serverPort}/health`);
-        if (response.ok) {
-          const health: HealthResponse = await response.json();
+        const response = await requestUrl(`http://127.0.0.1:${this.plugin.settings.serverPort}/health`);
+        if (response.status >= 200 && response.status < 300) {
+          const health: HealthResponse = response.json;
           const detailsEl = statusEl.createDiv("status-details");
           detailsEl.createDiv({ text: `Version: ${health.version || "unknown"}` });
           detailsEl.createDiv({ text: `Model: ${health.model || "unknown"}` });
@@ -1861,7 +1848,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
   }
 
   private async renderVaultStats(containerEl: HTMLElement) {
-    containerEl.createEl("h3", { text: "Vault Statistics" });
+    new Setting(containerEl).setName("Vault statistics").setHeading();
     
     const statsContainer = containerEl.createDiv("obsidianrag-vault-stats");
     
