@@ -5,7 +5,8 @@
  * Uses a Python backend (obsidianrag) with Ollama for LLM inference.
  */
 
-import { ChildProcess, exec, spawn } from "child_process";
+import type { ChildProcess } from "child_process";
+import { exec, spawn } from "child_process";
 import {
     App,
     ItemView,
@@ -212,25 +213,25 @@ export default class ObsidianRAGPlugin extends Plugin {
     this.addCommand({
       id: "open-chat",
       name: "Open chat",
-      callback: () => this.activateChatView(),
+      callback: () => { void this.activateChatView(); },
     });
 
     this.addCommand({
       id: "start-server",
       name: "Start backend server",
-      callback: () => this.startServer(),
+      callback: () => { void this.startServer(); },
     });
 
     this.addCommand({
       id: "stop-server",
       name: "Stop backend server",
-      callback: () => this.stopServer(),
+      callback: () => { void this.stopServer(); },
     });
 
     this.addCommand({
       id: "check-status",
       name: "Check server status",
-      callback: () => this.checkServerStatus(),
+      callback: () => { void this.checkServerStatus(); },
     });
 
     this.addCommand({
@@ -242,7 +243,7 @@ export default class ObsidianRAGPlugin extends Plugin {
     this.addCommand({
       id: "reindex-vault",
       name: "Reindex vault",
-      callback: () => this.reindexVault(),
+      callback: () => { void this.reindexVault(); },
     });
 
     // Add settings tab
@@ -831,7 +832,7 @@ class SetupModal extends Modal {
     const nextBtn = buttons.createEl("button", { text: "Next →", cls: "mod-cta" });
     nextBtn.addEventListener("click", () => this.showStep(1));
 
-    const skipBtn = buttons.createEl("button", { text: "Skip Setup" });
+    const skipBtn = buttons.createEl("button", { text: "Skip setup" });
     skipBtn.addEventListener("click", () => this.completeSetup());
   }
 
@@ -921,7 +922,7 @@ class SetupModal extends Modal {
   renderComplete() {
     const el = this.contentEl_modal;
     
-    el.createEl("h3", { text: "✅ Setup Complete!" });
+    el.createEl("h3", { text: "✅ Setup complete!" });
     el.createEl("p", { text: "You're all set to use Vault RAG." });
 
     const tips = el.createEl("ul");
@@ -931,14 +932,14 @@ class SetupModal extends Modal {
 
     const buttons = el.createDiv("modal-button-container");
     
-    const startBtn = buttons.createEl("button", { text: "Start Server & Open Chat", cls: "mod-cta" });
+    const startBtn = buttons.createEl("button", { text: "Start server & open chat", cls: "mod-cta" });
     startBtn.addEventListener("click", async () => {
       await this.plugin.startServer();
       this.completeSetup();
       this.plugin.activateChatView();
     });
 
-    const laterBtn = buttons.createEl("button", { text: "Maybe Later" });
+    const laterBtn = buttons.createEl("button", { text: "Maybe later" });
     laterBtn.addEventListener("click", () => this.completeSetup());
   }
 
@@ -986,7 +987,7 @@ class AskQuestionModal extends Modal {
     const askBtn = buttonContainer.createEl("button", { text: "Ask", cls: "mod-cta" });
     askBtn.addEventListener("click", () => this.askQuestion());
 
-    const openChatBtn = buttonContainer.createEl("button", { text: "Open Full Chat" });
+    const openChatBtn = buttonContainer.createEl("button", { text: "Open full chat" });
     openChatBtn.addEventListener("click", () => {
       this.close();
       this.plugin.activateChatView();
@@ -1259,7 +1260,7 @@ class ChatView extends ItemView {
             console.debug(`⚡ [ObsidianRAG] Time to First Token: ${event.seconds}s`);
             break;
 
-          case "token":
+          case "token": {
             // First token: switch from progress to streaming display
             if (!streamingEl) {
               progressEl.remove();
@@ -1286,6 +1287,7 @@ class ChatView extends ItemView {
             // Auto-scroll
             this.containerEl_messages.scrollTop = this.containerEl_messages.scrollHeight;
             break;
+          }
 
           case "generate_complete":
             // This may come if not using token streaming
@@ -1539,13 +1541,14 @@ class ChatView extends ItemView {
     return "🔴";                         // Lower relevance
   }
 
-  async onClose() {
+  async onClose(): Promise<void> {
     // Cleanup periodic status check
     if (this.statusInterval) {
       window.clearInterval(this.statusInterval);
       this.statusInterval = null;
     }
     this.statusEl = null;
+    await Promise.resolve();
   }
 }
 
@@ -1567,7 +1570,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "Vault RAG Settings" });
+    containerEl.createEl("h2", { text: "Vault RAG" });
 
     // Fetch available models from Ollama
     this.availableModels = await this.plugin.getOllamaModels();
@@ -1652,7 +1655,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
     }
 
     // RAG Settings Section
-    new Setting(containerEl).setName("RAG settings").setHeading();
+    new Setting(containerEl).setName("RAG").setHeading();
 
     // Use Reranker
     new Setting(containerEl)
@@ -1702,7 +1705,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
       .addButton((button) =>
         button.setButtonText("Start").onClick(async () => {
           await this.plugin.startServer();
-          this.display(); // Refresh status
+          await this.display(); // Refresh status
         })
       );
 
@@ -1712,7 +1715,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
       .addButton((button) =>
         button.setButtonText("Stop").onClick(async () => {
           await this.plugin.stopServer();
-          this.display(); // Refresh status
+          await this.display(); // Refresh status
         })
       );
 
@@ -1761,7 +1764,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
       .setDesc("Reset all settings to their default values")
       .addButton((button) =>
         button
-          .setButtonText("Reset All Settings")
+          .setButtonText("Reset all settings")
           .setWarning()
           .onClick(async () => {
             // Keep hasCompletedSetup true so wizard doesn't show again
@@ -1789,7 +1792,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
       .setDesc("Show the setup wizard again on next reload")
       .addButton((button) =>
         button
-          .setButtonText("Reset Wizard")
+          .setButtonText("Reset wizard")
           .onClick(async () => {
             this.plugin.settings.hasCompletedSetup = false;
             await this.plugin.saveSettings();

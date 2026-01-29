@@ -1,7 +1,7 @@
 {
   "id": "vault-rag",
   "name": "Vault RAG",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "minAppVersion": "1.5.0",
   "description": "Ask questions about your notes using local AI (Ollama + LangGraph)",
   "author": "Enrique Vasallo",
