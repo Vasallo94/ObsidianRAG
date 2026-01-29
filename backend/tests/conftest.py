@@ -234,7 +234,7 @@ def test_client(mock_vault: Path, mock_embeddings):
 
 
 @pytest.fixture
-def fast_test_client(mock_vault: Path, mock_qa_agent, mock_embeddings, mock_chroma_db):
+def fast_test_client(mock_qa_agent):
     """Create a fast test client with fully mocked backend.
 
     Use this for tests that don't need real DB/embeddings.
@@ -242,7 +242,6 @@ def fast_test_client(mock_vault: Path, mock_qa_agent, mock_embeddings, mock_chro
     from typing import Optional
 
     from fastapi import FastAPI, HTTPException
-    from fastapi.testclient import TestClient as FastTestClient
     from pydantic import BaseModel, Field
 
     class Question(BaseModel):
@@ -291,7 +290,7 @@ def fast_test_client(mock_vault: Path, mock_qa_agent, mock_embeddings, mock_chro
     def rebuild():
         return {"status": "ok"}
 
-    with FastTestClient(app) as client:
+    with TestClient(app) as client:
         yield client
 
 
