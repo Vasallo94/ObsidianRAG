@@ -226,10 +226,11 @@ def test_client(mock_vault: Path, mock_embeddings):
 
     with patch("obsidianrag.core.db_service.HuggingFaceEmbeddings", return_value=mock_embeddings):
         with patch("obsidianrag.core.qa_agent.OllamaLLM", return_value=mock_llm):
-            app = create_app(str(mock_vault))
+            with patch("obsidianrag.core.qa_service.verify_ollama_available"):
+                app = create_app(str(mock_vault))
 
-            with TestClient(app) as client:
-                yield client
+                with TestClient(app) as client:
+                    yield client
 
 
 @pytest.fixture
