@@ -138,7 +138,9 @@ class TestErrorHandling:
 
     def test_wrong_content_type(self, fast_test_client):
         """Test sending wrong content type."""
-        response = fast_test_client.post("/ask", data="text", headers={"Content-Type": "text/plain"})
+        response = fast_test_client.post(
+            "/ask", data="text", headers={"Content-Type": "text/plain"}
+        )
         assert response.status_code in [400, 422, 415]
 
 
