@@ -13,8 +13,8 @@ from fastapi.testclient import TestClient
 # ============================================================
 
 
-@pytest.fixture
-def mock_vault(tmp_path: Path) -> Generator[Path, None, None]:
+@pytest.fixture(name="mock_vault")
+def mock_vault_fixt(tmp_path: Path) -> Generator[Path, None, None]:
     """Create a temporary mock Obsidian vault with test notes."""
     vault_path = tmp_path / "test_vault"
     vault_path.mkdir()
@@ -109,8 +109,8 @@ def mock_vault_with_db(mock_vault: Path) -> Generator[Path, None, None]:
 # ============================================================
 
 
-@pytest.fixture
-def mock_settings(mock_vault: Path):
+@pytest.fixture(name="mock_settings")
+def mock_settings_fixt(mock_vault: Path):
     """Create mock settings configured for test vault."""
     from obsidianrag.config import Settings
 
@@ -166,8 +166,8 @@ def mock_ollama_unavailable():
 # ============================================================
 
 
-@pytest.fixture
-def mock_llm():
+@pytest.fixture(name="mock_llm")
+def mock_llm_fixt():
     """Mock LLM that returns predefined responses."""
     mock = MagicMock()
     mock.invoke.return_value = "This is a mock response about Python basics."
@@ -176,8 +176,8 @@ def mock_llm():
         yield mock
 
 
-@pytest.fixture
-def mock_embeddings():
+@pytest.fixture(name="mock_embeddings")
+def mock_embeddings_fixt():
     """Mock embeddings model."""
     mock = MagicMock()
     # Return 384-dimensional vectors (typical for sentence-transformers)
@@ -189,8 +189,8 @@ def mock_embeddings():
             yield mock
 
 
-@pytest.fixture
-def mock_qa_agent():
+@pytest.fixture(name="mock_qa_agent")
+def mock_qa_agent_fixt():
     """Mock the QA Agent to avoid loading LLM/embeddings."""
     mock_agent = MagicMock()
     mock_agent.invoke.return_value = {
@@ -222,15 +222,17 @@ def test_client(mock_vault: Path, mock_embeddings):
     # Create app with mocked embeddings and LLM
     from langchain_core.runnables import RunnableLambda
 
-    mock_llm = RunnableLambda(lambda x: "Integrated answer")
+    mock_llm_internal = RunnableLambda(lambda x: "Integrated answer")
 
     with patch("obsidianrag.core.db_service.HuggingFaceEmbeddings", return_value=mock_embeddings):
-        with patch("obsidianrag.core.qa_agent.OllamaLLM", return_value=mock_llm):
+        with patch("obsidianrag.core.qa_agent.OllamaLLM", return_value=mock_llm_internal):
             with patch("obsidianrag.core.qa_service.verify_ollama_available"):
-                app = create_app(str(mock_vault))
+                with patch("obsidianrag.core.qa_agent.verify_ollama_available"):
+                    with patch("obsidianrag.core.qa_agent.verify_llm_model", return_value="gemma3"):
+                        app = create_app(str(mock_vault))
 
-                with TestClient(app) as client:
-                    yield client
+                        with TestClient(app) as client:
+                            yield client
 
 
 @pytest.fixture
