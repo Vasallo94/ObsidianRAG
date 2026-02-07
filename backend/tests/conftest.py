@@ -207,7 +207,7 @@ def mock_qa_agent_fixt():
 
 
 @pytest.fixture
-def test_client(mock_vault: Path, mock_embeddings):
+def test_client(mock_vault: Path, mock_embeddings) -> Generator[TestClient, None, None]:
     """Create a test client for the FastAPI app.
 
     Note: This uses real server but with mocked embeddings.
@@ -222,7 +222,7 @@ def test_client(mock_vault: Path, mock_embeddings):
     # Create app with mocked embeddings and LLM
     from langchain_core.runnables import RunnableLambda
 
-    mock_llm_internal = RunnableLambda(lambda x: "Integrated answer")
+    mock_llm_internal: RunnableLambda = RunnableLambda(lambda x: "Integrated answer")
 
     with patch("obsidianrag.core.db_service.HuggingFaceEmbeddings", return_value=mock_embeddings):
         with patch("obsidianrag.core.qa_agent.OllamaLLM", return_value=mock_llm_internal):
@@ -236,7 +236,7 @@ def test_client(mock_vault: Path, mock_embeddings):
 
 
 @pytest.fixture
-def fast_test_client(mock_qa_agent):
+def fast_test_client(mock_qa_agent) -> Generator[TestClient, None, None]:
     """Create a fast test client with fully mocked backend.
 
     Use this for tests that don't need real DB/embeddings.
@@ -269,11 +269,11 @@ def fast_test_client(mock_qa_agent):
     app = FastAPI()
 
     @app.get("/health")
-    def health():
+    def health() -> dict[str, str]:
         return {"status": "healthy", "version": "3.0.0"}
 
     @app.post("/ask", response_model=Answer)
-    def ask(question: Question):
+    def ask(question: Question) -> Answer:
         if not question.text.strip():
             raise HTTPException(400, "Question cannot be empty")
         result = mock_qa_agent.invoke({"question": question.text})
@@ -285,11 +285,11 @@ def fast_test_client(mock_qa_agent):
         )
 
     @app.get("/stats")
-    def stats():
+    def stats() -> dict[str, int]:
         return {"total_chunks": 10, "total_documents": 4}
 
     @app.post("/rebuild_db")
-    def rebuild():
+    def rebuild() -> dict[str, str]:
         return {"status": "ok"}
 
     with TestClient(app) as client:
