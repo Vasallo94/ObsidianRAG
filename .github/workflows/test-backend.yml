@@ -94,8 +94,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --dev
-          uv pip install pyright
 
       - name: Run type checking
-        run: uv run pyright obsidianrag/
-        continue-on-error: true  # Don't fail CI for type errors initially
+        run: uv run mypy .
+        continue-on-error: false
