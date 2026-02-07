@@ -119,7 +119,7 @@ git checkout -b feature/my-awesome-feature
    ```bash
    # Backend
    cd backend && uv run pytest
-   
+
    # Plugin
    cd plugin && pnpm test
    ```
@@ -129,7 +129,7 @@ git checkout -b feature/my-awesome-feature
    # Backend
    uv run ruff format obsidianrag/ tests/
    uv run ruff check obsidianrag/ tests/ --fix
-   
+
    # Plugin
    pnpm run lint
    ```
@@ -155,11 +155,11 @@ git checkout -b feature/my-awesome-feature
 ```python
 def retrieve_documents(query: str, k: int = 10) -> list[Document]:
     """Retrieve relevant documents for a query.
-    
+
     Args:
         query: The search query text.
         k: Maximum number of documents to return.
-    
+
     Returns:
         List of Document objects sorted by relevance.
     """

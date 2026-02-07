@@ -65,7 +65,7 @@ def get_embeddings() -> Embeddings:
                     )
                     # Try to pull the model automatically (10 min timeout for embeddings)
                     if pull_ollama_model(model, timeout=600):
-                        embeddings = OllamaEmbeddings(
+                        embeddings: Embeddings = OllamaEmbeddings(
                             model=model, base_url=settings.ollama_base_url
                         )
                         logger.info(f"✅ Ollama embeddings ({model}) loaded successfully")

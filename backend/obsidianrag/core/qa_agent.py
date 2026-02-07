@@ -195,7 +195,7 @@ def retrieve_node(state: AgentState, retriever, db):
         logger.info(f"   📑 Doc {i + 1} (score: {score:.4f}): {os.path.basename(source)}")
 
     # Full document expansion for fragmented sources
-    source_counts = {}
+    source_counts: dict[str, int] = {}
     for doc in docs:
         source = doc.metadata.get("source", "")
         if source:
@@ -456,7 +456,7 @@ def ask_question_graph(
 
     logger.info(f"🚀 [GRAPH START] Question: '{question}'")
 
-    history_messages = []
+    history_messages: List[BaseMessage] = []
     for q, a in chat_history:
         history_messages.append(HumanMessage(content=q))
         history_messages.append(AIMessage(content=a))
@@ -524,16 +524,17 @@ async def ask_question_graph_streaming(
         logger.info(f"🔍 [STREAM] Running retrieval for: '{question}'")
 
         # Build a minimal state for retrieve_node
-        history_messages = []
+        history_messages: List[BaseMessage] = []
         for q, a in chat_history:
             history_messages.append(HumanMessage(content=q))
             history_messages.append(AIMessage(content=a))
         history_messages.append(HumanMessage(content=question))
 
-        state = {
-            "question": question,
+        state: AgentState = {
             "messages": history_messages,
+            "question": question,
             "context": [],
+            "answer": "",
         }
 
         # Call retrieve_node directly

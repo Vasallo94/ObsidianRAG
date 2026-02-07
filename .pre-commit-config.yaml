@@ -1,0 +1,59 @@
+# Root pre-commit configuration for ObsidianRAG
+# Runs checks for both backend (Python) and plugin (TypeScript)
+
+repos:
+  # Standard hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: check-case-conflict
+
+  # Backend (Python) - Ruff
+  # Using repo-based hook for speed and caching
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+
+  # Backend (Python) - Mypy (Local)
+  # Running locally to use the virtualenv's environment and dependencies
+  - repo: local
+    hooks:
+      - id: backend-mypy
+        name: backend-mypy
+        entry: bash -c 'cd backend && uv run mypy .'
+        language: system
+        types: [python]
+        files: ^backend/
+        pass_filenames: false
+
+  # Plugin (TypeScript) - ESLint (Local)
+  - repo: local
+    hooks:
+      - id: plugin-lint
+        name: plugin-lint
+        entry: bash -c 'cd plugin && pnpm lint'
+        language: system
+        files: ^plugin/.*\.(ts|tsx|js|jsx)$
+        pass_filenames: false
+
+  # Plugin (TypeScript) - TSC (Local)
+  # Type checking only (no emit)
+  - repo: local
+    hooks:
+      - id: plugin-tsc
+        name: plugin-tsc
+        entry: bash -c 'cd plugin && pnpm exec tsc --noEmit --skipLibCheck'
+        language: system
+        files: ^plugin/.*\.(ts|tsx)$
+        pass_filenames: false

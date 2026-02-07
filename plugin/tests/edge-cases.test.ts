@@ -1,5 +1,6 @@
 
 import * as child_process from 'child_process';
+import { requestUrl } from 'obsidian';
 import ObsidianRAGPlugin from '../src/main';
 
 // Mock child_process
@@ -18,7 +19,7 @@ describe('Edge Cases', () => {
     // Mock document if missing (Node env)
     if (typeof document === 'undefined') {
       (global as any).document = {
-        createElement: () => ({ 
+        createElement: () => ({
           createEl: () => ({}),
           appendChild: () => {},
           classList: { add: () => {} }
@@ -51,13 +52,15 @@ describe('Edge Cases', () => {
       autoStartServer: true,
       useReranker: false
     };
-    
+
     // Mock getSpawnOptionsForPlatform to return simple options
     plugin.getSpawnOptionsForPlatform = jest.fn().mockReturnValue({});
     // Mock waitForServer to avoid actual timeout
     plugin.waitForServer = jest.fn();
     // Mock updateStatusBar
     plugin.updateStatusBar = jest.fn();
+    // Mock handleServerCrash to prevent async retry loops in tests
+    (plugin as any).handleServerCrash = jest.fn();
   });
 
   describe('Server Start - Port Occupied', () => {
@@ -83,7 +86,9 @@ describe('Edge Cases', () => {
 
       expect(result).toBe(false);
       expect(mockSpawn).toHaveBeenCalled();
-      // Expect Notice to have been called (we can't easily check the content of Notice 
+      // Verify crash handler was triggered
+      expect((plugin as any).handleServerCrash).toHaveBeenCalledWith(1);
+      // Expect Notice to have been called (we can't easily check the content of Notice
       // unless we spy on the Notice class constructor or mock it differently)
     });
   });
@@ -91,21 +96,21 @@ describe('Edge Cases', () => {
   describe('Server Status - Connection Lost', () => {
     it('should handle connection refused', async () => {
       (global.fetch as jest.Mock).mockRejectedValue(new Error('Connection refused'));
-      
+
       // We need to spy on Notice to verify the output
       // Since Notice is a class, we can spy on the prototype or just trust the mock implementation logs
-      
+
       await plugin.checkServerStatus();
-      
+
       // If no error thrown, it passed the try-catch block
     });
   });
 
   describe('Vault Stats', () => {
     it('should handle empty vault stats', async () => {
-      (global.fetch as jest.Mock).mockResolvedValue({
-        ok: true,
-        json: async () => ({
+      (requestUrl as jest.Mock).mockResolvedValue({
+        status: 200,
+        json: {
           total_notes: 0,
           total_chunks: 0,
           total_words: 0,
@@ -114,7 +119,7 @@ describe('Edge Cases', () => {
           folders: 0,
           internal_links: 0,
           vault_path: '/test/vault'
-        })
+        }
       });
 
       const stats = await plugin.getStats();
@@ -125,9 +130,9 @@ describe('Edge Cases', () => {
     });
 
     it('should handle large vault stats', async () => {
-      (global.fetch as jest.Mock).mockResolvedValue({
-        ok: true,
-        json: async () => ({
+      (requestUrl as jest.Mock).mockResolvedValue({
+        status: 200,
+        json: {
           total_notes: 10000,
           total_chunks: 50000,
           total_words: 1000000,
@@ -136,7 +141,7 @@ describe('Edge Cases', () => {
           folders: 500,
           internal_links: 20000,
           vault_path: '/test/vault'
-        })
+        }
       });
 
       const stats = await plugin.getStats();

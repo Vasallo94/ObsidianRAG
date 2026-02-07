@@ -49,7 +49,7 @@ sequenceDiagram
 
     User->>Plugin: Ask Question
     Plugin->>Backend: POST /ask/stream
-    
+
     rect rgb(240, 248, 255)
         note right of Backend: Retrieval Phase
         Backend->>VectorDB: Query Embeddings

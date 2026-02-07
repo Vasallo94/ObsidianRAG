@@ -18,11 +18,11 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     strategy:
       matrix:
         python-version: ['3.11', '3.12']
-    
+
     defaults:
       run:
         working-directory: backend
@@ -75,7 +75,7 @@ jobs:
 
   type-check:
     runs-on: ubuntu-latest
-    
+
     defaults:
       run:
         working-directory: backend

@@ -2,8 +2,8 @@
 
 ## ✅ Current Status
 
-**Version**: 1.0.0  
-**Build**: Completed (47KB main.js)  
+**Version**: 1.0.0
+**Build**: Completed (47KB main.js)
 **Commit**: Pushed to `v3-plugin`
 
 ---
@@ -73,7 +73,7 @@ mkdir -p .obsidian\plugins\obsidianrag
 
 1. **Close Obsidian completely**
 2. **Open Obsidian**
-3. **Verify**: 
+3. **Verify**:
    - Ribbon icon 🧠 appears
    - Click on the icon
    - Status should show "● Online" (may take 5-10 seconds)

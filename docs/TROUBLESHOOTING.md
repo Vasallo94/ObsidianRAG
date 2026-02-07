@@ -18,7 +18,7 @@ Common issues and solutions for ObsidianRAG.
    ```bash
    pip show obsidianrag
    ```
-   
+
    If not installed:
    ```bash
    pip install obsidianrag
@@ -37,7 +37,7 @@ Common issues and solutions for ObsidianRAG.
      ```bash
      # macOS/Linux
      lsof -i :8000
-     
+
      # Windows
      netstat -ano | findstr :8000
      ```
@@ -47,7 +47,7 @@ Common issues and solutions for ObsidianRAG.
    ```bash
    curl http://localhost:8000/health
    ```
-   
+
    Should return:
    ```json
    {"status": "ok", "model": "gemma3", ...}
@@ -78,7 +78,7 @@ Common issues and solutions for ObsidianRAG.
    ```bash
    curl http://localhost:11434/api/tags
    ```
-   
+
    Should list available models.
 
 4. **Check Ollama URL**:
@@ -269,7 +269,7 @@ Subsequent runs are fast (incremental indexing).
    ```bash
    # macOS/Linux
    top
-   
+
    # Look for high CPU/RAM usage
    ```
 

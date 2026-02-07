@@ -7,7 +7,7 @@ export class Plugin {
     this.app = app;
     this.manifest = manifest;
   }
-  
+
   async loadData() { return {}; }
   async saveData(data: any) {}
   addCommand(command: any) {}
@@ -19,11 +19,11 @@ export class Plugin {
 export class Modal {
   app: any;
   contentEl: any = document.createElement('div');
-  
+
   constructor(app: any) {
     this.app = app;
   }
-  
+
   open() {}
   close() {}
   setContent(content: string) {}
@@ -33,11 +33,11 @@ export class ItemView {
   app: any;
   leaf: any;
   containerEl: any = { children: [null, document.createElement('div')] };
-  
+
   constructor(leaf: any) {
     this.leaf = leaf;
   }
-  
+
   getViewType() { return ''; }
   getDisplayText() { return ''; }
   onOpen() {}
@@ -48,12 +48,12 @@ export class PluginSettingTab {
   app: any;
   plugin: any;
   containerEl: any = document.createElement('div');
-  
+
   constructor(app: any, plugin: any) {
     this.app = app;
     this.plugin = plugin;
   }
-  
+
   display() {}
 }
 

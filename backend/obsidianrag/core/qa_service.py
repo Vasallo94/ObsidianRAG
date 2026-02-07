@@ -1,7 +1,7 @@
 """QA Service with hybrid search and reranking"""
 
 import logging
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, cast
 
 from langchain_classic.chains import ConversationalRetrievalChain
 from langchain_classic.retrievers import (
@@ -240,7 +240,7 @@ def retrieve_with_links(retriever, query: str) -> List[Document]:
     if linked_sources:
         logger.info(f"GraphRAG: Found {len(linked_sources)} linked notes")
 
-    return docs
+    return cast(List[Document], docs)
 
 
 def ask_question(
@@ -265,8 +265,8 @@ def ask_question(
     try:
         response = qa_chain.invoke({"question": question, "chat_history": chat_history})
 
-        answer = response["answer"]
-        source_documents = response.get("source_documents", [])
+        answer = cast(str, response["answer"])
+        source_documents = cast(List[Document], response.get("source_documents", []))
 
         logger.info(f"Response generated with {len(source_documents)} sources")
 

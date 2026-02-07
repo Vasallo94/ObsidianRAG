@@ -7,7 +7,7 @@ describe('Source Path Parsing', () => {
     it('should extract relative path from absolute vault path', () => {
       const vaultPath = '/Users/test/vault';
       const sourcePath = '/Users/test/vault/Notes/MyNote.md';
-      
+
       let result = sourcePath;
       if (result.startsWith(vaultPath)) {
         result = result.substring(vaultPath.length);
@@ -21,7 +21,7 @@ describe('Source Path Parsing', () => {
 
     it('should remove .md extension for display', () => {
       const source = 'Notes/MyNote.md';
-      const displayPath = source.endsWith('.md') 
+      const displayPath = source.endsWith('.md')
         ? source.substring(0, source.length - 3)
         : source;
 

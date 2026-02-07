@@ -137,7 +137,7 @@ data: {"type":"done"}
 
   it('should handle malformed JSON gracefully', () => {
     const badLine = 'data: {invalid json}';
-    
+
     try {
       JSON.parse(badLine.slice(6));
       fail('Should have thrown error');

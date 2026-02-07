@@ -1,7 +1,7 @@
 """Main ObsidianRAG class - high-level interface for the RAG system"""
 
 import logging
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from langchain_core.documents import Document
 
@@ -40,7 +40,7 @@ class ObsidianRAG:
         else:
             self._settings = configure_from_vault(vault_path)
 
-        self._db = None
+        self._db: Any = None
         self._graph = None
         self._chat_history: List[Tuple[str, str]] = []
 
