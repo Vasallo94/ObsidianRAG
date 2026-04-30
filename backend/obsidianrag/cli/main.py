@@ -1,7 +1,7 @@
 """Command-line interface for ObsidianRAG"""
 
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional, cast
 
 import typer
 from rich.console import Console
@@ -43,8 +43,28 @@ def serve(
     vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host to bind to"),
     port: int = typer.Option(8000, "--port", "-p", help="Port to bind to"),
+    provider: Optional[str] = typer.Option(
+        None,
+        "--provider",
+        help="LLM runtime provider: ollama, lmstudio, or custom",
+    ),
     model: Optional[str] = typer.Option(
         None, "--model", "-m", help="LLM model to use (e.g., gemma3, llama3.2)"
+    ),
+    base_url: Optional[str] = typer.Option(
+        None,
+        "--base-url",
+        help="Base URL for the selected provider (Ollama or compatible chat server)",
+    ),
+    api_format: Optional[str] = typer.Option(
+        None,
+        "--api-format",
+        help="API format for custom providers: ollama or chat-completions",
+    ),
+    api_key: Optional[str] = typer.Option(
+        None,
+        "--api-key",
+        help="API key for custom compatible providers when required",
     ),
     reranker: Optional[bool] = typer.Option(
         None, "--reranker/--no-reranker", help="Enable/disable reranker"
@@ -54,6 +74,7 @@ def serve(
     """Start the ObsidianRAG API server."""
     vault_path = get_vault_path(vault)
 
+    provider_info = f"\n🔌 Provider: [yellow]{provider}[/yellow]" if provider else ""
     model_info = f"\n🤖 Model: [yellow]{model}[/yellow]" if model else ""
     reranker_info = (
         f"\n🔍 Reranker: [yellow]{'Enabled' if reranker else 'Disabled'}[/yellow]"
@@ -65,7 +86,7 @@ def serve(
         Panel.fit(
             f"🧠 [bold cyan]ObsidianRAG Server[/bold cyan]\n\n"
             f"📁 Vault: [green]{vault_path}[/green]\n"
-            f"🌐 URL: [blue]http://{host}:{port}[/blue]{model_info}{reranker_info}",
+            f"🌐 URL: [blue]http://{host}:{port}[/blue]{provider_info}{model_info}{reranker_info}",
             title="Starting Server",
         )
     )
@@ -77,8 +98,22 @@ def serve(
 
     # Override settings if specified via CLI
     settings = get_settings()
+    if provider:
+        normalized_provider = provider.lower().replace("-", "")
+        settings.llm_provider = cast(Literal["ollama", "lmstudio", "custom"], provider)
+        if normalized_provider == "lmstudio":
+            settings.llm_api_format = "chat-completions"
     if model:
         settings.llm_model = model
+    if base_url:
+        if settings.llm_provider == "ollama" or api_format == "ollama":
+            settings.ollama_base_url = base_url
+        else:
+            settings.compatible_base_url = base_url
+    if api_format:
+        settings.llm_api_format = cast(Literal["ollama", "chat-completions"], api_format)
+    if api_key:
+        settings.compatible_api_key = api_key
     if reranker is not None:
         settings.use_reranker = reranker
 

@@ -36,7 +36,11 @@ const RETRY_DELAY_MS = 1000;
 interface ObsidianRAGSettings {
   pythonPath: string;
   serverPort: number;
+  llmProvider: "ollama" | "lmstudio" | "custom";
+  llmApiFormat: "ollama" | "chat-completions";
   llmModel: string;
+  llmBaseUrl: string;
+  llmApiKey: string;
   autoStartServer: boolean;
   showSourceLinks: boolean;
   useReranker: boolean;
@@ -55,6 +59,8 @@ interface AskResponse {
 interface HealthResponse {
   status: string;
   version: string;
+  llm_provider?: string;
+  llm_api_format?: string;
   model: string;
 }
 
@@ -137,9 +143,13 @@ type StreamEvent =
 // ============================================================================
 
 const DEFAULT_SETTINGS: ObsidianRAGSettings = {
-  pythonPath: "/usr/local/bin/obsidianrag-server",
+  pythonPath: "obsidianrag",
   serverPort: DEFAULT_PORT,
+  llmProvider: "ollama",
+  llmApiFormat: "ollama",
   llmModel: "gemma3",
+  llmBaseUrl: "http://localhost:11434",
+  llmApiKey: "lm-studio",
   autoStartServer: true,
   showSourceLinks: true,
   useReranker: true,
@@ -166,14 +176,16 @@ interface StatsResponse {
 // Ollama Models Interface
 // ============================================================================
 
-interface OllamaModel {
+interface ProviderModel {
   name: string;
+  id?: string;
   modified_at: string;
   size: number;
 }
 
-interface OllamaModelsResponse {
-  models: OllamaModel[];
+interface ProviderModelsResponse {
+  models: ProviderModel[];
+  data?: Array<{ id: string }>;
 }
 
 // ============================================================================
@@ -378,10 +390,19 @@ export default class ObsidianRAGPlugin extends Plugin {
           `"${vaultPath}"`, // Quote path for Windows
           "--port",
           String(this.settings.serverPort),
+          "--provider",
+          this.settings.llmProvider,
           "--model",
           this.settings.llmModel,
+          "--base-url",
+          this.settings.llmBaseUrl,
+          "--api-format",
+          this.settings.llmApiFormat,
           this.settings.useReranker ? "--reranker" : "--no-reranker",
         ];
+        if (this.settings.llmApiKey) {
+          args.push("--api-key", this.settings.llmApiKey);
+        }
       } else {
         // macOS and Linux
         command = this.settings.pythonPath;
@@ -391,10 +412,19 @@ export default class ObsidianRAGPlugin extends Plugin {
           vaultPath,
           "--port",
           String(this.settings.serverPort),
+          "--provider",
+          this.settings.llmProvider,
           "--model",
           this.settings.llmModel,
+          "--base-url",
+          this.settings.llmBaseUrl,
+          "--api-format",
+          this.settings.llmApiFormat,
           this.settings.useReranker ? "--reranker" : "--no-reranker",
         ];
+        if (this.settings.llmApiKey) {
+          args.push("--api-key", this.settings.llmApiKey);
+        }
       }
 
       this.serverProcess = spawn(command, args, spawnOptions);
@@ -505,27 +535,46 @@ export default class ObsidianRAGPlugin extends Plugin {
   }
 
   /**
-   * Fetch available models from Ollama
+   * Fetch available models from the configured local provider.
    */
-  async getOllamaModels(): Promise<string[]> {
+  async getProviderModels(): Promise<string[]> {
     try {
+      const url = this.getModelListUrl();
       const response = await requestUrl({
-        url: "http://localhost:11434/api/tags",
+        url,
         method: "GET",
+        headers: this.settings.llmApiFormat === "chat-completions"
+          ? { Authorization: `Bearer ${this.settings.llmApiKey || "lm-studio"}` }
+          : undefined,
       });
 
       if (response.status < 200 || response.status >= 300) {
-        console.warn("[ObsidianRAG] Failed to fetch Ollama models");
+        console.warn("[ObsidianRAG] Failed to fetch provider models");
         return [];
       }
 
-      const data = response.json as OllamaModelsResponse;
-      // Extract model names (remove :latest suffix for cleaner display)
-      return data.models.map(m => m.name.replace(":latest", ""));
+      const data = response.json as ProviderModelsResponse;
+      if (Array.isArray(data.data)) {
+        return data.data.map(m => m.id).filter(Boolean);
+      }
+      if (Array.isArray(data.models)) {
+        return data.models
+          .map(m => (m.id || m.name).replace(":latest", ""))
+          .filter(Boolean);
+      }
+      return [];
     } catch (error) {
-      console.warn("[ObsidianRAG] Ollama not available:", error);
+      console.warn("[ObsidianRAG] Provider model list not available:", error);
       return [];
     }
+  }
+
+  private getModelListUrl(): string {
+    const baseUrl = this.settings.llmBaseUrl.replace(/\/$/, "");
+    if (this.settings.llmProvider === "ollama" || this.settings.llmApiFormat === "ollama") {
+      return `${baseUrl}/api/tags`;
+    }
+    return `${baseUrl}/models`;
   }
 
   private async waitForServer(timeout: number): Promise<boolean> {
@@ -727,7 +776,11 @@ export default class ObsidianRAGPlugin extends Plugin {
   } {
     const env = {
       ...process.env,
+      OBSIDIANRAG_LLM_PROVIDER: this.settings.llmProvider,
+      OBSIDIANRAG_LLM_API_FORMAT: this.settings.llmApiFormat,
       OBSIDIANRAG_LLM_MODEL: this.settings.llmModel,
+      OBSIDIANRAG_COMPATIBLE_BASE_URL: this.settings.llmBaseUrl,
+      OBSIDIANRAG_COMPATIBLE_API_KEY: this.settings.llmApiKey,
       OBSIDIANRAG_USE_RERANKER: this.settings.useReranker ? "true" : "false",
     };
 
@@ -766,8 +819,7 @@ export default class ObsidianRAGPlugin extends Plugin {
       // Linux: usually python3
       return 'python3 -m obsidianrag';
     } else {
-      // macOS: could be python3 or the obsidianrag-server wrapper
-      return '/usr/local/bin/obsidianrag-server';
+      return 'obsidianrag';
     }
   }
 }
@@ -799,7 +851,7 @@ class SetupModal extends Modal {
     new Setting(contentEl).setName("Welcome to Vault RAG").setHeading();
 
     // Fetch available models
-    this.availableModels = await this.plugin.getOllamaModels();
+    this.availableModels = await this.plugin.getProviderModels();
 
     this.contentEl_modal = contentEl.createDiv("setup-content");
     this.showStep(0);
@@ -876,7 +928,7 @@ class SetupModal extends Modal {
     // Server command
     new Setting(el)
       .setName("Backend command")
-      .setDesc("Path to obsidianrag-server or 'obsidianrag' if installed globally")
+      .setDesc("Command to start the backend, usually 'obsidianrag'")
       .addText(text => text
         .setValue(this.plugin.settings.pythonPath)
         .onChange(async (value) => {
@@ -894,7 +946,41 @@ class SetupModal extends Modal {
           await this.plugin.saveSettings();
         }));
 
-    // Model - populated from Ollama
+    new Setting(el)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case
+      .setName("LLM provider")
+      .setDesc("Local runtime used for answer generation")
+      .addDropdown(dropdown => dropdown
+        .addOption("ollama", "Ollama")
+        // eslint-disable-next-line obsidianmd/ui/sentence-case
+        .addOption("lmstudio", "LM Studio")
+        .addOption("custom", "Custom")
+        .setValue(this.plugin.settings.llmProvider)
+        .onChange(async (value: "ollama" | "lmstudio" | "custom") => {
+          this.plugin.settings.llmProvider = value;
+          if (value === "ollama") {
+            this.plugin.settings.llmApiFormat = "ollama";
+            this.plugin.settings.llmBaseUrl = "http://localhost:11434";
+          } else if (value === "lmstudio") {
+            this.plugin.settings.llmApiFormat = "chat-completions";
+            this.plugin.settings.llmBaseUrl = "http://localhost:1234/v1";
+          }
+          await this.plugin.saveSettings();
+          this.availableModels = await this.plugin.getProviderModels();
+          this.showStep(this.currentStep);
+        }));
+
+    new Setting(el)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case
+      .setName("LLM base URL")
+      .addText(text => text
+        .setValue(this.plugin.settings.llmBaseUrl)
+        .onChange(async (value) => {
+          this.plugin.settings.llmBaseUrl = value;
+          await this.plugin.saveSettings();
+        }));
+
+    // Model - populated from provider when possible
     const modelSetting = new Setting(el)
       // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setName("LLM model");
@@ -922,8 +1008,7 @@ class SetupModal extends Modal {
       });
     } else {
       modelSetting
-        // eslint-disable-next-line obsidianmd/ui/sentence-case
-        .setDesc("⚠️ Ollama not detected. Make sure Ollama is running.")
+        .setDesc("Could not list models. Enter the model name manually.")
         .addText(text => text
           // eslint-disable-next-line obsidianmd/ui/sentence-case
           .setPlaceholder("gemma3")
@@ -1616,8 +1701,8 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    // Fetch available models from Ollama and then render
-    void this.plugin.getOllamaModels().then(models => {
+    // Fetch available models from the configured provider and then render
+    void this.plugin.getProviderModels().then(models => {
       this.availableModels = models;
       this.renderSettings(containerEl);
     });
@@ -1636,10 +1721,11 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
     // Python Path
     new Setting(containerEl)
       .setName("Backend command")
-      .setDesc("Path to obsidianrag-server or 'obsidianrag' if installed globally")
+      .setDesc("Command to start the backend, usually 'obsidianrag'")
       .addText((text) =>
         text
-          .setPlaceholder("/usr/local/bin/obsidianrag-server")
+          // eslint-disable-next-line obsidianmd/ui/sentence-case
+          .setPlaceholder("obsidianrag")
           .setValue(this.plugin.settings.pythonPath)
           .onChange(async (value) => {
             this.plugin.settings.pythonPath = value;
@@ -1662,11 +1748,86 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
           })
       );
 
-    // LLM Model - dynamically populated from Ollama
+    new Setting(containerEl)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case
+      .setName("LLM provider")
+      .setDesc("Runtime used for answer generation")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("ollama", "Ollama")
+          // eslint-disable-next-line obsidianmd/ui/sentence-case
+          .addOption("lmstudio", "LM Studio")
+          .addOption("custom", "Custom")
+          .setValue(this.plugin.settings.llmProvider)
+          .onChange(async (value: "ollama" | "lmstudio" | "custom") => {
+            this.plugin.settings.llmProvider = value;
+            if (value === "ollama") {
+              this.plugin.settings.llmApiFormat = "ollama";
+              this.plugin.settings.llmBaseUrl = "http://localhost:11434";
+            } else if (value === "lmstudio") {
+              this.plugin.settings.llmApiFormat = "chat-completions";
+              this.plugin.settings.llmBaseUrl = "http://localhost:1234/v1";
+            }
+            await this.plugin.saveSettings();
+            this.display();
+          })
+      );
+
+    if (this.plugin.settings.llmProvider === "custom") {
+      new Setting(containerEl)
+        .setName("API format")
+        .setDesc("Protocol spoken by the custom server")
+        .addDropdown((dropdown) =>
+          dropdown
+            .addOption("ollama", "Ollama")
+            // eslint-disable-next-line obsidianmd/ui/sentence-case
+            .addOption("chat-completions", "Chat Completions")
+            .setValue(this.plugin.settings.llmApiFormat)
+            .onChange(async (value: "ollama" | "chat-completions") => {
+              this.plugin.settings.llmApiFormat = value;
+              await this.plugin.saveSettings();
+              this.display();
+            })
+        );
+    }
+
+    new Setting(containerEl)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case
+      .setName("LLM base URL")
+      // eslint-disable-next-line obsidianmd/ui/sentence-case
+      .setDesc("Provider endpoint, for example Ollama or LM Studio local server")
+      .addText((text) =>
+        text
+          .setPlaceholder(this.plugin.settings.llmApiFormat === "ollama" ? "http://localhost:11434" : "http://localhost:1234/v1")
+          .setValue(this.plugin.settings.llmBaseUrl)
+          .onChange(async (value) => {
+            this.plugin.settings.llmBaseUrl = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    if (this.plugin.settings.llmApiFormat === "chat-completions") {
+      new Setting(containerEl)
+        .setName("API key")
+        // eslint-disable-next-line obsidianmd/ui/sentence-case
+        .setDesc("Optional. LM Studio accepts any value.")
+        .addText((text) =>
+          text
+            // eslint-disable-next-line obsidianmd/ui/sentence-case
+            .setPlaceholder("lm-studio")
+            .setValue(this.plugin.settings.llmApiKey)
+            .onChange(async (value) => {
+              this.plugin.settings.llmApiKey = value;
+              await this.plugin.saveSettings();
+            })
+        );
+    }
+
+    // LLM Model - dynamically populated from provider when possible
     const modelSetting = new Setting(containerEl)
       // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setName("LLM model")
-      .setDesc("Ollama model to use for answering questions");
+      .setDesc("Model to use for answering questions");
 
     if (this.availableModels.length > 0) {
       modelSetting.addDropdown((dropdown) => {
@@ -1693,10 +1854,8 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
         });
       });
     } else {
-      // Ollama not available - show warning and text input
       modelSetting
-        // eslint-disable-next-line obsidianmd/ui/sentence-case
-        .setDesc("⚠️ Could not connect to Ollama. Make sure Ollama is running (ollama serve).")
+        .setDesc("Could not list models. Enter the model name manually.")
         .addText((text) =>
           text
             // eslint-disable-next-line obsidianmd/ui/sentence-case
@@ -1840,9 +1999,13 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
 
             // Reset to defaults
             this.plugin.settings = {
-              pythonPath: "/usr/local/bin/obsidianrag-server",
+              pythonPath: "obsidianrag",
               serverPort: 8000,
+              llmProvider: "ollama",
+              llmApiFormat: "ollama",
               llmModel: "gemma3",
+              llmBaseUrl: "http://localhost:11434",
+              llmApiKey: "lm-studio",
               autoStartServer: true,
               showSourceLinks: true,
               useReranker: true,

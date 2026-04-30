@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from obsidianrag.config import configure_from_vault, get_settings
 from obsidianrag.core.db_service import load_or_create_db
+from obsidianrag.core.llm_provider import list_llm_models
 from obsidianrag.core.qa_agent import (
     ask_question_graph,
     ask_question_graph_streaming,
@@ -284,6 +285,8 @@ def _register_routes(application: FastAPI):
         settings = get_settings()
         return {
             "status": "ok",
+            "llm_provider": settings.llm_provider,
+            "llm_api_format": settings.llm_api_format,
             "model": settings.llm_model,
             "embedding_provider": settings.embedding_provider,
             "embedding_model": settings.embedding_model
@@ -291,6 +294,15 @@ def _register_routes(application: FastAPI):
             else settings.ollama_embedding_model,
             "db_ready": _db is not None,
         }
+
+    @application.get("/models", summary="Available LLM models")
+    async def models():
+        """List available models for the configured LLM provider."""
+        try:
+            return {"models": list_llm_models()}
+        except Exception as e:
+            logger.warning(f"Could not list LLM models: {e}")
+            return {"models": [], "error": str(e)}
 
     @application.get("/stats", summary="Vault statistics")
     async def get_stats():

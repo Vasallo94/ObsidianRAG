@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import List
+from typing import List, Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
@@ -19,9 +19,25 @@ class Settings(BaseSettings):
     metadata_file: str = Field(default="", description="File metadata tracker")
 
     # ========== Model Configuration ==========
+    llm_provider: Literal["ollama", "lmstudio", "custom"] = Field(
+        default="ollama",
+        description="LLM runtime preset: 'ollama', 'lmstudio', or 'custom'",
+    )
+    llm_api_format: Literal["ollama", "chat-completions"] = Field(
+        default="ollama",
+        description="LLM API format used by the provider adapter",
+    )
     # LLM: any Ollama model (gemma3, qwen2.5, llama3.2, mistral, etc.)
     llm_model: str = Field(default="gemma3", description="Ollama LLM model")
     ollama_base_url: str = Field(default="http://localhost:11434", description="Ollama API URL")
+    compatible_base_url: str = Field(
+        default="http://localhost:1234/v1",
+        description="Base URL for chat-completions compatible APIs (LM Studio defaults to http://localhost:1234/v1)",
+    )
+    compatible_api_key: str = Field(
+        default="lm-studio",
+        description="API key for compatible providers when required (LM Studio accepts any value)",
+    )
 
     # Embeddings: default Ollama with embeddinggemma (fast, multilingual)
     embedding_provider: str = Field(

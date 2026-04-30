@@ -11,15 +11,18 @@ from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_ollama import OllamaLLM
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 from obsidianrag.config import get_settings
-from obsidianrag.core.qa_service import create_retriever_with_reranker, verify_ollama_available
+from obsidianrag.core.llm_provider import (
+    create_chat_model,
+    single_human_message,
+    stream_chat_model_tokens,
+)
+from obsidianrag.core.qa_service import create_retriever_with_reranker
 from obsidianrag.utils.logger import setup_logger
-from obsidianrag.utils.ollama import get_available_ollama_models, pull_ollama_model
 
 logger = setup_logger(__name__)
 
@@ -349,54 +352,16 @@ def generate_node(state: AgentState, llm_chain):
     return {"answer": response, "messages": [AIMessage(content=response)]}
 
 
-# --- Graph Construction ---
-
-
-def verify_llm_model(model: str) -> str:
-    """Verify LLM model is available, download if needed, return fallback if not"""
-    settings = get_settings()
-    available_models = get_available_ollama_models(settings.ollama_base_url)
-
-    if not available_models:
-        logger.warning("⚠️ Could not get list of Ollama models")
-        return model
-
-    if model in available_models:
-        logger.info(f"✅ LLM model '{model}' available in Ollama")
-        return model
-
-    # Model not available, try to download it (15 min timeout for large LLMs)
-    logger.warning(f"⚠️ Model '{model}' not found in Ollama. Attempting to download...")
-    if pull_ollama_model(model, timeout=900):
-        return model  # Downloaded successfully
-
-    # Download failed, try fallbacks
-    logger.warning(f"⚠️ Could not download '{model}'. Looking for alternatives...")
-    logger.warning(f"   Available models: {available_models}")
-
-    fallback_models = ["gemma3", "qwen2.5", "llama3.2", "mistral", "llama2"]
-    for fallback in fallback_models:
-        if fallback in available_models:
-            logger.info(f"🔄 Using alternative model: {fallback}")
-            return fallback
-
-    if available_models:
-        fallback = available_models[0]
-        logger.info(f"🔄 Using first available model: {fallback}")
-        return fallback
-
-    raise ValueError(f"No LLM models available in Ollama. Run: ollama pull {model}")
-
-
 def create_qa_graph(db):
     """Build the LangGraph agent using the model configured in settings"""
     settings = get_settings()
-    verify_ollama_available()
 
-    llm_model = verify_llm_model(settings.llm_model)
-    logger.info(f"🤖 Using LLM model: {llm_model}")
-
-    llm = OllamaLLM(model=llm_model, base_url=settings.ollama_base_url)
+    llm, resolved_model = create_chat_model(settings)
+    logger.info(
+        "🤖 Using %s model: %s",
+        settings.llm_provider,
+        resolved_model,
+    )
 
     retriever = create_retriever_with_reranker(db)
 
@@ -597,58 +562,32 @@ CONTEXT (User's Obsidian Notes):
             system_prompt.format(context=context_str) + f"\n\nQuestion: {question}\n\nAnswer:"
         )
 
-        # Stream tokens with TTFT measurement
-        # Use httpx directly for TRUE async streaming from Ollama
-        import httpx
-
         full_answer = ""
         first_token_time = None
         llm_start_time = time.time()
         token_count = 0
 
-        logger.info(f"💭 [STREAM] Starting LLM streaming ({settings.llm_model})...")
+        logger.info(
+            "💭 [STREAM] Starting LLM streaming (%s:%s)...",
+            settings.llm_provider,
+            settings.llm_model,
+        )
         logger.info(
             f"📝 [STREAM] Prompt length: {len(full_prompt)} chars, Context: {len(context_str)} chars"
         )
 
-        # Call Ollama API directly with httpx for true async streaming
-        ollama_url = f"{settings.ollama_base_url}/api/generate"
-        payload = {
-            "model": settings.llm_model,
-            "prompt": full_prompt,
-            "stream": True,
-        }
+        async for chunk in stream_chat_model_tokens(single_human_message(full_prompt), settings):
+            token_count += 1
 
-        async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
-            async with client.stream("POST", ollama_url, json=payload) as response:
-                async for line in response.aiter_lines():
-                    if line:
-                        try:
-                            import json
+            if first_token_time is None:
+                first_token_time = time.time()
+                ttft = first_token_time - llm_start_time
+                logger.info(f"⚡ [TTFT] Time to First Token: {ttft:.3f}s")
+                yield {"type": "ttft", "seconds": round(ttft, 3)}
 
-                            data = json.loads(line)
-                            chunk = data.get("response", "")
-                            done = data.get("done", False)
-
-                            if chunk:
-                                token_count += 1
-
-                                if first_token_time is None:
-                                    first_token_time = time.time()
-                                    ttft = first_token_time - llm_start_time
-                                    logger.info(f"⚡ [TTFT] Time to First Token: {ttft:.3f}s")
-                                    yield {"type": "ttft", "seconds": round(ttft, 3)}
-
-                                full_answer += chunk
-                                yield {"type": "token", "content": chunk}
-                                logger.debug(f"📤 [TOKEN #{token_count}] '{chunk[:20]}...' yielded")
-
-                            if done:
-                                break
-
-                        except json.JSONDecodeError:
-                            logger.warning(f"Failed to parse line: {line}")
-                            continue
+            full_answer += chunk
+            yield {"type": "token", "content": chunk}
+            logger.debug(f"📤 [TOKEN #{token_count}] '{chunk[:20]}...' yielded")
 
         llm_end_time = time.time()
         llm_total_time = llm_end_time - llm_start_time
