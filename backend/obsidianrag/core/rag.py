@@ -72,9 +72,9 @@ class ObsidianRAG:
         if self._db:
             logger.info("Creating QA graph...")
             self._graph = create_qa_graph(self._db)
-            logger.info("✅ ObsidianRAG ready")
+            logger.info("ObsidianRAG ready")
         else:
-            logger.error("❌ Failed to load database")
+            logger.error("Failed to load database")
 
         return self
 

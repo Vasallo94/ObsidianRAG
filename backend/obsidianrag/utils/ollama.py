@@ -37,25 +37,25 @@ def pull_ollama_model(model: str, timeout: int = 600) -> bool:
     Returns:
         True if model was pulled successfully, False on error
     """
-    logger.info(f"📥 Downloading Ollama model: {model}...")
+    logger.info(f"Downloading Ollama model: {model}...")
     try:
         result = subprocess.run(
             ["ollama", "pull", model], capture_output=True, text=True, timeout=timeout
         )
         if result.returncode == 0:
-            logger.info(f"✅ Model '{model}' downloaded successfully")
+            logger.info(f"Model '{model}' downloaded successfully")
             return True
         else:
-            logger.error(f"❌ Failed to pull model: {result.stderr}")
+            logger.error(f"Failed to pull model: {result.stderr}")
             return False
     except subprocess.TimeoutExpired:
-        logger.error(f"❌ Timeout pulling model '{model}' (>{timeout // 60} min)")
+        logger.error(f"Timeout pulling model '{model}' (>{timeout // 60} min)")
         return False
     except FileNotFoundError:
-        logger.error("❌ Ollama CLI not found. Please install Ollama first.")
+        logger.error("Ollama CLI not found. Please install Ollama first.")
         return False
     except Exception as e:
-        logger.error(f"❌ Error pulling model: {e}")
+        logger.error(f"Error pulling model: {e}")
         return False
 
 
@@ -75,8 +75,8 @@ def ensure_model_available(
     available = get_available_ollama_models(base_url)
 
     if model in available:
-        logger.debug(f"✅ Model '{model}' already available")
+        logger.debug(f"Model '{model}' already available")
         return True
 
-    logger.info(f"⚠️ Model '{model}' not found. Downloading...")
+    logger.info(f"Model '{model}' not found. Downloading...")
     return pull_ollama_model(model, timeout)

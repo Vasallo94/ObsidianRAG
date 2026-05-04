@@ -44,9 +44,9 @@ system_prompt = """You are a personal assistant that answers questions based on 
 
 CRITICAL RULE - LANGUAGE:
 **YOU MUST RESPOND IN THE SAME LANGUAGE AS THE USER'S QUESTION.**
-- If the user asks in Spanish → respond entirely in Spanish
-- If the user asks in English → respond entirely in English
-- If the user asks in French → respond entirely in French
+- If the user asks in Spanish respond entirely in Spanish
+- If the user asks in English respond entirely in English
+- If the user asks in French respond entirely in French
 - And so on for any language. NEVER switch languages mid-response.
 
 OTHER RULES:
@@ -103,7 +103,7 @@ def create_hybrid_retriever(db):
     """
     settings = get_settings()
     logger.info("=" * 50)
-    logger.info("📦 Configuring Hybrid Search (BM25 + Vector)")
+    logger.info("Configuring Hybrid Search (BM25 + Vector)")
     logger.info("=" * 50)
 
     # Get documents from DB for BM25
@@ -122,7 +122,7 @@ def create_hybrid_retriever(db):
             len(m.get("links", "").split(",")) for m in metadatas if m.get("links", "")
         )
         logger.info(
-            f"📊 DB Stats: {len(texts)} chunks, {docs_with_links} with links, {total_links} total links"
+            f"DB Stats: {len(texts)} chunks, {docs_with_links} with links, {total_links} total links"
         )
 
         # Create BM25 retriever
@@ -144,13 +144,13 @@ def create_hybrid_retriever(db):
             f"   Ensemble weights: BM25={settings.bm25_weight}, Vector={settings.vector_weight}"
         )
 
-        logger.info("✅ EnsembleRetriever created successfully")
+        logger.info("EnsembleRetriever created successfully")
         return ensemble_retriever
 
     except NoDocumentsFoundError:
         raise
     except Exception as e:
-        logger.error(f"❌ Error creating retriever: {e}. Using only Vector Search")
+        logger.error(f"Error creating retriever: {e}. Using only Vector Search")
         return db.as_retriever(search_kwargs={"k": settings.retrieval_k})
 
 
@@ -169,7 +169,7 @@ def create_retriever_with_reranker(db):
 
     # Add reranker if enabled
     if settings.use_reranker:
-        logger.info(f"🔄 Adding reranker: {settings.reranker_model}")
+        logger.info(f"Adding reranker: {settings.reranker_model}")
         logger.info(f"   Reranker top_n={settings.reranker_top_n}")
         try:
             model = HuggingFaceCrossEncoder(model_name=settings.reranker_model)
@@ -178,14 +178,14 @@ def create_retriever_with_reranker(db):
             retriever = ContextualCompressionRetriever(
                 base_compressor=compressor, base_retriever=ensemble_retriever
             )
-            logger.info("✅ Reranker configured successfully")
+            logger.info("Reranker configured successfully")
             logger.info("=" * 50)
             return retriever
         except Exception as e:
-            logger.warning(f"⚠️ Could not configure reranker: {e}. Using ensemble without reranker")
+            logger.warning(f"Could not configure reranker: {e}. Using ensemble without reranker")
             return ensemble_retriever
     else:
-        logger.info("ℹ️ Reranker disabled in configuration")
+        logger.info("Reranker disabled in configuration")
         return ensemble_retriever
 
 

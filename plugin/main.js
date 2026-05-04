@@ -141,12 +141,12 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     const running = await this.isServerRunning();
     this.statusBarItem.empty();
     if (running) {
-      this.statusBarItem.setText("\u{1F916} RAG \u25CF");
+      this.statusBarItem.setText("RAG *");
       this.statusBarItem.setAttribute("title", "Vault RAG: Online - Click to open chat");
       this.statusBarItem.addClass("status-online");
       this.statusBarItem.removeClass("status-offline");
     } else {
-      this.statusBarItem.setText("\u{1F916} RAG \u25CB");
+      this.statusBarItem.setText("RAG -");
       this.statusBarItem.setAttribute("title", "Vault RAG: Offline - Click to start server");
       this.statusBarItem.addClass("status-offline");
       this.statusBarItem.removeClass("status-online");
@@ -674,7 +674,7 @@ var SetupModal = class extends import_obsidian.Modal {
     new import_obsidian.Setting(el).setName("Setup complete").setHeading();
     el.createEl("p", { text: "You're all set to use Vault RAG." });
     const tips = el.createEl("ul");
-    tips.createEl("li", { text: "Click the \u{1F916} icon in the ribbon to open the chat" });
+    tips.createEl("li", { text: "Click the chat icon in the ribbon to open the chat" });
     tips.createEl("li", { text: "Use Cmd/Ctrl+P and search 'ObsidianRAG' for all commands" });
     tips.createEl("li", { text: "First question may take a moment while the vault is indexed" });
     const buttons = el.createDiv("modal-button-container");
@@ -736,11 +736,11 @@ var AskQuestionModal = class extends import_obsidian.Modal {
     const question = this.inputEl.value.trim();
     if (!question) return;
     if (!await this.plugin.isServerRunning()) {
-      this.resultEl.setText("\u26A0\uFE0F Server is not running. Start it first.");
+      this.resultEl.setText("Server is not running. Start it first.");
       return;
     }
     this.resultEl.empty();
-    this.resultEl.createDiv({ text: "\u{1F504} Thinking...", cls: "loading" });
+    this.resultEl.createDiv({ text: "Thinking...", cls: "loading" });
     try {
       let answer = "";
       for await (const event of this.plugin.askQuestionStreaming(question)) {
@@ -749,7 +749,7 @@ var AskQuestionModal = class extends import_obsidian.Modal {
         } else if (event.type === "answer") {
           answer = event.answer;
         } else if (event.type === "error") {
-          this.resultEl.setText(`\u274C ${event.message}`);
+          this.resultEl.setText(`${event.message}`);
           return;
         }
       }
@@ -763,7 +763,7 @@ var AskQuestionModal = class extends import_obsidian.Modal {
         this
       );
     } catch (error) {
-      this.resultEl.setText(`\u274C Error: ${error}`);
+      this.resultEl.setText(`Error: ${error}`);
     }
   }
   onClose() {
@@ -800,7 +800,7 @@ var ChatView = class extends import_obsidian.ItemView {
       cls: "obsidianrag-header-btn",
       attr: { "aria-label": "Reindex vault" }
     });
-    reindexBtn.setText("\u{1F504}");
+    reindexBtn.setText("Reindex");
     reindexBtn.addEventListener("click", async () => {
       await this.plugin.reindexVault();
     });
@@ -808,7 +808,7 @@ var ChatView = class extends import_obsidian.ItemView {
       cls: "obsidianrag-header-btn",
       attr: { "aria-label": "Clear chat history" }
     });
-    clearBtn.setText("\u{1F5D1}\uFE0F");
+    clearBtn.setText("Clear");
     clearBtn.addEventListener("click", () => this.clearHistory());
     this.statusEl = headerControls.createSpan("obsidianrag-status");
     await this.updateStatus();
@@ -874,7 +874,7 @@ var ChatView = class extends import_obsidian.ItemView {
     if (!await this.plugin.isServerRunning()) {
       this.addMessage({
         role: "assistant",
-        content: "\u26A0\uFE0F Server is not running. Use the command palette to start it, or enable auto-start in settings.",
+        content: "Server is not running. Use the command palette to start it, or enable auto-start in settings.",
         timestamp: /* @__PURE__ */ new Date()
       });
       return;
@@ -883,11 +883,9 @@ var ChatView = class extends import_obsidian.ItemView {
       "obsidianrag-message assistant loading"
     );
     const progressContent = progressEl.createDiv("progress-content");
-    progressContent.setText("\u{1F504} ");
     progressContent.createEl("strong", { text: "Starting..." });
     const updateProgress = (step, details) => {
       progressContent.empty();
-      progressContent.setText("\u{1F504} ");
       progressContent.createEl("strong", { text: step });
       if (details) {
         progressContent.createEl("br");
@@ -909,7 +907,7 @@ var ChatView = class extends import_obsidian.ItemView {
             break;
           case "retrieve_complete":
             updateProgress(
-              `\u{1F4DA} Retrieved ${event.docs_count} documents`,
+              `Retrieved ${event.docs_count} documents`,
               event.sources.slice(0, 3).map(
                 (s) => {
                   var _a;
@@ -919,7 +917,7 @@ var ChatView = class extends import_obsidian.ItemView {
             );
             break;
           case "ttft":
-            console.debug(`\u26A1 [ObsidianRAG] Time to First Token: ${event.seconds}s`);
+            console.debug(`[ObsidianRAG] Time to First Token: ${event.seconds}s`);
             break;
           case "token": {
             if (!streamingEl) {
@@ -948,7 +946,7 @@ var ChatView = class extends import_obsidian.ItemView {
           case "generate_complete":
             if (!streamingEl) {
               updateProgress(
-                "\u270D\uFE0F Generating answer...",
+                "Generating answer...",
                 event.answer_preview.substring(0, 100) + "..."
               );
             }
@@ -961,7 +959,7 @@ var ChatView = class extends import_obsidian.ItemView {
             if (streamingEl) streamingEl.remove();
             this.addMessage({
               role: "assistant",
-              content: `\u274C Error: ${event.message}`,
+              content: `Error: ${event.message}`,
               timestamp: /* @__PURE__ */ new Date()
             });
             return;
@@ -1079,7 +1077,7 @@ var ChatView = class extends import_obsidian.ItemView {
       progressEl.remove();
       this.addMessage({
         role: "assistant",
-        content: `\u274C Error: ${error}`,
+        content: `Error: ${error}`,
         timestamp: /* @__PURE__ */ new Date()
       });
     }
@@ -1127,13 +1125,13 @@ var ChatView = class extends import_obsidian.ItemView {
     this.containerEl_messages.scrollTop = this.containerEl_messages.scrollHeight;
   }
   /**
-   * Get an emoji indicator based on the relevance score
+   * Get a text indicator based on the relevance score
    */
   getScoreIndicator(score) {
-    if (score >= 0.8) return "\u{1F7E2}";
-    if (score >= 0.6) return "\u{1F7E1}";
-    if (score >= 0.4) return "\u{1F7E0}";
-    return "\u{1F534}";
+    if (score >= 0.8) return "[++]";
+    if (score >= 0.6) return "[+]";
+    if (score >= 0.4) return "[~]";
+    return "[-]";
   }
   async onClose() {
     if (this.statusInterval) {

@@ -59,8 +59,9 @@ def create_app(vault_path: Optional[str] = None) -> FastAPI:
 
         try:
             logger.info("Loading vector database...")
-            if _vault_path:
-                configure_from_vault(_vault_path)
+            vault = _vault_path or settings.obsidian_path
+            if vault:
+                configure_from_vault(vault)
 
             _db = load_or_create_db()
 
@@ -69,7 +70,7 @@ def create_app(vault_path: Optional[str] = None) -> FastAPI:
             else:
                 logger.info("Creating LangGraph agent...")
                 _qa_app = create_qa_graph(_db)
-                logger.info("✅ Application started successfully")
+                logger.info("Application started successfully")
         except Exception as e:
             logger.error(f"Error during startup: {e}", exc_info=True)
             raise
@@ -196,8 +197,8 @@ def _register_routes(application: FastAPI):
                 session_id=session_id,
             )
         except ModelNotAvailableError as e:
-            logger.error(f"Ollama not available: {str(e)}")
-            raise HTTPException(status_code=503, detail=str(e))
+            logger.error(f"LLM provider not available: {e}")
+            raise HTTPException(status_code=503, detail="LLM provider is not available")
         except NoDocumentsFoundError as e:
             logger.error(f"No documents found: {str(e)}")
             raise HTTPException(status_code=404, detail=str(e))
@@ -232,7 +233,7 @@ def _register_routes(application: FastAPI):
                 retriever = create_hybrid_retriever(_db)
 
                 # Send start event
-                logger.info("📤 [SSE] Sending start event")
+                logger.info("[SSE] Sending start event")
                 yield f"data: {json.dumps({'type': 'start', 'session_id': session_id})}\n\n"
 
                 # Stream with direct retrieval and LLM streaming
@@ -247,9 +248,9 @@ def _register_routes(application: FastAPI):
                     if event_type == "token":
                         # Log every 10th token to avoid spam
                         if event_count % 10 == 0:
-                            logger.info(f"📤 [SSE #{event_count}] +{elapsed:.2f}s token batch")
+                            logger.info(f"[SSE #{event_count}] +{elapsed:.2f}s token batch")
                     else:
-                        logger.info(f"📤 [SSE #{event_count}] +{elapsed:.2f}s {event_type}")
+                        logger.info(f"[SSE #{event_count}] +{elapsed:.2f}s {event_type}")
 
                     yield f"data: {json.dumps(event)}\n\n"
                     last_event = event
@@ -260,7 +261,7 @@ def _register_routes(application: FastAPI):
                     _chat_histories[session_id] = history
 
                 total_time = time_module.time() - stream_start
-                logger.info(f"✅ [SSE] Stream complete: {event_count} events in {total_time:.2f}s")
+                logger.info(f"[SSE] Stream complete: {event_count} events in {total_time:.2f}s")
 
             except Exception as e:
                 logger.error(f"Streaming error: {e}", exc_info=True)
@@ -299,10 +300,12 @@ def _register_routes(application: FastAPI):
     async def models():
         """List available models for the configured LLM provider."""
         try:
-            return {"models": list_llm_models()}
+            loop = asyncio.get_event_loop()
+            available = await loop.run_in_executor(None, list_llm_models)
+            return {"models": available}
         except Exception as e:
             logger.warning(f"Could not list LLM models: {e}")
-            return {"models": [], "error": str(e)}
+            return {"models": [], "error": "Could not list available models"}
 
     @application.get("/stats", summary="Vault statistics")
     async def get_stats():

@@ -309,14 +309,14 @@ export default class ObsidianRAGPlugin extends Plugin {
 
     if (running) {
       // eslint-disable-next-line obsidianmd/ui/sentence-case
-      this.statusBarItem.setText("🤖 RAG ●");
+      this.statusBarItem.setText("RAG *");
       // eslint-disable-next-line obsidianmd/ui/sentence-case
       this.statusBarItem.setAttribute("title", "Vault RAG: Online - Click to open chat");
       this.statusBarItem.addClass("status-online");
       this.statusBarItem.removeClass("status-offline");
     } else {
       // eslint-disable-next-line obsidianmd/ui/sentence-case
-      this.statusBarItem.setText("🤖 RAG ○");
+      this.statusBarItem.setText("RAG -");
       // eslint-disable-next-line obsidianmd/ui/sentence-case
       this.statusBarItem.setAttribute("title", "Vault RAG: Offline - Click to start server");
       this.statusBarItem.addClass("status-offline");
@@ -1050,7 +1050,7 @@ class SetupModal extends Modal {
     el.createEl("p", { text: "You're all set to use Vault RAG." });
 
     const tips = el.createEl("ul");
-    tips.createEl("li", { text: "Click the 🤖 icon in the ribbon to open the chat" });
+    tips.createEl("li", { text: "Click the chat icon in the ribbon to open the chat" });
     tips.createEl("li", { text: "Use Cmd/Ctrl+P and search 'ObsidianRAG' for all commands" });
     tips.createEl("li", { text: "First question may take a moment while the vault is indexed" });
 
@@ -1139,13 +1139,13 @@ class AskQuestionModal extends Modal {
 
     if (!(await this.plugin.isServerRunning())) {
       // eslint-disable-next-line obsidianmd/ui/sentence-case
-      this.resultEl.setText("⚠️ Server is not running. Start it first.");
+      this.resultEl.setText("Server is not running. Start it first.");
       return;
     }
 
     this.resultEl.empty();
 
-    this.resultEl.createDiv({ text: "🔄 Thinking...", cls: "loading" });
+    this.resultEl.createDiv({ text: "Thinking...", cls: "loading" });
 
     try {
       let answer = "";
@@ -1155,7 +1155,7 @@ class AskQuestionModal extends Modal {
         } else if (event.type === "answer") {
           answer = event.answer;
         } else if (event.type === "error") {
-          this.resultEl.setText(`❌ ${event.message}`);
+          this.resultEl.setText(`${event.message}`);
           return;
         }
       }
@@ -1170,7 +1170,7 @@ class AskQuestionModal extends Modal {
         this as any
       );
     } catch (error) {
-      this.resultEl.setText(`❌ Error: ${error}`);
+      this.resultEl.setText(`Error: ${error}`);
     }
   }
 
@@ -1233,7 +1233,7 @@ class ChatView extends ItemView {
 
       attr: { "aria-label": "Reindex vault" }
     });
-    reindexBtn.setText("🔄");
+    reindexBtn.setText("Reindex");
     reindexBtn.addEventListener("click", async () => {
       await this.plugin.reindexVault();
     });
@@ -1243,7 +1243,7 @@ class ChatView extends ItemView {
       cls: "obsidianrag-header-btn",
       attr: { "aria-label": "Clear chat history" }
     });
-    clearBtn.setText("🗑️");
+    clearBtn.setText("Clear");
     clearBtn.addEventListener("click", () => this.clearHistory());
 
     // Status indicator
@@ -1332,7 +1332,7 @@ class ChatView extends ItemView {
       this.addMessage({
         role: "assistant",
         content:
-          "⚠️ Server is not running. Use the command palette to start it, or enable auto-start in settings.",
+          "Server is not running. Use the command palette to start it, or enable auto-start in settings.",
         timestamp: new Date(),
       });
       return;
@@ -1343,13 +1343,11 @@ class ChatView extends ItemView {
       "obsidianrag-message assistant loading"
     );
     const progressContent = progressEl.createDiv("progress-content");
-    progressContent.setText("🔄 ");
     progressContent.createEl("strong", { text: "Starting..." });
 
     // Track current step for animation
     const updateProgress = (step: string, details?: string) => {
       progressContent.empty();
-      progressContent.setText("🔄 ");
       progressContent.createEl("strong", { text: step });
       if (details) {
         progressContent.createEl("br");
@@ -1379,7 +1377,7 @@ class ChatView extends ItemView {
 
           case "retrieve_complete":
             updateProgress(
-              `📚 Retrieved ${event.docs_count} documents`,
+              `Retrieved ${event.docs_count} documents`,
               event.sources.slice(0, 3).map((s) =>
                 `• ${s.source.split("/").pop()?.replace(".md", "") || s.source}`
               ).join("<br>")
@@ -1388,7 +1386,7 @@ class ChatView extends ItemView {
 
           case "ttft":
             // Log Time To First Token
-            console.debug(`⚡ [ObsidianRAG] Time to First Token: ${event.seconds}s`);
+            console.debug(`[ObsidianRAG] Time to First Token: ${event.seconds}s`);
             break;
 
           case "token": {
@@ -1424,7 +1422,7 @@ class ChatView extends ItemView {
             // This may come if not using token streaming
             if (!streamingEl) {
               updateProgress(
-                "✍️ Generating answer...",
+                "Generating answer...",
                 event.answer_preview.substring(0, 100) + "..."
               );
             }
@@ -1439,7 +1437,7 @@ class ChatView extends ItemView {
             if (streamingEl) streamingEl.remove();
             this.addMessage({
               role: "assistant",
-              content: `❌ Error: ${event.message}`,
+              content: `Error: ${event.message}`,
               timestamp: new Date(),
             });
             return;
@@ -1593,7 +1591,7 @@ class ChatView extends ItemView {
       progressEl.remove();
       this.addMessage({
         role: "assistant",
-        content: `❌ Error: ${error}`,
+        content: `Error: ${error}`,
         timestamp: new Date(),
       });
     }
@@ -1663,13 +1661,13 @@ class ChatView extends ItemView {
   }
 
   /**
-   * Get an emoji indicator based on the relevance score
+   * Get a text indicator based on the relevance score
    */
   getScoreIndicator(score: number): string {
-    if (score >= 0.8) return "🟢";      // High relevance
-    if (score >= 0.6) return "🟡";      // Medium-high relevance
-    if (score >= 0.4) return "🟠";      // Medium relevance
-    return "🔴";                         // Lower relevance
+    if (score >= 0.8) return "[++]";     // High relevance
+    if (score >= 0.6) return "[+]";      // Medium-high relevance
+    if (score >= 0.4) return "[~]";      // Medium relevance
+    return "[-]";                         // Lower relevance
   }
 
   async onClose(): Promise<void> {

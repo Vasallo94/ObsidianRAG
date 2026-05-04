@@ -61,34 +61,34 @@ def get_embeddings() -> Embeddings:
                 ]
                 if model not in available_models:
                     logger.warning(
-                        f"⚠️ Model '{model}' not found in Ollama. Attempting to download..."
+                        f"Model '{model}' not found in Ollama. Attempting to download..."
                     )
                     # Try to pull the model automatically (10 min timeout for embeddings)
                     if pull_ollama_model(model, timeout=600):
                         embeddings: Embeddings = OllamaEmbeddings(
                             model=model, base_url=settings.ollama_base_url
                         )
-                        logger.info(f"✅ Ollama embeddings ({model}) loaded successfully")
+                        logger.info(f"Ollama embeddings ({model}) loaded successfully")
                         return embeddings
                     else:
-                        logger.warning("🔄 Falling back to HuggingFace embeddings...")
+                        logger.warning("Falling back to HuggingFace embeddings...")
                         provider = "huggingface"  # Fallback
                 else:
                     embeddings = OllamaEmbeddings(model=model, base_url=settings.ollama_base_url)
-                    logger.info(f"✅ Ollama embeddings ({model}) loaded successfully")
+                    logger.info(f"Ollama embeddings ({model}) loaded successfully")
                     return embeddings
             else:
-                logger.warning("⚠️ Could not connect to Ollama. Falling back to HuggingFace...")
+                logger.warning("Could not connect to Ollama. Falling back to HuggingFace...")
                 provider = "huggingface"
         except Exception as e:
-            logger.warning(f"⚠️ Error checking Ollama: {e}. Falling back to HuggingFace...")
+            logger.warning(f"Error checking Ollama: {e}. Falling back to HuggingFace...")
             provider = "huggingface"
 
     # Default: HuggingFace (or fallback)
     model = settings.embedding_model
     logger.info(f"Initializing HuggingFace embeddings: {model}")
     embeddings = HuggingFaceEmbeddings(model_name=model)
-    logger.info(f"✅ HuggingFace embeddings ({model}) loaded successfully")
+    logger.info(f"HuggingFace embeddings ({model}) loaded successfully")
 
     return embeddings
 

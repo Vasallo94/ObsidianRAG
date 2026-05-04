@@ -91,7 +91,11 @@ def list_llm_models(settings: Settings | None = None) -> List[str]:
     settings = settings or get_settings()
     provider = normalize_llm_provider(settings.llm_provider)
 
-    if provider == "ollama" or normalize_api_format(settings.llm_api_format) == "ollama":
+    api_format = normalize_api_format(
+        "chat-completions" if provider == "lmstudio" else settings.llm_api_format
+    )
+
+    if provider == "ollama" or api_format == "ollama":
         return get_available_ollama_models(settings.ollama_base_url)
 
     response = httpx.get(
@@ -107,9 +111,12 @@ def list_llm_models(settings: Settings | None = None) -> List[str]:
 async def stream_chat_model_tokens(
     messages: list[BaseMessage],
     settings: Settings | None = None,
+    *,
+    model: BaseChatModel | None = None,
 ) -> AsyncIterator[str]:
     """Stream text chunks using the configured LangChain chat model."""
-    model, _ = create_chat_model(settings)
+    if model is None:
+        model, _ = create_chat_model(settings)
     async for chunk in model.astream(messages):
         content = getattr(chunk, "content", "")
         if isinstance(content, str) and content:

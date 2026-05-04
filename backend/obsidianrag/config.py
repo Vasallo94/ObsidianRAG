@@ -27,8 +27,7 @@ class Settings(BaseSettings):
         default="ollama",
         description="LLM API format used by the provider adapter",
     )
-    # LLM: any Ollama model (gemma3, qwen2.5, llama3.2, mistral, etc.)
-    llm_model: str = Field(default="gemma3", description="Ollama LLM model")
+    llm_model: str = Field(default="gemma4:31b", description="LLM model name")
     ollama_base_url: str = Field(default="http://localhost:11434", description="Ollama API URL")
     compatible_base_url: str = Field(
         default="http://localhost:1234/v1",
@@ -49,8 +48,8 @@ class Settings(BaseSettings):
         description="HuggingFace embeddings model (fallback)",
     )
     ollama_embedding_model: str = Field(
-        default="embeddinggemma",
-        description="Ollama embeddings model (default: embeddinggemma)",
+        default="qwen3-embedding",
+        description="Ollama embeddings model",
     )
 
     # Reranker configuration
@@ -95,6 +94,7 @@ class Settings(BaseSettings):
     request_timeout: int = Field(default=60, description="Request timeout in seconds")
 
     class Config:
+        env_prefix = "OBSIDIANRAG_"
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False

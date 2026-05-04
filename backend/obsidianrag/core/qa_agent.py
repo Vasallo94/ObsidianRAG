@@ -21,6 +21,7 @@ from obsidianrag.core.llm_provider import (
     single_human_message,
     stream_chat_model_tokens,
 )
+from langchain_core.language_models.chat_models import BaseChatModel
 from obsidianrag.core.qa_service import create_retriever_with_reranker
 from obsidianrag.utils.logger import setup_logger
 
@@ -125,20 +126,20 @@ class GraphTracer:
         self.events.append(event)
         # Log to console with color coding
         if "START" in event_type:
-            logger.info(f"🚀 [{event_type}] {json.dumps(data, ensure_ascii=False)}")
+            logger.info(f"[{event_type}] {json.dumps(data, ensure_ascii=False)}")
         elif "ENTER" in event_type:
-            logger.info(f"➡️  [{event_type}] {json.dumps(data, ensure_ascii=False)}")
+            logger.info(f"[{event_type}] {json.dumps(data, ensure_ascii=False)}")
         elif "EXIT" in event_type:
-            logger.info(f"✅ [{event_type}] {json.dumps(data, ensure_ascii=False)}")
+            logger.info(f"[{event_type}] {json.dumps(data, ensure_ascii=False)}")
         elif "END" in event_type:
-            logger.info(f"🏁 [{event_type}] {json.dumps(data, ensure_ascii=False)}")
+            logger.info(f"[{event_type}] {json.dumps(data, ensure_ascii=False)}")
         else:
-            logger.debug(f"📝 [{event_type}] {json.dumps(data, ensure_ascii=False)}")
+            logger.debug(f"[{event_type}] {json.dumps(data, ensure_ascii=False)}")
 
     def _print_summary(self):
         """Print execution summary"""
         logger.info("=" * 60)
-        logger.info("📊 GRAPH EXECUTION SUMMARY")
+        logger.info("GRAPH EXECUTION SUMMARY")
         logger.info("=" * 60)
         for event in self.events:
             logger.info(f"  {event['type']}: {event['data']}")
@@ -169,7 +170,7 @@ def retrieve_node(state: AgentState, retriever, db):
         "retrieve", {"question": question, "context_count": len(state.get("context", []))}
     )
 
-    logger.info(f"🔍 [RETRIEVE NODE] Starting retrieval for: '{question}'")
+    logger.info(f"[RETRIEVE NODE] Starting retrieval for: '{question}'")
 
     # Retrieve docs
     start_retrieval = time.time()
@@ -177,7 +178,7 @@ def retrieve_node(state: AgentState, retriever, db):
     retrieval_time = time.time() - start_retrieval
 
     logger.info(
-        f"📄 [RETRIEVE NODE] Retrieved {len(docs)} initial documents in {retrieval_time:.2f}s"
+        f"[RETRIEVE NODE] Retrieved {len(docs)} initial documents in {retrieval_time:.2f}s"
     )
 
     # Capture reranker scores
@@ -195,7 +196,7 @@ def retrieve_node(state: AgentState, retriever, db):
     for i, doc in enumerate(docs):
         source = doc.metadata.get("source", "Unknown")
         score = doc.metadata.get("score", 0)
-        logger.info(f"   📑 Doc {i + 1} (score: {score:.4f}): {os.path.basename(source)}")
+        logger.info(f"   Doc {i + 1} (score: {score:.4f}): {os.path.basename(source)}")
 
     # Full document expansion for fragmented sources
     source_counts: dict[str, int] = {}
@@ -208,7 +209,7 @@ def retrieve_node(state: AgentState, retriever, db):
 
     if fragmented_sources:
         logger.info(
-            f"📖 [FULL DOC] Detected {len(fragmented_sources)} fragmented documents, reading full content..."
+            f"[FULL DOC] Detected {len(fragmented_sources)} fragmented documents, reading full content..."
         )
 
         full_docs = []
@@ -259,7 +260,7 @@ def retrieve_node(state: AgentState, retriever, db):
 
     # Fetch linked documents
     if linked_sources:
-        logger.info(f"🕸️ [GRAPHRAG] Attempting to fetch {len(linked_sources)} linked notes...")
+        logger.info(f"[GRAPHRAG] Attempting to fetch {len(linked_sources)} linked notes...")
 
         try:
             db_data = db.get()
@@ -290,9 +291,9 @@ def retrieve_node(state: AgentState, retriever, db):
                     linked_doc.metadata["retrieval_type"] = "graphrag_link"
 
                 docs.extend(docs_to_add)
-                logger.info(f"📚 [GRAPHRAG] Added {len(docs_to_add)} linked documents to context")
+                logger.info(f"[GRAPHRAG] Added {len(docs_to_add)} linked documents to context")
         except Exception as e:
-            logger.error(f"❌ [GRAPHRAG] Error fetching linked docs: {e}")
+            logger.error(f"[GRAPHRAG] Error fetching linked docs: {e}")
 
     # Filter out documents with low relevance scores
     MIN_SCORE_THRESHOLD = 0.3  # Minimum score to include in context
@@ -302,10 +303,10 @@ def retrieve_node(state: AgentState, retriever, db):
 
     if docs_filtered > 0:
         logger.info(
-            f"🔻 [FILTER] Removed {docs_filtered} low-score docs (score < {MIN_SCORE_THRESHOLD})"
+            f"[FILTER] Removed {docs_filtered} low-score docs (score < {MIN_SCORE_THRESHOLD})"
         )
 
-    logger.info(f"✅ [RETRIEVE NODE] Final context: {len(docs)} documents")
+    logger.info(f"[RETRIEVE NODE] Final context: {len(docs)} documents")
 
     tracer.exit_node(
         "retrieve", {"final_docs": len(docs), "retrieval_time_seconds": round(retrieval_time, 3)}
@@ -323,7 +324,7 @@ def generate_node(state: AgentState, llm_chain):
 
     tracer.enter_node("generate", {"question": question[:50], "context_count": len(context)})
 
-    logger.info(f"🤖 [GENERATE NODE] Generating answer with {len(context)} docs")
+    logger.info(f"[GENERATE NODE] Generating answer with {len(context)} docs")
 
     # Format context
     context_parts = []
@@ -333,17 +334,17 @@ def generate_node(state: AgentState, llm_chain):
         context_parts.append(f"[Note: {source_name}]\n{doc.page_content}")
 
     context_str = "\n\n---\n\n".join(context_parts)
-    logger.info(f"📝 [GENERATE NODE] Context length: {len(context_str)} characters")
+    logger.info(f"[GENERATE NODE] Context length: {len(context_str)} characters")
 
     # Generate
-    logger.info(f"💭 [GENERATE NODE] Invoking LLM ({settings.llm_model})...")
+    logger.info(f"[GENERATE NODE] Invoking LLM ({settings.llm_model})...")
     start_llm = time.time()
     response = llm_chain.invoke(
         {"context": context_str, "question": question, "chat_history": messages[:-1]}
     )
     llm_time = time.time() - start_llm
 
-    logger.info(f"✅ [GENERATE NODE] Answer generated ({len(response)} chars) in {llm_time:.2f}s")
+    logger.info(f"[GENERATE NODE] Answer generated ({len(response)} chars) in {llm_time:.2f}s")
 
     tracer.exit_node(
         "generate", {"answer_length": len(response), "llm_time_seconds": round(llm_time, 3)}
@@ -358,7 +359,7 @@ def create_qa_graph(db):
 
     llm, resolved_model = create_chat_model(settings)
     logger.info(
-        "🤖 Using %s model: %s",
+        "Using %s model: %s",
         settings.llm_provider,
         resolved_model,
     )
@@ -369,8 +370,8 @@ def create_qa_graph(db):
 
 CRITICAL RULE - LANGUAGE:
 **YOU MUST RESPOND IN THE SAME LANGUAGE AS THE USER'S QUESTION.**
-- If the user asks in Spanish → respond entirely in Spanish
-- If the user asks in English → respond entirely in English
+- If the user asks in Spanish respond entirely in Spanish
+- If the user asks in English respond entirely in English
 - NEVER switch languages. Match the user's language exactly.
 
 OTHER RULES:
@@ -419,7 +420,7 @@ def ask_question_graph(
 
     tracer.start(question, len(chat_history))
 
-    logger.info(f"🚀 [GRAPH START] Question: '{question}'")
+    logger.info(f"[GRAPH START] Question: '{question}'")
 
     history_messages: List[BaseMessage] = []
     for q, a in chat_history:
@@ -435,7 +436,7 @@ def ask_question_graph(
         result = app.invoke(inputs)
         invoke_time = time.time() - start_invoke
 
-        logger.info(f"🎯 [GRAPH END] Answer length: {len(result['answer'])} chars")
+        logger.info(f"[GRAPH END] Answer length: {len(result['answer'])} chars")
 
         tracer.end(
             {
@@ -447,7 +448,7 @@ def ask_question_graph(
 
         return result["answer"], result["context"]
     except Exception as e:
-        logger.error(f"❌ [GRAPH ERROR] Exception during graph execution: {e}")
+        logger.error(f"[GRAPH ERROR] Exception during graph execution: {e}")
         tracer.end({"error": str(e)})
         raise
 
@@ -475,7 +476,7 @@ async def ask_question_graph_streaming(
     if chat_history is None:
         chat_history = []
 
-    logger.info(f"🚀 [STREAM START] Question: '{question}'")
+    logger.info(f"[STREAM START] Question: '{question}'")
     settings = get_settings()
 
     try:
@@ -486,7 +487,7 @@ async def ask_question_graph_streaming(
         await asyncio.sleep(0.01)
 
         # Step 1: Run retrieve node directly (not through graph to avoid generate)
-        logger.info(f"🔍 [STREAM] Running retrieval for: '{question}'")
+        logger.info(f"[STREAM] Running retrieval for: '{question}'")
 
         # Build a minimal state for retrieve_node
         history_messages: List[BaseMessage] = []
@@ -506,7 +507,7 @@ async def ask_question_graph_streaming(
         retrieve_result = retrieve_node(state, retriever, db)
         final_context = retrieve_result.get("context", [])
 
-        logger.info(f"📄 [STREAM] Retrieved {len(final_context)} documents")
+        logger.info(f"[STREAM] Retrieved {len(final_context)} documents")
 
         # Yield retrieve complete event
         sources = []
@@ -541,8 +542,8 @@ async def ask_question_graph_streaming(
 
 CRITICAL RULE - LANGUAGE:
 **YOU MUST RESPOND IN THE SAME LANGUAGE AS THE USER'S QUESTION.**
-- If the user asks in Spanish → respond entirely in Spanish
-- If the user asks in English → respond entirely in English
+- If the user asks in Spanish respond entirely in Spanish
+- If the user asks in English respond entirely in English
 - NEVER switch languages. Match the user's language exactly.
 
 OTHER RULES:
@@ -567,34 +568,35 @@ CONTEXT (User's Obsidian Notes):
         llm_start_time = time.time()
         token_count = 0
 
+        llm, resolved_model = create_chat_model(settings)
         logger.info(
-            "💭 [STREAM] Starting LLM streaming (%s:%s)...",
+            "[STREAM] Starting LLM streaming (%s:%s)...",
             settings.llm_provider,
-            settings.llm_model,
+            resolved_model,
         )
         logger.info(
-            f"📝 [STREAM] Prompt length: {len(full_prompt)} chars, Context: {len(context_str)} chars"
+            f"[STREAM] Prompt length: {len(full_prompt)} chars, Context: {len(context_str)} chars"
         )
 
-        async for chunk in stream_chat_model_tokens(single_human_message(full_prompt), settings):
+        async for chunk in stream_chat_model_tokens(single_human_message(full_prompt), settings, model=llm):
             token_count += 1
 
             if first_token_time is None:
                 first_token_time = time.time()
                 ttft = first_token_time - llm_start_time
-                logger.info(f"⚡ [TTFT] Time to First Token: {ttft:.3f}s")
+                logger.info(f"[TTFT] Time to First Token: {ttft:.3f}s")
                 yield {"type": "ttft", "seconds": round(ttft, 3)}
 
             full_answer += chunk
             yield {"type": "token", "content": chunk}
-            logger.debug(f"📤 [TOKEN #{token_count}] '{chunk[:20]}...' yielded")
+            logger.debug(f"[TOKEN #{token_count}] '{chunk[:20]}...' yielded")
 
         llm_end_time = time.time()
         llm_total_time = llm_end_time - llm_start_time
         tokens_per_second = token_count / llm_total_time if llm_total_time > 0 else 0
 
         logger.info(
-            f"✅ [STREAM] LLM complete: {len(full_answer)} chars, {token_count} tokens in {llm_total_time:.2f}s ({tokens_per_second:.1f} tok/s)"
+            f"[STREAM] LLM complete: {len(full_answer)} chars, {token_count} tokens in {llm_total_time:.2f}s ({tokens_per_second:.1f} tok/s)"
         )
 
         invoke_time = time.time() - start_invoke
@@ -620,10 +622,10 @@ CONTEXT (User's Obsidian Notes):
             "process_time": round(invoke_time, 3),
         }
 
-        logger.info(f"🎯 [STREAM END] Total time: {invoke_time:.2f}s")
+        logger.info(f"[STREAM END] Total time: {invoke_time:.2f}s")
 
     except Exception as e:
-        logger.error(f"❌ [STREAM ERROR] Exception: {e}")
+        logger.error(f"[STREAM ERROR] Exception: {e}")
         import traceback
 
         logger.error(traceback.format_exc())

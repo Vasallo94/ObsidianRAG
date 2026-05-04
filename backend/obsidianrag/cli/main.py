@@ -4,13 +4,14 @@ from pathlib import Path
 from typing import Literal, Optional, cast
 
 import typer
+from obsidianrag.core.llm_provider import normalize_llm_provider
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
 app = typer.Typer(
     name="obsidianrag",
-    help="🧠 ObsidianRAG - Query your Obsidian notes with AI",
+    help="ObsidianRAG - Query your Obsidian notes with AI",
     add_completion=False,
 )
 
@@ -74,19 +75,19 @@ def serve(
     """Start the ObsidianRAG API server."""
     vault_path = get_vault_path(vault)
 
-    provider_info = f"\n🔌 Provider: [yellow]{provider}[/yellow]" if provider else ""
-    model_info = f"\n🤖 Model: [yellow]{model}[/yellow]" if model else ""
+    provider_info = f"\nProvider: [yellow]{provider}[/yellow]" if provider else ""
+    model_info = f"\nModel: [yellow]{model}[/yellow]" if model else ""
     reranker_info = (
-        f"\n🔍 Reranker: [yellow]{'Enabled' if reranker else 'Disabled'}[/yellow]"
+        f"\nReranker: [yellow]{'Enabled' if reranker else 'Disabled'}[/yellow]"
         if reranker is not None
         else ""
     )
 
     console.print(
         Panel.fit(
-            f"🧠 [bold cyan]ObsidianRAG Server[/bold cyan]\n\n"
-            f"📁 Vault: [green]{vault_path}[/green]\n"
-            f"🌐 URL: [blue]http://{host}:{port}[/blue]{provider_info}{model_info}{reranker_info}",
+            f"[bold cyan]ObsidianRAG Server[/bold cyan]\n\n"
+            f"Vault: [green]{vault_path}[/green]\n"
+            f"URL: [blue]http://{host}:{port}[/blue]{provider_info}{model_info}{reranker_info}",
             title="Starting Server",
         )
     )
@@ -99,19 +100,19 @@ def serve(
     # Override settings if specified via CLI
     settings = get_settings()
     if provider:
-        normalized_provider = provider.lower().replace("-", "")
-        settings.llm_provider = cast(Literal["ollama", "lmstudio", "custom"], provider)
-        if normalized_provider == "lmstudio":
+        normalized = normalize_llm_provider(provider)
+        settings.llm_provider = cast(Literal["ollama", "lmstudio", "custom"], normalized)
+        if normalized == "lmstudio":
             settings.llm_api_format = "chat-completions"
     if model:
         settings.llm_model = model
+    if api_format:
+        settings.llm_api_format = cast(Literal["ollama", "chat-completions"], api_format)
     if base_url:
-        if settings.llm_provider == "ollama" or api_format == "ollama":
+        if settings.llm_provider == "ollama" or settings.llm_api_format == "ollama":
             settings.ollama_base_url = base_url
         else:
             settings.compatible_base_url = base_url
-    if api_format:
-        settings.llm_api_format = cast(Literal["ollama", "chat-completions"], api_format)
     if api_key:
         settings.compatible_api_key = api_key
     if reranker is not None:
@@ -134,7 +135,7 @@ def index(
     """Index or re-index the Obsidian vault."""
     vault_path = get_vault_path(vault)
 
-    console.print(f"📚 Indexing vault: [green]{vault_path}[/green]")
+    console.print(f"Indexing vault: [green]{vault_path}[/green]")
 
     if force:
         console.print("[yellow]Force rebuild enabled - this may take a while...[/yellow]")
@@ -155,14 +156,14 @@ def index(
 
         console.print(
             Panel.fit(
-                f"✅ [bold green]Indexing complete![/bold green]\n\n"
-                f"📄 Notes: {len(sources)}\n"
-                f"📦 Chunks: {total_chunks}",
+                f"[bold green]Indexing complete![/bold green]\n\n"
+                f"Notes: {len(sources)}\n"
+                f"Chunks: {total_chunks}",
                 title="Success",
             )
         )
     else:
-        console.print("[red]❌ Indexing failed. Check logs for details.[/red]")
+        console.print("[red]Indexing failed. Check logs for details.[/red]")
         raise typer.Exit(1)
 
 
@@ -181,7 +182,7 @@ def status(
     # Check vault
     vault_path = get_vault_path(vault) if vault else os.environ.get("OBSIDIAN_PATH", "Not set")
     vault_exists = Path(vault_path).exists() if vault_path and vault_path != "Not set" else False
-    table.add_row("Vault", "✅" if vault_exists else "❌", vault_path)
+    table.add_row("Vault", "OK" if vault_exists else "ERR", vault_path)
 
     # Check Ollama
     try:
@@ -190,19 +191,19 @@ def status(
         response = httpx.get("http://localhost:11434/api/tags", timeout=2.0)
         if response.status_code == 200:
             models = [m["name"] for m in response.json().get("models", [])]
-            table.add_row("Ollama", "✅", f"{len(models)} models available")
+            table.add_row("Ollama", "OK", f"{len(models)} models available")
         else:
-            table.add_row("Ollama", "⚠️", "Running but error getting models")
+            table.add_row("Ollama", "WARN", "Running but error getting models")
     except Exception:
-        table.add_row("Ollama", "❌", "Not running. Run: ollama serve")
+        table.add_row("Ollama", "ERR", "Not running. Run: ollama serve")
 
     # Check database
     if vault_exists:
         db_path = Path(vault_path) / ".obsidianrag" / "db"
         if db_path.exists():
-            table.add_row("Database", "✅", str(db_path))
+            table.add_row("Database", "OK", str(db_path))
         else:
-            table.add_row("Database", "⚠️", "Not indexed. Run: obsidianrag index")
+            table.add_row("Database", "WARN", "Not indexed. Run: obsidianrag index")
 
     console.print(table)
 
@@ -215,7 +216,7 @@ def ask(
     """Ask a question about your notes (without starting server)."""
     vault_path = get_vault_path(vault)
 
-    console.print(f"❓ [bold]{question}[/bold]\n")
+    console.print(f"[bold]{question}[/bold]\n")
 
     from obsidianrag import ObsidianRAG
 
@@ -239,7 +240,7 @@ def version():
 
     console.print(
         Panel.fit(
-            f"🧠 [bold cyan]ObsidianRAG[/bold cyan] v{__version__}\n\n"
+            f"[bold cyan]ObsidianRAG[/bold cyan] v{__version__}\n\n"
             "RAG system for Obsidian notes using LangGraph and Ollama",
             title="Version",
         )
