@@ -23,7 +23,12 @@ from obsidianrag.core.qa_agent import (
     ask_question_graph_streaming,
     create_qa_graph,
 )
-from obsidianrag.core.qa_service import ModelNotAvailableError, NoDocumentsFoundError, RAGError
+from obsidianrag.core.qa_service import (
+    ModelNotAvailableError,
+    NoDocumentsFoundError,
+    RAGError,
+    create_hybrid_retriever,
+)
 from obsidianrag.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -56,6 +61,7 @@ class _LRUSessionStore:
 # Global state
 _db = None
 _qa_app = None
+_retriever = None
 _db_lock: Optional[asyncio.Lock] = None
 _chat_histories = _LRUSessionStore()
 _vault_path: Optional[str] = None
@@ -86,7 +92,7 @@ def create_app(vault_path: Optional[str] = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         """Lifespan context manager for startup and shutdown events"""
-        global _db, _qa_app, _db_lock
+        global _db, _qa_app, _retriever, _db_lock
 
         _db_lock = asyncio.Lock()
 
@@ -108,6 +114,7 @@ def create_app(vault_path: Optional[str] = None) -> FastAPI:
             else:
                 logger.info("Creating LangGraph agent...")
                 _qa_app = create_qa_graph(_db)
+                _retriever = create_hybrid_retriever(_db)
                 logger.info("Application started successfully")
         except Exception as e:
             logger.error("Error during startup: %s", e, exc_info=True)
@@ -254,23 +261,20 @@ def _register_routes(application: FastAPI):
         """Ask a question and stream the response with progress updates via SSE."""
         import time as time_module
 
-        from obsidianrag.core.qa_service import create_hybrid_retriever
-
         async def event_generator() -> AsyncGenerator[str, None]:
             """Generate SSE events for the streaming response."""
             event_count = 0
             stream_start = time_module.time()
 
             try:
-                if _db is None:
+                if _db is None or _retriever is None:
                     yield f"data: {json.dumps({'type': 'error', 'message': 'System not initialized'})}\n\n"
                     return
 
                 session_id = question.session_id or str(uuid.uuid4())
                 history = _chat_histories.get(session_id)
 
-                # Create retriever for streaming
-                retriever = create_hybrid_retriever(_db)
+                retriever = _retriever
 
                 # Send start event
                 logger.info("[SSE] Sending start event")
@@ -418,11 +422,12 @@ def _register_routes(application: FastAPI):
         """Force rebuild of the vector database to index new files."""
         try:
             logger.info("Database rebuild request received")
-            global _db, _qa_app
+            global _db, _qa_app, _retriever
 
             async with _db_lock:
                 _db = None
                 _qa_app = None
+                _retriever = None
                 gc.collect()
 
                 _db = load_or_create_db(force_rebuild=True)
@@ -431,6 +436,7 @@ def _register_routes(application: FastAPI):
                     raise HTTPException(status_code=500, detail="Error rebuilding database")
 
                 _qa_app = create_qa_graph(_db)
+                _retriever = create_hybrid_retriever(_db)
 
                 # Get statistics to return
                 db_data = _db.get()

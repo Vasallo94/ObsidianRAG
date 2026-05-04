@@ -53,7 +53,11 @@ def create_chat_model(settings: Settings | None = None) -> tuple[BaseChatModel, 
         model_name = _verify_ollama_model(settings.llm_model, settings)
         from langchain_ollama import ChatOllama
 
-        return ChatOllama(model=model_name, base_url=settings.ollama_base_url), model_name
+        return ChatOllama(
+            model=model_name,
+            base_url=settings.ollama_base_url,
+            timeout=settings.request_timeout,
+        ), model_name
 
     api_format = normalize_api_format(
         "chat-completions" if provider == "lmstudio" else settings.llm_api_format
@@ -63,7 +67,11 @@ def create_chat_model(settings: Settings | None = None) -> tuple[BaseChatModel, 
         model_name = _verify_ollama_model(settings.llm_model, settings)
         from langchain_ollama import ChatOllama
 
-        return ChatOllama(model=model_name, base_url=settings.ollama_base_url), model_name
+        return ChatOllama(
+            model=model_name,
+            base_url=settings.ollama_base_url,
+            timeout=settings.request_timeout,
+        ), model_name
 
     if api_format == "chat-completions":
         model_name = _verify_chat_completions_model(settings.llm_model, settings)
@@ -79,6 +87,7 @@ def create_chat_model(settings: Settings | None = None) -> tuple[BaseChatModel, 
                 model=model_name,
                 base_url=settings.compatible_base_url.rstrip("/"),
                 api_key=SecretStr(settings.compatible_api_key),
+                request_timeout=settings.request_timeout,
             ),
             model_name,
         )
