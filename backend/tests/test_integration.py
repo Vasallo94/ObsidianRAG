@@ -9,15 +9,13 @@ class TestFullRAGPipeline:
     """Integration tests for the complete RAG pipeline."""
 
     @pytest.mark.integration
-    @patch("obsidianrag.core.qa_agent.OllamaLLM")
-    def test_index_and_query_flow(self, mock_ollama, mock_vault, mock_chroma_db):
+    @patch("obsidianrag.core.qa_agent.create_chat_model")
+    def test_index_and_query_flow(self, mock_create_chat_model, mock_vault, mock_chroma_db):
         """Test complete flow: index vault → query → get answer."""
         # Setup mock LLM
         mock_llm = MagicMock()
-        mock_llm.invoke.return_value = MagicMock(
-            content="Machine learning is a subset of artificial intelligence."
-        )
-        mock_ollama.return_value = mock_llm
+        mock_llm.invoke.return_value.content = "Machine learning is a subset of artificial intelligence."
+        mock_create_chat_model.return_value = (mock_llm, "gemma3")
 
         # Flow:
         # 1. DBService indexes mock vault
@@ -27,12 +25,12 @@ class TestFullRAGPipeline:
         # 5. Response includes answer + sources
 
     @pytest.mark.integration
-    @patch("obsidianrag.core.qa_agent.OllamaLLM")
-    def test_graphrag_link_expansion(self, mock_ollama, mock_vault, mock_chroma_db):
+    @patch("obsidianrag.core.qa_agent.create_chat_model")
+    def test_graphrag_link_expansion(self, mock_create_chat_model, mock_vault, mock_chroma_db):
         """Test that GraphRAG expands [[wikilinks]] during retrieval."""
         mock_llm = MagicMock()
-        mock_llm.invoke.return_value = MagicMock(content="Answer with expanded context")
-        mock_ollama.return_value = mock_llm
+        mock_llm.invoke.return_value.content = "Answer with expanded context"
+        mock_create_chat_model.return_value = (mock_llm, "gemma3")
 
         # When a retrieved document has [[links]], those linked documents
         # should also be fetched and included in context
@@ -130,10 +128,10 @@ class TestErrorRecovery:
         # System should handle this gracefully
 
     @pytest.mark.integration
-    @patch("obsidianrag.core.qa_agent.OllamaLLM")
-    def test_handles_ollama_timeout(self, mock_ollama, mock_vault):
+    @patch("obsidianrag.core.qa_agent.create_chat_model")
+    def test_handles_ollama_timeout(self, mock_create_chat_model, mock_vault):
         """Test handling of Ollama timeout."""
-        mock_ollama.side_effect = TimeoutError("Connection timed out")
+        mock_create_chat_model.side_effect = TimeoutError("Connection timed out")
 
         # Should return appropriate error message
 

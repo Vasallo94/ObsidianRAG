@@ -2,6 +2,9 @@
 
 from unittest.mock import MagicMock, patch
 
+from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableLambda
+
 from obsidianrag.core.qa_agent import AgentState, extract_links_from_content
 
 
@@ -110,29 +113,23 @@ class TestRetrieveNode:
 class TestGenerateNode:
     """Tests for the generate functionality."""
 
-    @patch("obsidianrag.core.qa_agent.OllamaLLM")
     @patch("obsidianrag.core.qa_agent.get_settings")
-    def test_generate_produces_answer(self, mock_settings, mock_ollama):
+    def test_generate_produces_answer(self, mock_settings):
         """Test that generate produces an answer."""
         mock_settings.return_value = MagicMock(llm_model="gemma3")
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = "This is the answer"
-        mock_ollama.return_value = mock_llm
+        mock_llm = RunnableLambda(lambda _: AIMessage(content="This is the answer"))
 
-        result = mock_llm.invoke("Test prompt")
+        result = mock_llm.invoke("Test prompt").content
 
         assert result == "This is the answer"
 
-    @patch("obsidianrag.core.qa_agent.OllamaLLM")
     @patch("obsidianrag.core.qa_agent.get_settings")
-    def test_generate_handles_no_context(self, mock_settings, mock_ollama):
+    def test_generate_handles_no_context(self, mock_settings):
         """Test generate handles empty context."""
         mock_settings.return_value = MagicMock(llm_model="gemma3")
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = "I don't have enough information."
-        mock_ollama.return_value = mock_llm
+        mock_llm = RunnableLambda(lambda _: AIMessage(content="I don't have enough information."))
 
-        result = mock_llm.invoke("Question without context")
+        result = mock_llm.invoke("Question without context").content
 
         assert "information" in result
 
@@ -140,38 +137,39 @@ class TestGenerateNode:
 class TestQAAgent:
     """Tests for the full QA Agent."""
 
-    @patch("obsidianrag.core.qa_agent.OllamaLLM")
+    @patch("obsidianrag.core.qa_agent.create_chat_model")
     @patch("obsidianrag.core.qa_agent.create_retriever_with_reranker")
-    @patch("obsidianrag.core.qa_agent.verify_ollama_available")
     @patch("obsidianrag.core.qa_agent.get_settings")
-    def test_agent_creation(self, mock_settings, mock_verify, mock_retriever, mock_ollama):
+    def test_agent_creation(self, mock_settings, mock_retriever, mock_create_chat_model):
         """Test that agent can be created."""
         mock_settings.return_value = MagicMock(
+            llm_provider="ollama",
             llm_model="gemma3",
             use_reranker=False,
             reranker_top_n=5,
             retrieval_k=10,
         )
-        mock_verify.return_value = True
         mock_retriever.return_value = MagicMock()
-        mock_ollama.return_value = MagicMock()
+        mock_create_chat_model.return_value = (
+            RunnableLambda(lambda _: AIMessage(content="ok")),
+            "gemma3",
+        )
 
         # Agent components should be mockable
         assert mock_settings.called or True
 
-    @patch("obsidianrag.core.qa_agent.OllamaLLM")
+    @patch("obsidianrag.core.qa_agent.create_chat_model")
     @patch("obsidianrag.core.qa_agent.create_retriever_with_reranker")
-    @patch("obsidianrag.core.qa_agent.verify_ollama_available")
     @patch("obsidianrag.core.qa_agent.get_settings")
     def test_agent_handles_ollama_unavailable(
-        self, mock_settings, mock_verify, mock_retriever, mock_ollama
+        self, mock_settings, mock_retriever, mock_create_chat_model
     ):
         """Test agent handles Ollama not being available."""
-        mock_settings.return_value = MagicMock(llm_model="gemma3")
-        mock_verify.return_value = False
+        mock_settings.return_value = MagicMock(llm_provider="ollama", llm_model="gemma3")
+        mock_create_chat_model.side_effect = RuntimeError("Ollama unavailable")
 
         # Should handle gracefully when Ollama is not available
-        assert mock_verify.return_value is False
+        assert mock_create_chat_model.side_effect is not None
 
 
 class TestGraphRAGExpansion:

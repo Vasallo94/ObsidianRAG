@@ -7,6 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableLambda
 
 # ============================================================
 # Test Vault Fixtures
@@ -201,13 +203,21 @@ def mock_qa_agent_fixt():
     yield mock_agent
 
 
+@pytest.fixture(name="mock_chat_model")
+def mock_chat_model_fixt():
+    """Mock LangChain chat model returned by the provider resolver."""
+    return RunnableLambda(lambda _: AIMessage(content="Integrated answer"))
+
+
 # ============================================================
 # API Client Fixtures
 # ============================================================
 
 
 @pytest.fixture
-def test_client(mock_vault: Path, mock_embeddings) -> Generator[TestClient, None, None]:
+def test_client(
+    mock_vault: Path, mock_embeddings, mock_chat_model
+) -> Generator[TestClient, None, None]:
     """Create a test client for the FastAPI app.
 
     Note: This uses real server but with mocked embeddings.
@@ -219,20 +229,16 @@ def test_client(mock_vault: Path, mock_embeddings) -> Generator[TestClient, None
     # Configure settings for test vault
     configure_from_vault(str(mock_vault))
 
-    # Create app with mocked embeddings and LLM
-    from langchain_core.runnables import RunnableLambda
-
-    mock_llm_internal: RunnableLambda = RunnableLambda(lambda x: "Integrated answer")
-
+    # Create app with mocked embeddings and chat model
     with patch("obsidianrag.core.db_service.HuggingFaceEmbeddings", return_value=mock_embeddings):
-        with patch("obsidianrag.core.qa_agent.OllamaLLM", return_value=mock_llm_internal):
-            with patch("obsidianrag.core.qa_service.verify_ollama_available"):
-                with patch("obsidianrag.core.qa_agent.verify_ollama_available"):
-                    with patch("obsidianrag.core.qa_agent.verify_llm_model", return_value="gemma3"):
-                        app = create_app(str(mock_vault))
+        with patch(
+            "obsidianrag.core.qa_agent.create_chat_model",
+            return_value=(mock_chat_model, "gemma3"),
+        ):
+            app = create_app(str(mock_vault))
 
-                        with TestClient(app) as client:
-                            yield client
+            with TestClient(app) as client:
+                yield client
 
 
 @pytest.fixture

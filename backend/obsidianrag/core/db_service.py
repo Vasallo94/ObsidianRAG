@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import uuid
+from pathlib import Path
 from typing import List, Optional, Set
 
 from langchain_chroma import Chroma
@@ -25,9 +26,7 @@ logger = logging.getLogger(__name__)
 def extract_obsidian_links(content: str) -> List[str]:
     """Extract Obsidian wikilinks [[Note]] or [[Note|Alias]] from content"""
     links = re.findall(r"\[\[(.*?)\]\]", content)
-    # Clean links (remove alias like [[Note|Alias]] -> Note)
     cleaned_links = [link.split("|")[0].strip() for link in links]
-    # Remove duplicates while preserving order
     seen = set()
     unique_links = []
     for link in cleaned_links:
@@ -38,19 +37,14 @@ def extract_obsidian_links(content: str) -> List[str]:
 
 
 def get_embeddings() -> Embeddings:
-    """Get configured embeddings model based on provider setting.
-
-    Automatically downloads the model if not available in Ollama.
-    Falls back to HuggingFace if download fails.
-    """
+    """Get configured embeddings model based on provider setting."""
     settings = get_settings()
     provider = settings.embedding_provider.lower()
 
     if provider == "ollama":
         model = settings.ollama_embedding_model
-        logger.info(f"Trying to load Ollama embeddings: {model}")
+        logger.info("Trying to load Ollama embeddings: %s", model)
 
-        # Check if model is available in Ollama
         try:
             import httpx
 
@@ -61,34 +55,41 @@ def get_embeddings() -> Embeddings:
                 ]
                 if model not in available_models:
                     logger.warning(
-                        f"⚠️ Model '{model}' not found in Ollama. Attempting to download..."
+                        "Model '%s' not found in Ollama. Attempting to download...", model
                     )
-                    # Try to pull the model automatically (10 min timeout for embeddings)
                     if pull_ollama_model(model, timeout=600):
                         embeddings: Embeddings = OllamaEmbeddings(
                             model=model, base_url=settings.ollama_base_url
                         )
-                        logger.info(f"✅ Ollama embeddings ({model}) loaded successfully")
+                        logger.info("Ollama embeddings (%s) loaded successfully", model)
                         return embeddings
                     else:
-                        logger.warning("🔄 Falling back to HuggingFace embeddings...")
-                        provider = "huggingface"  # Fallback
+                        raise RuntimeError(
+                            f"Failed to download Ollama embedding model '{model}'. "
+                            f"Run: ollama pull {model}"
+                        )
                 else:
                     embeddings = OllamaEmbeddings(model=model, base_url=settings.ollama_base_url)
-                    logger.info(f"✅ Ollama embeddings ({model}) loaded successfully")
+                    logger.info("Ollama embeddings (%s) loaded successfully", model)
                     return embeddings
             else:
-                logger.warning("⚠️ Could not connect to Ollama. Falling back to HuggingFace...")
-                provider = "huggingface"
+                raise RuntimeError(
+                    f"Could not connect to Ollama at {settings.ollama_base_url}. "
+                    "Is Ollama running? Run: ollama serve"
+                )
+        except RuntimeError:
+            raise
         except Exception as e:
-            logger.warning(f"⚠️ Error checking Ollama: {e}. Falling back to HuggingFace...")
-            provider = "huggingface"
+            raise RuntimeError(
+                f"Error connecting to Ollama for embeddings: {e}. "
+                "Is Ollama running? Run: ollama serve"
+            ) from e
 
-    # Default: HuggingFace (or fallback)
+    # HuggingFace provider
     model = settings.embedding_model
-    logger.info(f"Initializing HuggingFace embeddings: {model}")
+    logger.info("Initializing HuggingFace embeddings: %s", model)
     embeddings = HuggingFaceEmbeddings(model_name=model)
-    logger.info(f"✅ HuggingFace embeddings ({model}) loaded successfully")
+    logger.info("HuggingFace embeddings (%s) loaded successfully", model)
 
     return embeddings
 
@@ -104,6 +105,16 @@ def get_text_splitter() -> RecursiveCharacterTextSplitter:
     )
 
 
+def _is_safe_path(filepath: str, vault_path: str) -> bool:
+    """Check that a filepath resolves within the vault boundary."""
+    try:
+        resolved = Path(filepath).resolve()
+        vault_resolved = Path(vault_path).resolve()
+        return resolved.is_relative_to(vault_resolved)
+    except (ValueError, OSError):
+        return False
+
+
 def load_documents_from_paths(filepaths: Set[str]) -> List[Document]:
     """Load documents from specific file paths with link extraction"""
     documents = []
@@ -113,7 +124,6 @@ def load_documents_from_paths(filepaths: Set[str]) -> List[Document]:
             with open(filepath, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            # Extract Obsidian links
             links = extract_obsidian_links(content)
 
             doc = Document(
@@ -123,12 +133,12 @@ def load_documents_from_paths(filepaths: Set[str]) -> List[Document]:
             documents.append(doc)
 
             if links:
-                logger.debug(f"Extracted {len(links)} links from {filepath}")
+                logger.debug("Extracted %d links from %s", len(links), filepath)
 
         except Exception as e:
-            logger.warning(f"Could not load {filepath}: {e}")
+            logger.warning("Could not load %s: %s", filepath, e)
 
-    logger.info(f"Loaded {len(documents)} documents from specified paths")
+    logger.info("Loaded %d documents from specified paths", len(documents))
     return documents
 
 
@@ -136,44 +146,45 @@ def load_all_obsidian_documents(obsidian_path: str) -> List[Document]:
     """Load all documents from Obsidian vault using recursive walk"""
     logger.info("Loading Obsidian documents (.md) recursively")
 
-    # File patterns to exclude (binary, canvas, etc.)
     EXCLUDED_PATTERNS = [
-        ".excalidraw.md",  # Excalidraw drawings (base64)
-        ".canvas",  # Canvas files
-        "untitled",  # Untitled files
+        ".excalidraw.md",
+        ".canvas",
+        "untitled",
     ]
 
     documents = []
     total_files = 0
     loaded_files = 0
     skipped_files = 0
+    error_files = 0
     total_links_found = 0
 
-    for root, _, files in os.walk(obsidian_path):
+    for root, _, files in os.walk(obsidian_path, followlinks=False):
         for file in files:
             if file.endswith(".md"):
                 total_files += 1
                 filepath = os.path.join(root, file)
 
-                # Skip excluded patterns
+                if not _is_safe_path(filepath, obsidian_path):
+                    logger.warning("Skipping file outside vault boundary: %s", filepath)
+                    skipped_files += 1
+                    continue
+
                 if any(pattern in file.lower() for pattern in EXCLUDED_PATTERNS):
                     skipped_files += 1
-                    logger.debug(f"Skipping excluded file: {file}")
+                    logger.debug("Skipping excluded file: %s", file)
                     continue
 
                 try:
-                    # Try UTF-8 first
                     try:
                         with open(filepath, "r", encoding="utf-8") as f:
                             content = f.read()
                     except UnicodeDecodeError:
-                        # Fallback to latin-1
-                        logger.warning(f"UTF-8 decode failed for {filepath}, trying latin-1")
+                        logger.warning("UTF-8 decode failed for %s, trying latin-1", filepath)
                         with open(filepath, "r", encoding="latin-1") as f:
                             content = f.read()
 
-                    if content.strip():  # Skip empty files
-                        # Extract links using centralized function
+                    if content.strip():
                         links = extract_obsidian_links(content)
                         total_links_found += len(links)
 
@@ -187,72 +198,67 @@ def load_all_obsidian_documents(obsidian_path: str) -> List[Document]:
                         documents.append(doc)
                         loaded_files += 1
 
-                        # Debug logging for files with many links
                         if len(links) > 5:
-                            logger.debug(f"Note '{file}' has {len(links)} links: {links[:5]}...")
+                            logger.debug("Note '%s' has %d links: %s...", file, len(links), links[:5])
 
                 except Exception as e:
-                    logger.error(f"Error loading file {filepath}: {e}")
+                    error_files += 1
+                    logger.error("Error loading file %s: %s", filepath, e)
 
-    logger.info(f"Loaded {loaded_files} of {total_files} notes ({skipped_files} excluded)")
-    logger.info(f"Total links extracted: {total_links_found}")
+    logger.info(
+        "Loaded %d of %d notes (%d excluded, %d errors)",
+        loaded_files,
+        total_files,
+        skipped_files,
+        error_files,
+    )
+    logger.info("Total links extracted: %d", total_links_found)
     return documents
 
 
 def update_db_incrementally(
     db: Chroma, new_files: Set[str], modified_files: Set[str], deleted_files: Set[str]
 ) -> Chroma:
-    """
-    Update database incrementally with only changed files
-
-    Args:
-        db: Existing ChromaDB instance
-        new_files: Set of new file paths
-        modified_files: Set of modified file paths
-        deleted_files: Set of deleted file paths
-
-    Returns:
-        Updated ChromaDB instance
-    """
+    """Update database incrementally with only changed files."""
     logger.info("Applying incremental update to database")
 
-    # Delete removed files
     if deleted_files:
-        logger.info(f"Removing {len(deleted_files)} deleted documents")
+        logger.info("Removing %d deleted documents", len(deleted_files))
         for filepath in deleted_files:
             try:
-                # Delete by metadata filter
                 db.delete(where={"source": filepath})
             except Exception as e:
-                logger.warning(f"Could not delete {filepath}: {e}")
+                logger.warning("Could not delete %s: %s", filepath, e)
 
-    # Add/update modified and new files
     files_to_process = new_files | modified_files
 
     if files_to_process:
-        logger.info(f"Processing {len(files_to_process)} new/modified documents")
+        logger.info("Processing %d new/modified documents", len(files_to_process))
 
-        # For modified files, delete old versions first
+        # For modified files: load new version FIRST, then swap
         for filepath in modified_files:
             try:
-                db.delete(where={"source": filepath})
+                new_docs = load_documents_from_paths({filepath})
+                if new_docs:
+                    text_splitter = get_text_splitter()
+                    new_chunks = text_splitter.split_documents(new_docs)
+                    if new_chunks:
+                        db.delete(where={"source": filepath})
+                        db.add_documents(new_chunks)
+                        logger.debug("Updated %s (%d chunks)", filepath, len(new_chunks))
             except Exception as e:
-                logger.warning(f"Could not delete old version of {filepath}: {e}")
+                logger.error("Failed to update %s, keeping old version: %s", filepath, e)
 
-        # Load and chunk new/modified documents
-        documents = load_documents_from_paths(files_to_process)
-
-        if documents:
-            text_splitter = get_text_splitter()
-            texts = text_splitter.split_documents(documents)
-            logger.info(f"Created {len(texts)} text chunks")
-
-            # Add to database only if we have chunks
-            if texts:
-                db.add_documents(texts)
-                logger.info("Documents added to database")
-            else:
-                logger.warning("No text chunks generated from documents (files may be empty)")
+        # Load and chunk new documents
+        if new_files:
+            documents = load_documents_from_paths(new_files)
+            if documents:
+                text_splitter = get_text_splitter()
+                texts = text_splitter.split_documents(documents)
+                logger.info("Created %d text chunks from new files", len(texts))
+                if texts:
+                    db.add_documents(texts)
+                    logger.info("New documents added to database")
 
     return db
 
@@ -260,20 +266,10 @@ def update_db_incrementally(
 def load_or_create_db(
     obsidian_path: Optional[str] = None, force_rebuild: bool = False
 ) -> Optional[Chroma]:
-    """
-    Load or create vector database with incremental indexing support
-
-    Args:
-        obsidian_path: Path to Obsidian vault (uses settings if None)
-        force_rebuild: Force full rebuild ignoring incremental updates
-
-    Returns:
-        ChromaDB instance or None if no documents
-    """
+    """Load or create vector database with incremental indexing support."""
     settings = get_settings()
     logger.info("Starting vector database load or creation")
 
-    # Get obsidian path from settings if not provided
     if not obsidian_path:
         obsidian_path = settings.obsidian_path
 
@@ -283,7 +279,6 @@ def load_or_create_db(
     embeddings = get_embeddings()
     persist_directory = settings.db_path
 
-    # Check if we should do incremental update
     if (
         os.path.exists(persist_directory)
         and not force_rebuild
@@ -292,52 +287,45 @@ def load_or_create_db(
         logger.info("Checking for changes for incremental update")
         tracker = FileMetadataTracker(settings.metadata_file)
 
-        # Check if we should do full rebuild based on change ratio
-        if tracker.should_rebuild(obsidian_path):
+        should_rebuild, changes = tracker.should_rebuild_with_changes(obsidian_path)
+        if should_rebuild:
             logger.warning("Too many changes detected, doing full rebuild")
             force_rebuild = True
         else:
-            new_files, modified_files, deleted_files = tracker.detect_changes(obsidian_path)
+            new_files, modified_files, deleted_files = changes
 
             if not new_files and not modified_files and not deleted_files:
                 logger.info("No changes, loading existing database")
                 db = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
                 return db
 
-            # Do incremental update
             logger.info("Performing incremental update")
             db = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
             db = update_db_incrementally(db, new_files, modified_files, deleted_files)
 
-            # Update metadata tracker
             tracker.update_metadata(obsidian_path)
 
             return db
 
-    # Full rebuild from scratch
     if force_rebuild:
         logger.info("Forcing full database rebuild")
 
-    # Load all documents
     documents = load_all_obsidian_documents(obsidian_path)
 
     if not documents:
         logger.warning("No documents loaded. Check the path and files")
         return None
 
-    # Split documents
     logger.info("Splitting documents into chunks")
     text_splitter = get_text_splitter()
     texts = text_splitter.split_documents(documents)
-    logger.info(f"Created {len(texts)} text chunks")
+    logger.info("Created %d text chunks", len(texts))
 
     if force_rebuild and os.path.exists(persist_directory):
-        # Atomic rebuild: create in temp directory then swap
         temp_dir = f"{persist_directory}_{uuid.uuid4().hex}"
-        logger.info(f"Creating new database in temporary directory: {temp_dir}")
+        logger.info("Creating new database in temporary directory: %s", temp_dir)
 
         try:
-            # Create DB in temp directory
             temp_db = Chroma.from_documents(
                 texts,
                 embeddings,
@@ -345,29 +333,24 @@ def load_or_create_db(
                 collection_metadata={"hnsw:space": "cosine"},
             )
 
-            # Release resources
             del temp_db
             gc.collect()
 
-            # Replace old directory atomically
-            logger.info(f"Removing old directory: {persist_directory}")
+            logger.info("Removing old directory: %s", persist_directory)
             shutil.rmtree(persist_directory)
 
-            logger.info(f"Moving {temp_dir} to {persist_directory}")
+            logger.info("Moving %s to %s", temp_dir, persist_directory)
             os.rename(temp_dir, persist_directory)
 
-            # Load from final location
             db = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
             logger.info("Database rebuilt and loaded successfully")
 
         except Exception as e:
-            logger.error(f"Error during atomic rebuild: {e}")
-            # Cleanup on error
+            logger.error("Error during atomic rebuild: %s", e)
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir)
             raise e
     else:
-        # First time creation
         logger.info("Creating new vector database")
         db = Chroma.from_documents(
             texts,
@@ -377,7 +360,6 @@ def load_or_create_db(
         )
         logger.info("Vector database created successfully")
 
-    # Update metadata tracker after successful indexing
     if settings.enable_incremental_indexing:
         tracker = FileMetadataTracker(settings.metadata_file)
         tracker.update_metadata(obsidian_path)

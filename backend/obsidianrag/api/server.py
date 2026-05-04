@@ -5,6 +5,7 @@ import gc
 import json
 import time
 import uuid
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Dict, List, Optional, Tuple
 
@@ -16,22 +17,64 @@ from pydantic import BaseModel, Field
 
 from obsidianrag.config import configure_from_vault, get_settings
 from obsidianrag.core.db_service import load_or_create_db
+from obsidianrag.core.llm_provider import list_llm_models
 from obsidianrag.core.qa_agent import (
     ask_question_graph,
     ask_question_graph_streaming,
     create_qa_graph,
 )
-from obsidianrag.core.qa_service import ModelNotAvailableError, NoDocumentsFoundError, RAGError
+from obsidianrag.core.qa_service import (
+    ModelNotAvailableError,
+    NoDocumentsFoundError,
+    RAGError,
+    create_hybrid_retriever,
+)
 from obsidianrag.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
+MAX_SESSIONS = 100
+MAX_HISTORY_PER_SESSION = 20
+
+
+class _LRUSessionStore:
+    """Bounded session store with LRU eviction."""
+
+    def __init__(self, max_sessions: int = MAX_SESSIONS):
+        self._store: OrderedDict[str, List[Tuple[str, str]]] = OrderedDict()
+        self._max = max_sessions
+
+    def get(self, sid: str) -> List[Tuple[str, str]]:
+        if sid in self._store:
+            self._store.move_to_end(sid)
+            return self._store[sid]
+        return []
+
+    def set(self, sid: str, history: List[Tuple[str, str]]) -> None:
+        history = history[-MAX_HISTORY_PER_SESSION:]
+        self._store[sid] = history
+        self._store.move_to_end(sid)
+        if len(self._store) > self._max:
+            self._store.popitem(last=False)
+
+
 # Global state
 _db = None
 _qa_app = None
-_db_lock = asyncio.Lock()
-_chat_histories: Dict[str, List[Tuple[str, str]]] = {}
+_retriever = None
+_db_lock: Optional[asyncio.Lock] = None
+_chat_histories = _LRUSessionStore()
 _vault_path: Optional[str] = None
+
+
+def _strip_vault_prefix(source: str) -> str:
+    """Strip the vault base path from a source path, returning a relative path."""
+    settings = get_settings()
+    vault = settings.obsidian_path
+    if vault and source.startswith(vault):
+        relative = source[len(vault):]
+        return relative.lstrip("/")
+    return source
 
 
 def create_app(vault_path: Optional[str] = None) -> FastAPI:
@@ -49,17 +92,20 @@ def create_app(vault_path: Optional[str] = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         """Lifespan context manager for startup and shutdown events"""
-        global _db, _qa_app
+        global _db, _qa_app, _retriever, _db_lock
+
+        _db_lock = asyncio.Lock()
 
         settings = get_settings()
 
         logger.info("Starting ObsidianRAG application")
-        logger.info(f"Configuration: {settings.model_dump()}")
+        logger.info("Configuration: %s", settings.model_dump(exclude={"compatible_api_key"}))
 
         try:
             logger.info("Loading vector database...")
-            if _vault_path:
-                configure_from_vault(_vault_path)
+            vault = _vault_path or settings.obsidian_path
+            if vault:
+                configure_from_vault(vault)
 
             _db = load_or_create_db()
 
@@ -68,9 +114,10 @@ def create_app(vault_path: Optional[str] = None) -> FastAPI:
             else:
                 logger.info("Creating LangGraph agent...")
                 _qa_app = create_qa_graph(_db)
-                logger.info("✅ Application started successfully")
+                _retriever = create_hybrid_retriever(_db)
+                logger.info("Application started successfully")
         except Exception as e:
-            logger.error(f"Error during startup: {e}", exc_info=True)
+            logger.error("Error during startup: %s", e, exc_info=True)
             raise
 
         yield
@@ -90,8 +137,8 @@ def create_app(vault_path: Optional[str] = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
     )
 
     # Middleware to measure request processing time
@@ -101,7 +148,7 @@ def create_app(vault_path: Optional[str] = None) -> FastAPI:
         response = await call_next(request)
         process_time = time.time() - start_time
         response.headers["X-Process-Time"] = str(process_time)
-        logger.info(f"Processing time: {process_time:.4f} seconds")
+        logger.info("Processing time: %.4f seconds", process_time)
         return response
 
     # Register routes
@@ -112,7 +159,7 @@ def create_app(vault_path: Optional[str] = None) -> FastAPI:
 
 # Pydantic models
 class Question(BaseModel):
-    text: str = Field(..., description="The question you want to ask")
+    text: str = Field(..., description="The question you want to ask", max_length=5000)
     session_id: Optional[str] = Field(None, description="Session ID to maintain context")
 
 
@@ -145,7 +192,7 @@ def _register_routes(application: FastAPI):
     async def ask(question: Question, request: Request):
         """Ask a question and get an answer with context."""
         try:
-            logger.info(f"Received question: {question.text}")
+            logger.info("Received question: %s", question.text)
             start_time = time.time()
 
             if _qa_app is None:
@@ -156,29 +203,29 @@ def _register_routes(application: FastAPI):
             session_id = question.session_id
             if not session_id:
                 session_id = str(uuid.uuid4())
-                _chat_histories[session_id] = []
-                logger.info(f"New session created: {session_id}")
+                logger.info("New session created: %s", session_id)
 
-            history = _chat_histories.get(session_id, [])
+            history = _chat_histories.get(session_id)
 
+            # Snapshot refs under lock, run inference outside
             async with _db_lock:
-                qa_graph = create_qa_graph(_db)
+                current_app = _qa_app
 
-                loop = asyncio.get_event_loop()
-                result, sources = await loop.run_in_executor(
-                    None, lambda: ask_question_graph(qa_graph, question.text, history)
-                )
+            loop = asyncio.get_event_loop()
+            result, sources = await loop.run_in_executor(
+                None, lambda: ask_question_graph(current_app, question.text, history)
+            )
 
             history.append((question.text, result))
-            _chat_histories[session_id] = history
+            _chat_histories.set(session_id, history)
 
             process_time = time.time() - start_time
-            logger.info(f"Response generated in {process_time:.4f} seconds")
+            logger.info("Response generated in %.4f seconds", process_time)
             text_blocks = [source.page_content for source in sources]
 
             source_list = [
                 Source(
-                    source=source.metadata.get("source", "Unknown"),
+                    source=_strip_vault_prefix(source.metadata.get("source", "Unknown")),
                     score=source.metadata.get("score", 0.0),
                     retrieval_type=source.metadata.get("retrieval_type", "retrieved"),
                 )
@@ -195,16 +242,18 @@ def _register_routes(application: FastAPI):
                 session_id=session_id,
             )
         except ModelNotAvailableError as e:
-            logger.error(f"Ollama not available: {str(e)}")
-            raise HTTPException(status_code=503, detail=str(e))
+            logger.error("LLM provider not available: %s", e)
+            raise HTTPException(status_code=503, detail="LLM provider is not available")
         except NoDocumentsFoundError as e:
-            logger.error(f"No documents found: {str(e)}")
+            logger.error("No documents found: %s", e)
             raise HTTPException(status_code=404, detail=str(e))
         except RAGError as e:
-            logger.error(f"RAG error: {str(e)}")
+            logger.error("RAG error: %s", e)
             raise HTTPException(status_code=500, detail=str(e))
+        except HTTPException:
+            raise
         except Exception as e:
-            logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+            logger.error("Unexpected error: %s", e, exc_info=True)
             raise HTTPException(status_code=500, detail="Internal server error")
 
     @application.post("/ask/stream", summary="Ask a question with streaming")
@@ -212,26 +261,23 @@ def _register_routes(application: FastAPI):
         """Ask a question and stream the response with progress updates via SSE."""
         import time as time_module
 
-        from obsidianrag.core.qa_service import create_hybrid_retriever
-
         async def event_generator() -> AsyncGenerator[str, None]:
             """Generate SSE events for the streaming response."""
             event_count = 0
             stream_start = time_module.time()
 
             try:
-                if _db is None:
+                if _db is None or _retriever is None:
                     yield f"data: {json.dumps({'type': 'error', 'message': 'System not initialized'})}\n\n"
                     return
 
                 session_id = question.session_id or str(uuid.uuid4())
-                history = _chat_histories.get(session_id, [])
+                history = _chat_histories.get(session_id)
 
-                # Create retriever for streaming
-                retriever = create_hybrid_retriever(_db)
+                retriever = _retriever
 
                 # Send start event
-                logger.info("📤 [SSE] Sending start event")
+                logger.info("[SSE] Sending start event")
                 yield f"data: {json.dumps({'type': 'start', 'session_id': session_id})}\n\n"
 
                 # Stream with direct retrieval and LLM streaming
@@ -244,11 +290,16 @@ def _register_routes(application: FastAPI):
                     elapsed = time_module.time() - stream_start
 
                     if event_type == "token":
-                        # Log every 10th token to avoid spam
                         if event_count % 10 == 0:
-                            logger.info(f"📤 [SSE #{event_count}] +{elapsed:.2f}s token batch")
+                            logger.info("[SSE #%d] +%.2fs token batch", event_count, elapsed)
                     else:
-                        logger.info(f"📤 [SSE #{event_count}] +{elapsed:.2f}s {event_type}")
+                        logger.info("[SSE #%d] +%.2fs %s", event_count, elapsed, event_type)
+
+                    # Strip vault paths from source events
+                    if event_type == "sources" and "sources" in event:
+                        for src in event["sources"]:
+                            if "source" in src:
+                                src["source"] = _strip_vault_prefix(src["source"])
 
                     yield f"data: {json.dumps(event)}\n\n"
                     last_event = event
@@ -256,14 +307,14 @@ def _register_routes(application: FastAPI):
                 # Update history
                 if last_event and last_event.get("type") == "answer":
                     history.append((question.text, last_event.get("answer", "")))
-                    _chat_histories[session_id] = history
+                    _chat_histories.set(session_id, history)
 
                 total_time = time_module.time() - stream_start
-                logger.info(f"✅ [SSE] Stream complete: {event_count} events in {total_time:.2f}s")
+                logger.info("[SSE] Stream complete: %d events in %.2fs", event_count, total_time)
 
             except Exception as e:
-                logger.error(f"Streaming error: {e}", exc_info=True)
-                yield f"data: {json.dumps({'type': 'error', 'message': 'An error occurred while processing your request'})}\\n\\n"
+                logger.error("Streaming error: %s", e, exc_info=True)
+                yield f"data: {json.dumps({'type': 'error', 'message': 'An error occurred while processing your request'})}\n\n"
 
             # Send end event
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
@@ -282,8 +333,12 @@ def _register_routes(application: FastAPI):
     async def health():
         """Check system status and show current configuration."""
         settings = get_settings()
-        return {
-            "status": "ok",
+        is_ready = _db is not None and _qa_app is not None
+
+        info = {
+            "status": "ok" if is_ready else "unavailable",
+            "llm_provider": settings.llm_provider,
+            "llm_api_format": settings.llm_api_format,
             "model": settings.llm_model,
             "embedding_provider": settings.embedding_provider,
             "embedding_model": settings.embedding_model
@@ -292,12 +347,30 @@ def _register_routes(application: FastAPI):
             "db_ready": _db is not None,
         }
 
+        if not is_ready:
+            raise HTTPException(status_code=503, detail=info)
+
+        return info
+
+    @application.get("/models", summary="Available LLM models")
+    async def models():
+        """List available models for the configured LLM provider."""
+        try:
+            loop = asyncio.get_event_loop()
+            available = await loop.run_in_executor(None, list_llm_models)
+            return {"models": available}
+        except Exception as e:
+            logger.warning("Could not list LLM models: %s", e)
+            raise HTTPException(
+                status_code=502, detail="Could not list available models from provider"
+            )
+
     @application.get("/stats", summary="Vault statistics")
     async def get_stats():
         """Get statistics about the indexed Obsidian vault."""
         settings = get_settings()
         if _db is None:
-            return {"error": "Database not ready"}
+            raise HTTPException(status_code=503, detail="Database not ready")
 
         try:
             db_data = _db.get()
@@ -326,6 +399,10 @@ def _register_routes(application: FastAPI):
                         if link.strip():
                             links.add(link.strip())
 
+            vault_name = "Unknown"
+            if settings.obsidian_path:
+                vault_name = settings.obsidian_path.rstrip("/").split("/")[-1]
+
             return {
                 "total_notes": len(sources),
                 "total_chunks": total_chunks,
@@ -334,24 +411,23 @@ def _register_routes(application: FastAPI):
                 "avg_words_per_chunk": total_words // total_chunks if total_chunks > 0 else 0,
                 "folders": len(folders),
                 "internal_links": len(links),
-                "vault_path": settings.obsidian_path.split("/")[-1]
-                if settings.obsidian_path
-                else "Unknown",
+                "vault_path": vault_name,
             }
         except Exception as e:
-            logger.error(f"Error getting stats: {e}", exc_info=True)
-            return {"error": "Failed to retrieve vault statistics"}
+            logger.error("Error getting stats: %s", e, exc_info=True)
+            raise HTTPException(status_code=500, detail="Failed to retrieve vault statistics")
 
     @application.post("/rebuild_db", summary="Rebuild database")
     async def rebuild_db():
         """Force rebuild of the vector database to index new files."""
         try:
             logger.info("Database rebuild request received")
-            global _db, _qa_app
+            global _db, _qa_app, _retriever
 
             async with _db_lock:
                 _db = None
                 _qa_app = None
+                _retriever = None
                 gc.collect()
 
                 _db = load_or_create_db(force_rebuild=True)
@@ -360,6 +436,7 @@ def _register_routes(application: FastAPI):
                     raise HTTPException(status_code=500, detail="Error rebuilding database")
 
                 _qa_app = create_qa_graph(_db)
+                _retriever = create_hybrid_retriever(_db)
 
                 # Get statistics to return
                 db_data = _db.get()
@@ -370,8 +447,10 @@ def _register_routes(application: FastAPI):
                 "message": "Database rebuilt and graph updated",
                 "total_chunks": total_chunks,
             }
+        except HTTPException:
+            raise
         except Exception as e:
-            logger.error(f"Error rebuilding DB: {e}", exc_info=True)
+            logger.error("Error rebuilding DB: %s", e, exc_info=True)
             raise HTTPException(status_code=500, detail="Failed to rebuild database")
 
 

@@ -34,9 +34,13 @@ var DEFAULT_PORT = 8e3;
 var MAX_RETRY_ATTEMPTS = 3;
 var RETRY_DELAY_MS = 1e3;
 var DEFAULT_SETTINGS = {
-  pythonPath: "/usr/local/bin/obsidianrag-server",
+  pythonPath: "obsidianrag",
   serverPort: DEFAULT_PORT,
+  llmProvider: "ollama",
+  llmApiFormat: "ollama",
   llmModel: "gemma3",
+  llmBaseUrl: "http://localhost:11434",
+  llmApiKey: "lm-studio",
   autoStartServer: true,
   showSourceLinks: true,
   useReranker: true,
@@ -51,6 +55,7 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     this.maxRestartAttempts = 3;
     this.isRestarting = false;
     this.statusBarItem = null;
+    this._manualStop = false;
   }
   async onload() {
     console.debug("Loading ObsidianRAG plugin");
@@ -62,10 +67,12 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     });
     this.statusBarItem = this.addStatusBarItem();
     this.statusBarItem.addClass("obsidianrag-status-bar");
+    this.statusBarItem.onClickEvent(() => {
+      void this.handleStatusBarClick();
+    });
     void this.updateStatusBar();
     this.addCommand({
       id: "open-chat",
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       name: "Open chat",
       callback: () => {
         void this.activateChatView();
@@ -73,7 +80,6 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     });
     this.addCommand({
       id: "start-server",
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       name: "Start server",
       callback: () => {
         void this.startServer();
@@ -81,7 +87,6 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     });
     this.addCommand({
       id: "stop-server",
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       name: "Stop server",
       callback: () => {
         void this.stopServer();
@@ -89,7 +94,6 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     });
     this.addCommand({
       id: "check-status",
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       name: "Check status",
       callback: () => {
         void this.checkServerStatus();
@@ -97,13 +101,11 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     });
     this.addCommand({
       id: "ask-question",
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       name: "Ask a question",
       callback: () => new AskQuestionModal(this.app, this).open()
     });
     this.addCommand({
       id: "reindex-vault",
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       name: "Reindex vault",
       callback: () => {
         void this.reindexVault();
@@ -138,28 +140,28 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
   // ==========================================================================
   // Status Bar
   // ==========================================================================
+  async handleStatusBarClick() {
+    if (await this.isServerRunning()) {
+      void this.activateChatView();
+    } else {
+      void this.startServer();
+    }
+  }
   async updateStatusBar() {
     if (!this.statusBarItem) return;
     const running = await this.isServerRunning();
     this.statusBarItem.empty();
     if (running) {
-      this.statusBarItem.setText("\u{1F916} RAG \u25CF");
+      this.statusBarItem.setText("RAG *");
       this.statusBarItem.setAttribute("title", "Vault RAG: Online - Click to open chat");
       this.statusBarItem.addClass("status-online");
       this.statusBarItem.removeClass("status-offline");
     } else {
-      this.statusBarItem.setText("\u{1F916} RAG \u25CB");
+      this.statusBarItem.setText("RAG -");
       this.statusBarItem.setAttribute("title", "Vault RAG: Offline - Click to start server");
       this.statusBarItem.addClass("status-offline");
       this.statusBarItem.removeClass("status-online");
     }
-    this.statusBarItem.onClickEvent(() => {
-      if (running) {
-        void this.activateChatView();
-      } else {
-        void this.startServer();
-      }
-    });
   }
   // ==========================================================================
   // View Management
@@ -175,7 +177,7 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
       }
     }
     if (leaf) {
-      workspace.revealLeaf(leaf);
+      await workspace.revealLeaf(leaf);
     }
   }
   // ==========================================================================
@@ -203,10 +205,19 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
           // Quote path for Windows
           "--port",
           String(this.settings.serverPort),
+          "--provider",
+          this.settings.llmProvider,
           "--model",
           this.settings.llmModel,
+          "--base-url",
+          this.settings.llmBaseUrl,
+          "--api-format",
+          this.settings.llmApiFormat,
           this.settings.useReranker ? "--reranker" : "--no-reranker"
         ];
+        if (this.settings.llmApiKey) {
+          args.push("--api-key", this.settings.llmApiKey);
+        }
       } else {
         command = this.settings.pythonPath;
         args = [
@@ -215,10 +226,19 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
           vaultPath,
           "--port",
           String(this.settings.serverPort),
+          "--provider",
+          this.settings.llmProvider,
           "--model",
           this.settings.llmModel,
+          "--base-url",
+          this.settings.llmBaseUrl,
+          "--api-format",
+          this.settings.llmApiFormat,
           this.settings.useReranker ? "--reranker" : "--no-reranker"
         ];
+        if (this.settings.llmApiKey) {
+          args.push("--api-key", this.settings.llmApiKey);
+        }
       }
       this.serverProcess = (0, import_child_process.spawn)(command, args, spawnOptions);
       (_a = this.serverProcess.stdout) == null ? void 0 : _a.on("data", (data) => {
@@ -234,6 +254,10 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
       this.serverProcess.on("exit", (code) => {
         console.debug(`[ObsidianRAG] Server exited with code ${code}`);
         this.serverProcess = null;
+        if (this._manualStop) {
+          this._manualStop = false;
+          return;
+        }
         if (this.settings.autoStartServer && !this.isRestarting) {
           void this.handleServerCrash(code);
         }
@@ -269,7 +293,7 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     await this.startServer();
   }
   async stopServer() {
-    this.isRestarting = true;
+    this._manualStop = true;
     if (this.serverProcess) {
       this.serverProcess.kill();
       this.serverProcess = null;
@@ -287,7 +311,6 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
       console.debug("[ObsidianRAG] Could not kill process by port:", e);
     }
     new import_obsidian.Notice("Vault RAG server stopped");
-    this.isRestarting = false;
     void this.updateStatusBar();
   }
   async isServerRunning() {
@@ -302,24 +325,39 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     }
   }
   /**
-   * Fetch available models from Ollama
+   * Fetch available models from the configured local provider.
    */
-  async getOllamaModels() {
+  async getProviderModels() {
     try {
+      const url = this.getModelListUrl();
       const response = await (0, import_obsidian.requestUrl)({
-        url: "http://localhost:11434/api/tags",
-        method: "GET"
+        url,
+        method: "GET",
+        headers: this.settings.llmApiFormat === "chat-completions" ? { Authorization: `Bearer ${this.settings.llmApiKey || "lm-studio"}` } : void 0
       });
       if (response.status < 200 || response.status >= 300) {
-        console.warn("[ObsidianRAG] Failed to fetch Ollama models");
+        console.warn("[ObsidianRAG] Failed to fetch provider models");
         return [];
       }
       const data = response.json;
-      return data.models.map((m) => m.name.replace(":latest", ""));
+      if (Array.isArray(data.data)) {
+        return data.data.map((m) => m.id).filter(Boolean);
+      }
+      if (Array.isArray(data.models)) {
+        return data.models.map((m) => (m.id || m.name).replace(":latest", "")).filter(Boolean);
+      }
+      return [];
     } catch (error) {
-      console.warn("[ObsidianRAG] Ollama not available:", error);
+      console.warn("[ObsidianRAG] Provider model list not available:", error);
       return [];
     }
+  }
+  getModelListUrl() {
+    const baseUrl = this.settings.llmBaseUrl.replace(/\/$/, "");
+    if (this.settings.llmProvider === "ollama" || this.settings.llmApiFormat === "ollama") {
+      return `${baseUrl}/api/tags`;
+    }
+    return `${baseUrl}/models`;
   }
   async waitForServer(timeout) {
     const start = Date.now();
@@ -480,7 +518,11 @@ Model: ${data.model}`
   getSpawnOptionsForPlatform(platform) {
     const env = {
       ...process.env,
+      OBSIDIANRAG_LLM_PROVIDER: this.settings.llmProvider,
+      OBSIDIANRAG_LLM_API_FORMAT: this.settings.llmApiFormat,
       OBSIDIANRAG_LLM_MODEL: this.settings.llmModel,
+      OBSIDIANRAG_COMPATIBLE_BASE_URL: this.settings.llmBaseUrl,
+      OBSIDIANRAG_COMPATIBLE_API_KEY: this.settings.llmApiKey,
       OBSIDIANRAG_USE_RERANKER: this.settings.useReranker ? "true" : "false"
     };
     if (platform === "win32") {
@@ -511,7 +553,7 @@ Model: ${data.model}`
     } else if (platform === "linux") {
       return "python3 -m obsidianrag";
     } else {
-      return "/usr/local/bin/obsidianrag-server";
+      return "obsidianrag";
     }
   }
 };
@@ -527,7 +569,7 @@ var SetupModal = class extends import_obsidian.Modal {
     contentEl.empty();
     contentEl.addClass("obsidianrag-setup-modal");
     new import_obsidian.Setting(contentEl).setName("Welcome to Vault RAG").setHeading();
-    this.availableModels = await this.plugin.getOllamaModels();
+    this.availableModels = await this.plugin.getProviderModels();
     this.contentEl_modal = contentEl.createDiv("setup-content");
     this.showStep(0);
   }
@@ -574,12 +616,29 @@ var SetupModal = class extends import_obsidian.Modal {
   renderConfiguration() {
     const el = this.contentEl_modal;
     new import_obsidian.Setting(el).setName("Configuration").setHeading();
-    new import_obsidian.Setting(el).setName("Backend command").setDesc("Path to obsidianrag-server or 'obsidianrag' if installed globally").addText((text) => text.setValue(this.plugin.settings.pythonPath).onChange(async (value) => {
+    new import_obsidian.Setting(el).setName("Backend command").setDesc("Command to start the backend, usually 'obsidianrag'").addText((text) => text.setValue(this.plugin.settings.pythonPath).onChange(async (value) => {
       this.plugin.settings.pythonPath = value;
       await this.plugin.saveSettings();
     }));
     new import_obsidian.Setting(el).setName("Server port").addText((text) => text.setValue(String(this.plugin.settings.serverPort)).onChange(async (value) => {
       this.plugin.settings.serverPort = parseInt(value) || DEFAULT_PORT;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian.Setting(el).setName("LLM provider").setDesc("Local runtime used for answer generation").addDropdown((dropdown) => dropdown.addOption("ollama", "Ollama").addOption("lmstudio", "LM Studio").addOption("custom", "Custom").setValue(this.plugin.settings.llmProvider).onChange(async (value) => {
+      this.plugin.settings.llmProvider = value;
+      if (value === "ollama") {
+        this.plugin.settings.llmApiFormat = "ollama";
+        this.plugin.settings.llmBaseUrl = "http://localhost:11434";
+      } else if (value === "lmstudio") {
+        this.plugin.settings.llmApiFormat = "chat-completions";
+        this.plugin.settings.llmBaseUrl = "http://localhost:1234/v1";
+      }
+      await this.plugin.saveSettings();
+      this.availableModels = await this.plugin.getProviderModels();
+      this.showStep(this.currentStep);
+    }));
+    new import_obsidian.Setting(el).setName("LLM base URL").addText((text) => text.setValue(this.plugin.settings.llmBaseUrl).onChange(async (value) => {
+      this.plugin.settings.llmBaseUrl = value;
       await this.plugin.saveSettings();
     }));
     const modelSetting = new import_obsidian.Setting(el).setName("LLM model");
@@ -602,7 +661,7 @@ var SetupModal = class extends import_obsidian.Modal {
         });
       });
     } else {
-      modelSetting.setDesc("\u26A0\uFE0F Ollama not detected. Make sure Ollama is running.").addText((text) => text.setPlaceholder("gemma3").setValue(this.plugin.settings.llmModel).onChange(async (value) => {
+      modelSetting.setDesc("Could not list models. Enter the model name manually.").addText((text) => text.setPlaceholder("gemma3").setValue(this.plugin.settings.llmModel).onChange(async (value) => {
         this.plugin.settings.llmModel = value;
         await this.plugin.saveSettings();
       }));
@@ -622,7 +681,7 @@ var SetupModal = class extends import_obsidian.Modal {
     new import_obsidian.Setting(el).setName("Setup complete").setHeading();
     el.createEl("p", { text: "You're all set to use Vault RAG." });
     const tips = el.createEl("ul");
-    tips.createEl("li", { text: "Click the \u{1F916} icon in the ribbon to open the chat" });
+    tips.createEl("li", { text: "Click the chat icon in the ribbon to open the chat" });
     tips.createEl("li", { text: "Use Cmd/Ctrl+P and search 'ObsidianRAG' for all commands" });
     tips.createEl("li", { text: "First question may take a moment while the vault is indexed" });
     const buttons = el.createDiv("modal-button-container");
@@ -684,11 +743,11 @@ var AskQuestionModal = class extends import_obsidian.Modal {
     const question = this.inputEl.value.trim();
     if (!question) return;
     if (!await this.plugin.isServerRunning()) {
-      this.resultEl.setText("\u26A0\uFE0F Server is not running. Start it first.");
+      this.resultEl.setText("Server is not running. Start it first.");
       return;
     }
     this.resultEl.empty();
-    this.resultEl.createDiv({ text: "\u{1F504} Thinking...", cls: "loading" });
+    this.resultEl.createDiv({ text: "Thinking...", cls: "loading" });
     try {
       let answer = "";
       for await (const event of this.plugin.askQuestionStreaming(question)) {
@@ -697,7 +756,7 @@ var AskQuestionModal = class extends import_obsidian.Modal {
         } else if (event.type === "answer") {
           answer = event.answer;
         } else if (event.type === "error") {
-          this.resultEl.setText(`\u274C ${event.message}`);
+          this.resultEl.setText(`${event.message}`);
           return;
         }
       }
@@ -707,10 +766,11 @@ var AskQuestionModal = class extends import_obsidian.Modal {
         answer,
         this.resultEl,
         "",
-        this.plugin
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
+        this
       );
     } catch (error) {
-      this.resultEl.setText(`\u274C Error: ${error}`);
+      this.resultEl.setText(`Error: ${error}`);
     }
   }
   onClose() {
@@ -745,10 +805,9 @@ var ChatView = class extends import_obsidian.ItemView {
     const headerControls = header.createDiv("obsidianrag-header-controls");
     const reindexBtn = headerControls.createEl("button", {
       cls: "obsidianrag-header-btn",
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       attr: { "aria-label": "Reindex vault" }
     });
-    reindexBtn.setText("\u{1F504}");
+    reindexBtn.setText("Reindex");
     reindexBtn.addEventListener("click", async () => {
       await this.plugin.reindexVault();
     });
@@ -756,7 +815,7 @@ var ChatView = class extends import_obsidian.ItemView {
       cls: "obsidianrag-header-btn",
       attr: { "aria-label": "Clear chat history" }
     });
-    clearBtn.setText("\u{1F5D1}\uFE0F");
+    clearBtn.setText("Clear");
     clearBtn.addEventListener("click", () => this.clearHistory());
     this.statusEl = headerControls.createSpan("obsidianrag-status");
     await this.updateStatus();
@@ -822,7 +881,7 @@ var ChatView = class extends import_obsidian.ItemView {
     if (!await this.plugin.isServerRunning()) {
       this.addMessage({
         role: "assistant",
-        content: "\u26A0\uFE0F Server is not running. Use the command palette to start it, or enable auto-start in settings.",
+        content: "Server is not running. Use the command palette to start it, or enable auto-start in settings.",
         timestamp: /* @__PURE__ */ new Date()
       });
       return;
@@ -831,11 +890,9 @@ var ChatView = class extends import_obsidian.ItemView {
       "obsidianrag-message assistant loading"
     );
     const progressContent = progressEl.createDiv("progress-content");
-    progressContent.setText("\u{1F504} ");
     progressContent.createEl("strong", { text: "Starting..." });
     const updateProgress = (step, details) => {
       progressContent.empty();
-      progressContent.setText("\u{1F504} ");
       progressContent.createEl("strong", { text: step });
       if (details) {
         progressContent.createEl("br");
@@ -857,7 +914,7 @@ var ChatView = class extends import_obsidian.ItemView {
             break;
           case "retrieve_complete":
             updateProgress(
-              `\u{1F4DA} Retrieved ${event.docs_count} documents`,
+              `Retrieved ${event.docs_count} documents`,
               event.sources.slice(0, 3).map(
                 (s) => {
                   var _a;
@@ -867,7 +924,7 @@ var ChatView = class extends import_obsidian.ItemView {
             );
             break;
           case "ttft":
-            console.debug(`\u26A1 [ObsidianRAG] Time to First Token: ${event.seconds}s`);
+            console.debug(`[ObsidianRAG] Time to First Token: ${event.seconds}s`);
             break;
           case "token": {
             if (!streamingEl) {
@@ -896,7 +953,7 @@ var ChatView = class extends import_obsidian.ItemView {
           case "generate_complete":
             if (!streamingEl) {
               updateProgress(
-                "\u270D\uFE0F Generating answer...",
+                "Generating answer...",
                 event.answer_preview.substring(0, 100) + "..."
               );
             }
@@ -909,7 +966,7 @@ var ChatView = class extends import_obsidian.ItemView {
             if (streamingEl) streamingEl.remove();
             this.addMessage({
               role: "assistant",
-              content: `\u274C Error: ${event.message}`,
+              content: `Error: ${event.message}`,
               timestamp: /* @__PURE__ */ new Date()
             });
             return;
@@ -998,7 +1055,7 @@ var ChatView = class extends import_obsidian.ItemView {
                 });
                 link.addEventListener("click", (e) => {
                   e.preventDefault();
-                  this.app.workspace.openLinkText(source.path, "");
+                  void this.app.workspace.openLinkText(source.path, "");
                 });
               } else {
                 sourceContainer.createSpan({
@@ -1027,7 +1084,7 @@ var ChatView = class extends import_obsidian.ItemView {
       progressEl.remove();
       this.addMessage({
         role: "assistant",
-        content: `\u274C Error: ${error}`,
+        content: `Error: ${error}`,
         timestamp: /* @__PURE__ */ new Date()
       });
     }
@@ -1061,7 +1118,7 @@ var ChatView = class extends import_obsidian.ItemView {
           link.setAttribute("title", `Relevance: ${(source.score * 100).toFixed(1)}%`);
           link.addEventListener("click", (e) => {
             e.preventDefault();
-            this.app.workspace.openLinkText(source.path, "");
+            void this.app.workspace.openLinkText(source.path, "");
           });
         } else {
           const span = sourceContainer.createSpan({
@@ -1075,13 +1132,13 @@ var ChatView = class extends import_obsidian.ItemView {
     this.containerEl_messages.scrollTop = this.containerEl_messages.scrollHeight;
   }
   /**
-   * Get an emoji indicator based on the relevance score
+   * Get a text indicator based on the relevance score
    */
   getScoreIndicator(score) {
-    if (score >= 0.8) return "\u{1F7E2}";
-    if (score >= 0.6) return "\u{1F7E1}";
-    if (score >= 0.4) return "\u{1F7E0}";
-    return "\u{1F534}";
+    if (score >= 0.8) return "[++]";
+    if (score >= 0.6) return "[+]";
+    if (score >= 0.4) return "[~]";
+    return "[-]";
   }
   async onClose() {
     if (this.statusInterval) {
@@ -1102,7 +1159,7 @@ var ObsidianRAGSettingTab = class extends import_obsidian.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    void this.plugin.getOllamaModels().then((models) => {
+    void this.plugin.getProviderModels().then((models) => {
       this.availableModels = models;
       this.renderSettings(containerEl);
     });
@@ -1111,8 +1168,8 @@ var ObsidianRAGSettingTab = class extends import_obsidian.PluginSettingTab {
     containerEl.empty();
     void this.renderServerStatus(containerEl);
     new import_obsidian.Setting(containerEl).setName("Configuration").setHeading();
-    new import_obsidian.Setting(containerEl).setName("Backend command").setDesc("Path to obsidianrag-server or 'obsidianrag' if installed globally").addText(
-      (text) => text.setPlaceholder("/usr/local/bin/obsidianrag-server").setValue(this.plugin.settings.pythonPath).onChange(async (value) => {
+    new import_obsidian.Setting(containerEl).setName("Backend command").setDesc("Command to start the backend, usually 'obsidianrag'").addText(
+      (text) => text.setPlaceholder("obsidianrag").setValue(this.plugin.settings.pythonPath).onChange(async (value) => {
         this.plugin.settings.pythonPath = value;
         await this.plugin.saveSettings();
       })
@@ -1124,7 +1181,44 @@ var ObsidianRAGSettingTab = class extends import_obsidian.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    const modelSetting = new import_obsidian.Setting(containerEl).setName("LLM model").setDesc("Ollama model to use for answering questions");
+    new import_obsidian.Setting(containerEl).setName("LLM provider").setDesc("Runtime used for answer generation").addDropdown(
+      (dropdown) => dropdown.addOption("ollama", "Ollama").addOption("lmstudio", "LM Studio").addOption("custom", "Custom").setValue(this.plugin.settings.llmProvider).onChange(async (value) => {
+        this.plugin.settings.llmProvider = value;
+        if (value === "ollama") {
+          this.plugin.settings.llmApiFormat = "ollama";
+          this.plugin.settings.llmBaseUrl = "http://localhost:11434";
+        } else if (value === "lmstudio") {
+          this.plugin.settings.llmApiFormat = "chat-completions";
+          this.plugin.settings.llmBaseUrl = "http://localhost:1234/v1";
+        }
+        await this.plugin.saveSettings();
+        this.display();
+      })
+    );
+    if (this.plugin.settings.llmProvider === "custom") {
+      new import_obsidian.Setting(containerEl).setName("API format").setDesc("Protocol spoken by the custom server").addDropdown(
+        (dropdown) => dropdown.addOption("ollama", "Ollama").addOption("chat-completions", "Chat Completions").setValue(this.plugin.settings.llmApiFormat).onChange(async (value) => {
+          this.plugin.settings.llmApiFormat = value;
+          await this.plugin.saveSettings();
+          this.display();
+        })
+      );
+    }
+    new import_obsidian.Setting(containerEl).setName("LLM base URL").setDesc("Provider endpoint, for example Ollama or LM Studio local server").addText(
+      (text) => text.setPlaceholder(this.plugin.settings.llmApiFormat === "ollama" ? "http://localhost:11434" : "http://localhost:1234/v1").setValue(this.plugin.settings.llmBaseUrl).onChange(async (value) => {
+        this.plugin.settings.llmBaseUrl = value;
+        await this.plugin.saveSettings();
+      })
+    );
+    if (this.plugin.settings.llmApiFormat === "chat-completions") {
+      new import_obsidian.Setting(containerEl).setName("API key").setDesc("Optional. LM Studio accepts any value.").addText(
+        (text) => text.setPlaceholder("lm-studio").setValue(this.plugin.settings.llmApiKey).onChange(async (value) => {
+          this.plugin.settings.llmApiKey = value;
+          await this.plugin.saveSettings();
+        })
+      );
+    }
+    const modelSetting = new import_obsidian.Setting(containerEl).setName("LLM model").setDesc("Model to use for answering questions");
     if (this.availableModels.length > 0) {
       modelSetting.addDropdown((dropdown) => {
         this.availableModels.forEach((model) => {
@@ -1145,7 +1239,7 @@ var ObsidianRAGSettingTab = class extends import_obsidian.PluginSettingTab {
         });
       });
     } else {
-      modelSetting.setDesc("\u26A0\uFE0F Could not connect to Ollama. Make sure Ollama is running (ollama serve).").addText(
+      modelSetting.setDesc("Could not list models. Enter the model name manually.").addText(
         (text) => text.setPlaceholder("gemma3").setValue(this.plugin.settings.llmModel).onChange(async (value) => {
           this.plugin.settings.llmModel = value;
           await this.plugin.saveSettings();
@@ -1211,12 +1305,7 @@ var ObsidianRAGSettingTab = class extends import_obsidian.PluginSettingTab {
       (button) => button.setButtonText("Reset all settings").setWarning().onClick(async () => {
         const keepSetupComplete = this.plugin.settings.hasCompletedSetup;
         this.plugin.settings = {
-          pythonPath: "/usr/local/bin/obsidianrag-server",
-          serverPort: 8e3,
-          llmModel: "gemma3",
-          autoStartServer: true,
-          showSourceLinks: true,
-          useReranker: true,
+          ...DEFAULT_SETTINGS,
           hasCompletedSetup: keepSetupComplete
         };
         await this.plugin.saveSettings();
