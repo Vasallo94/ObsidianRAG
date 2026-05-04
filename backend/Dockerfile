@@ -27,6 +27,9 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/obsidianrag /app/obsidianrag
 
+RUN mkdir -p /home/appuser/.cache/huggingface && \
+    chown -R appuser:appgroup /home/appuser
+
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 

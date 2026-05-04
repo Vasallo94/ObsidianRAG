@@ -201,6 +201,8 @@ export default class ObsidianRAGPlugin extends Plugin {
   private isRestarting: boolean = false;
   statusBarItem: HTMLElement | null = null;
 
+  private _manualStop = false;
+
   async onload() {
     console.debug("Loading ObsidianRAG plugin");
 
@@ -218,6 +220,12 @@ export default class ObsidianRAGPlugin extends Plugin {
     // Add status bar item
     this.statusBarItem = this.addStatusBarItem();
     this.statusBarItem.addClass("obsidianrag-status-bar");
+
+    // Register click handler ONCE - behavior changes based on state
+    this.statusBarItem.onClickEvent(() => {
+      void this.handleStatusBarClick();
+    });
+
     void this.updateStatusBar();
 
     // Add commands
@@ -301,6 +309,14 @@ export default class ObsidianRAGPlugin extends Plugin {
   // Status Bar
   // ==========================================================================
 
+  private async handleStatusBarClick() {
+    if (await this.isServerRunning()) {
+      void this.activateChatView();
+    } else {
+      void this.startServer();
+    }
+  }
+
   async updateStatusBar() {
     if (!this.statusBarItem) return;
 
@@ -322,15 +338,6 @@ export default class ObsidianRAGPlugin extends Plugin {
       this.statusBarItem.addClass("status-offline");
       this.statusBarItem.removeClass("status-online");
     }
-
-    // Make status bar clickable
-    this.statusBarItem.onClickEvent(() => {
-      if (running) {
-        void this.activateChatView();
-      } else {
-        void this.startServer();
-      }
-    });
   }
 
   // ==========================================================================
@@ -445,7 +452,10 @@ export default class ObsidianRAGPlugin extends Plugin {
       this.serverProcess.on("exit", (code: number) => {
         console.debug(`[ObsidianRAG] Server exited with code ${code}`);
         this.serverProcess = null;
-        // Auto-restart if enabled and not manually stopped
+        if (this._manualStop) {
+          this._manualStop = false;
+          return;
+        }
         if (this.settings.autoStartServer && !this.isRestarting) {
           void this.handleServerCrash(code);
         }
@@ -490,9 +500,8 @@ export default class ObsidianRAGPlugin extends Plugin {
   }
 
   async stopServer(): Promise<void> {
-    this.isRestarting = true; // Prevent auto-restart
+    this._manualStop = true;
 
-    // First, try to kill the tracked process
     if (this.serverProcess) {
       this.serverProcess.kill();
       this.serverProcess = null;
@@ -518,7 +527,6 @@ export default class ObsidianRAGPlugin extends Plugin {
 
     // eslint-disable-next-line obsidianmd/ui/sentence-case
     new Notice("Vault RAG server stopped");
-    this.isRestarting = false;
     void this.updateStatusBar();
   }
 
@@ -1997,16 +2005,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
 
             // Reset to defaults
             this.plugin.settings = {
-              pythonPath: "obsidianrag",
-              serverPort: 8000,
-              llmProvider: "ollama",
-              llmApiFormat: "ollama",
-              llmModel: "gemma3",
-              llmBaseUrl: "http://localhost:11434",
-              llmApiKey: "lm-studio",
-              autoStartServer: true,
-              showSourceLinks: true,
-              useReranker: true,
+              ...DEFAULT_SETTINGS,
               hasCompletedSetup: keepSetupComplete,
             };
 

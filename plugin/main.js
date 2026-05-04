@@ -55,6 +55,7 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     this.maxRestartAttempts = 3;
     this.isRestarting = false;
     this.statusBarItem = null;
+    this._manualStop = false;
   }
   async onload() {
     console.debug("Loading ObsidianRAG plugin");
@@ -66,6 +67,9 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     });
     this.statusBarItem = this.addStatusBarItem();
     this.statusBarItem.addClass("obsidianrag-status-bar");
+    this.statusBarItem.onClickEvent(() => {
+      void this.handleStatusBarClick();
+    });
     void this.updateStatusBar();
     this.addCommand({
       id: "open-chat",
@@ -136,6 +140,13 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
   // ==========================================================================
   // Status Bar
   // ==========================================================================
+  async handleStatusBarClick() {
+    if (await this.isServerRunning()) {
+      void this.activateChatView();
+    } else {
+      void this.startServer();
+    }
+  }
   async updateStatusBar() {
     if (!this.statusBarItem) return;
     const running = await this.isServerRunning();
@@ -151,13 +162,6 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
       this.statusBarItem.addClass("status-offline");
       this.statusBarItem.removeClass("status-online");
     }
-    this.statusBarItem.onClickEvent(() => {
-      if (running) {
-        void this.activateChatView();
-      } else {
-        void this.startServer();
-      }
-    });
   }
   // ==========================================================================
   // View Management
@@ -250,6 +254,10 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
       this.serverProcess.on("exit", (code) => {
         console.debug(`[ObsidianRAG] Server exited with code ${code}`);
         this.serverProcess = null;
+        if (this._manualStop) {
+          this._manualStop = false;
+          return;
+        }
         if (this.settings.autoStartServer && !this.isRestarting) {
           void this.handleServerCrash(code);
         }
@@ -285,7 +293,7 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     await this.startServer();
   }
   async stopServer() {
-    this.isRestarting = true;
+    this._manualStop = true;
     if (this.serverProcess) {
       this.serverProcess.kill();
       this.serverProcess = null;
@@ -303,7 +311,6 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
       console.debug("[ObsidianRAG] Could not kill process by port:", e);
     }
     new import_obsidian.Notice("Vault RAG server stopped");
-    this.isRestarting = false;
     void this.updateStatusBar();
   }
   async isServerRunning() {
@@ -1298,16 +1305,7 @@ var ObsidianRAGSettingTab = class extends import_obsidian.PluginSettingTab {
       (button) => button.setButtonText("Reset all settings").setWarning().onClick(async () => {
         const keepSetupComplete = this.plugin.settings.hasCompletedSetup;
         this.plugin.settings = {
-          pythonPath: "obsidianrag",
-          serverPort: 8e3,
-          llmProvider: "ollama",
-          llmApiFormat: "ollama",
-          llmModel: "gemma3",
-          llmBaseUrl: "http://localhost:11434",
-          llmApiKey: "lm-studio",
-          autoStartServer: true,
-          showSourceLinks: true,
-          useReranker: true,
+          ...DEFAULT_SETTINGS,
           hasCompletedSetup: keepSetupComplete
         };
         await this.plugin.saveSettings();

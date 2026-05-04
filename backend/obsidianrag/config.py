@@ -7,9 +7,19 @@ from typing import List, Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
+from pydantic import ConfigDict
+
 
 class Settings(BaseSettings):
     """Application settings with environment variable support"""
+
+    model_config = ConfigDict(
+        env_prefix="OBSIDIANRAG_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
     # ========== Paths ==========
     obsidian_path: str = Field(default="", description="Path to Obsidian vault")
@@ -38,7 +48,7 @@ class Settings(BaseSettings):
         description="API key for compatible providers when required (LM Studio accepts any value)",
     )
 
-    # Embeddings: default Ollama with embeddinggemma (fast, multilingual)
+    # Embeddings
     embedding_provider: str = Field(
         default="ollama",
         description="Embeddings provider: 'ollama' (recommended) or 'huggingface'",
@@ -92,13 +102,6 @@ class Settings(BaseSettings):
     # ========== Performance ==========
     max_workers: int = Field(default=4, description="Thread pool max workers")
     request_timeout: int = Field(default=60, description="Request timeout in seconds")
-
-    class Config:
-        env_prefix = "OBSIDIANRAG_"
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
-        extra = "ignore"
 
     def configure_paths(self, vault_path: str):
         """Configure paths based on vault location.

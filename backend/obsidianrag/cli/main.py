@@ -188,14 +188,18 @@ def status(
     try:
         import httpx
 
-        response = httpx.get("http://localhost:11434/api/tags", timeout=2.0)
+        from obsidianrag.config import get_settings as _get_settings
+
+        _settings = _get_settings()
+        ollama_url = _settings.ollama_base_url
+        response = httpx.get(f"{ollama_url}/api/tags", timeout=2.0)
         if response.status_code == 200:
             models = [m["name"] for m in response.json().get("models", [])]
             table.add_row("Ollama", "OK", f"{len(models)} models available")
         else:
             table.add_row("Ollama", "WARN", "Running but error getting models")
-    except Exception:
-        table.add_row("Ollama", "ERR", "Not running. Run: ollama serve")
+    except Exception as e:
+        table.add_row("Ollama", "ERR", f"Not reachable: {e}")
 
     # Check database
     if vault_exists:

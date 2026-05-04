@@ -139,8 +139,9 @@ def _verify_ollama_model(model: str, settings: Settings) -> str:
     available_models = get_available_ollama_models(settings.ollama_base_url)
 
     if not available_models:
-        logger.warning("Could not get list of Ollama models")
-        return model
+        raise ModelNotAvailableError(
+            f"Cannot list Ollama models at {settings.ollama_base_url}. Is Ollama running?"
+        )
 
     if model in available_models:
         logger.info("LLM model '%s' available in Ollama", model)
@@ -150,18 +151,12 @@ def _verify_ollama_model(model: str, settings: Settings) -> str:
     if pull_ollama_model(model, timeout=900):
         return model
 
-    fallback_models = ["gemma3", "qwen2.5", "llama3.2", "mistral", "llama2"]
-    for fallback in fallback_models:
-        if fallback in available_models:
-            logger.info("Using alternative Ollama model: %s", fallback)
-            return fallback
-
-    if available_models:
-        fallback = available_models[0]
-        logger.info("Using first available Ollama model: %s", fallback)
-        return fallback
-
-    raise ModelNotAvailableError(f"No LLM models available in Ollama. Run: ollama pull {model}")
+    available_preview = ", ".join(available_models[:5])
+    raise ModelNotAvailableError(
+        f"Model '{model}' not found in Ollama. "
+        f"Available: {available_preview}. "
+        f"Run: ollama pull {model}"
+    )
 
 
 def _verify_chat_completions_model(model: str, settings: Settings) -> str:
