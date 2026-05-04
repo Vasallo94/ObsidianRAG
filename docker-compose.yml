@@ -1,0 +1,14 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ${OBSIDIAN_VAULT_PATH:?Set OBSIDIAN_VAULT_PATH to your vault}:/vault
+    environment:
+      - OBSIDIANRAG_OBSIDIAN_PATH=/vault
+      - OBSIDIANRAG_OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OBSIDIANRAG_LLM_MODEL=${LLM_MODEL:-gemma3}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
