@@ -1,67 +1,67 @@
-# ObsidianRAG 🧠
+# ObsidianRAG
 
 **Ask questions about your Obsidian notes using local AI**
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/Tests-111%20passing-brightgreen)](https://github.com/Vasallo94/ObsidianRAG/actions)
+[![Tests](https://img.shields.io/badge/Tests-88%20passing-brightgreen)](https://github.com/Vasallo94/ObsidianRAG/actions)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![Obsidian Plugin](https://img.shields.io/badge/Obsidian-Plugin-purple)](https://obsidian.md)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue)](docker-compose.yml)
 
-> 🎉 **v3 Now Available!** - Native Obsidian plugin with local AI. Manual installation or via Community Plugins (pending approval).
-
-A RAG (Retrieval-Augmented Generation) system for querying your Obsidian vault using **LangGraph** and **local LLMs** (Ollama). Get intelligent answers based on your personal knowledge base, with full privacy and offline capability.
-
----
-
-## ✨ Key Features
-
-- 🔌 **Native Obsidian Plugin** - Install with one click, no terminal required
-- 🔒 **100% Local & Private** - All AI runs on your machine, zero cloud dependencies
-- 🔍 **Advanced RAG** - Hybrid search (Vector + BM25) + CrossEncoder reranking
-- 🕸️ **GraphRAG** - Follows `[[wikilinks]]` to expand context intelligently
-- 🌍 **Multilingual** - Works in any language (Spanish, English, etc.)
-- ⚡ **Real-time Streaming** - See answers generated token-by-token
-- 📊 **Source Attribution** - Every answer shows relevance scores and links
+A RAG (Retrieval-Augmented Generation) system for querying your Obsidian vault using **LangGraph** and **local LLMs**. Supports **Ollama**, **LM Studio**, and any **OpenAI-compatible** server. All processing runs on your machine — fully private, fully offline.
 
 ---
 
-## 📦 Installation
+## Features
 
-### For End Users (Recommended)
+- **Native Obsidian Plugin** — Install and use directly inside Obsidian, no terminal required
+- **100% Local and Private** — All AI runs on your machine, zero cloud dependencies
+- **Multi-Provider Support** — Works with Ollama, LM Studio, or any OpenAI-compatible API
+- **Advanced RAG Pipeline** — Hybrid search (Vector + BM25) with CrossEncoder reranking
+- **GraphRAG** — Follows `[[wikilinks]]` to expand context from linked notes
+- **Multilingual** — Responds in the same language as your question
+- **Real-time Streaming** — Token-by-token answer generation
+- **Source Attribution** — Every answer includes relevance scores and links to source notes
+- **Docker Support** — One-command deployment with docker-compose
+- **Incremental Indexing** — Only re-indexes changed files, not the entire vault
 
-#### 1. Install the Obsidian Plugin
+---
 
-1. Open Obsidian → Settings → Community Plugins
-2. Browse and search for "Vault RAG"
-3. Click Install → Enable
+## Quick Start
 
-> **Note**: The plugin is currently pending approval for Community Plugins. For now, install manually by downloading from [GitHub Releases](https://github.com/Vasallo94/ObsidianRAG/releases).
+### Option A: Obsidian Plugin (Recommended)
 
-#### 2. Install Backend
+1. **Install the plugin**
+
+   Open Obsidian > Settings > Community Plugins > Browse > search "Vault RAG" > Install > Enable
+
+   > The plugin is pending Community Plugins approval. For now, install manually from [GitHub Releases](https://github.com/Vasallo94/ObsidianRAG/releases).
+
+2. **Install the backend**
+
+   ```bash
+   pip install obsidianrag
+   ```
+
+3. **Install Ollama** and pull a model
+
+   Download from [ollama.ai](https://ollama.ai/), then:
+
+   ```bash
+   ollama pull gemma3
+   ```
+
+4. **Open the chat** from the ribbon icon or command palette: `ObsidianRAG: Open Chat`
+
+### Option B: Docker
 
 ```bash
-pip install obsidianrag
-# or
-pipx install obsidianrag
+OBSIDIAN_VAULT_PATH=/path/to/your/vault docker compose up
 ```
 
-#### 3. Install Ollama
+Requires Ollama running on the host. See the [Docker section](#docker-deployment) for details.
 
-Download Ollama from [ollama.ai](https://ollama.ai/) and pull a model:
-
-```bash
-ollama pull gemma3
-```
-
-#### 4. Done!
-
-Open the plugin from the ribbon icon (🧠) or command palette: `ObsidianRAG: Open Chat`
-
----
-
-### For Developers
-
-Clone and setup for development:
+### Option C: Development Setup
 
 ```bash
 git clone https://github.com/Vasallo94/ObsidianRAG.git
@@ -80,86 +80,114 @@ pnpm run dev
 
 ---
 
-## 🚀 Quick Start
+## LLM Providers
 
-### Using the Plugin
+ObsidianRAG supports multiple local LLM runtimes:
 
-1. **Start the backend server** (auto-starts if enabled in settings):
-   - Command palette → `ObsidianRAG: Start Backend Server`
-   - Or manually: `obsidianrag serve --vault /path/to/vault`
+| Provider | CLI Flag | Default URL | API Format |
+|----------|----------|-------------|------------|
+| **Ollama** | `--provider ollama` | `http://localhost:11434` | Ollama native |
+| **LM Studio** | `--provider lmstudio` | `http://localhost:1234/v1` | Chat Completions |
+| **Custom** | `--provider custom` | (must specify) | Ollama or Chat Completions |
 
-2. **Open the chat**:
-   - Click the 🧠 icon in the ribbon, or
-   - Command palette → `ObsidianRAG: Open Chat`
+Examples:
 
-3. **Ask questions**:
-   ```
-   What notes do I have about Python?
-   Summarize my meeting notes from this week
-   What did I learn about machine learning?
-   ```
+```bash
+# Ollama (default)
+obsidianrag serve --vault /path/to/vault
 
-4. **Get answers** with:
-   - ✅ Answer text (with markdown formatting)
-   - 📚 Source links to your notes
-   - 🟢 Relevance scores (green = most relevant)
+# LM Studio
+obsidianrag serve --vault /path/to/vault --provider lmstudio --model my-model
+
+# Custom OpenAI-compatible server
+obsidianrag serve --vault /path/to/vault --provider custom \
+  --base-url http://my-server:8080/v1 \
+  --api-format chat-completions \
+  --api-key my-key
+```
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 ### Plugin Settings
 
-Access via Settings → ObsidianRAG:
+Access via Settings > ObsidianRAG:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| **Server Port** | `8000` | Backend API port |
-| **LLM Model** | `gemma3` | Ollama model (gemma3, qwen2.5, llama3.2, etc.) |
-| **Auto-start Server** | `true` | Start backend when Obsidian opens |
-| **Show Source Links** | `true` | Display note links in answers |
+| **Backend command** | `obsidianrag` | Command to start the backend |
+| **Server port** | `8000` | Backend API port |
+| **LLM provider** | `Ollama` | Runtime: Ollama, LM Studio, or Custom |
+| **LLM base URL** | `http://localhost:11434` | Provider endpoint |
+| **LLM model** | `gemma3` | Model for answer generation |
+| **API key** | — | Required only for some custom providers |
+| **Use reranker** | `true` | CrossEncoder reranking for better relevance |
+| **Auto-start server** | `true` | Start backend when Obsidian opens |
+| **Show source links** | `true` | Display note links in answers |
 
-### Backend Configuration
+### CLI Reference
 
-The backend auto-configures from your vault, but you can customize via CLI:
+```
+obsidianrag serve [OPTIONS]
 
-```bash
-obsidianrag serve --vault /path/to/vault --port 8000 --model qwen2.5 --reranker
+Options:
+  --vault, -v       Path to Obsidian vault (required)
+  --host, -h        Host to bind to (default: 127.0.0.1)
+  --port, -p        Server port (default: 8000)
+  --provider        LLM provider: ollama, lmstudio, custom
+  --model, -m       LLM model name (default: gemma3)
+  --base-url        Base URL for the selected provider
+  --api-format      API format: ollama or chat-completions
+  --api-key         API key for providers that require one
+  --reranker        Enable reranker (default)
+  --no-reranker     Disable reranker
+  --reload, -r      Enable auto-reload for development
 ```
 
-Available CLI options:
-- `--vault`: Path to your Obsidian vault (required)
-- `--port`: Server port (default: 8000)
-- `--model`: Ollama model to use (default: gemma3)
-- `--reranker` / `--no-reranker`: Enable/disable reranking (default: enabled)
+### Environment Variables
 
+All backend settings can be set via environment variables with the `OBSIDIANRAG_` prefix. See [`.env.example`](.env.example) for the full list.
+
+Key variables:
+
+```bash
+OBSIDIANRAG_OBSIDIAN_PATH=/path/to/vault
+OBSIDIANRAG_LLM_PROVIDER=ollama
+OBSIDIANRAG_LLM_MODEL=gemma3
+OBSIDIANRAG_OLLAMA_BASE_URL=http://localhost:11434
+```
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ### System Overview
 
 ```
-┌─────────────────────────────────────────┐
-│           Obsidian                      │
-│  ┌────────────────────────────────┐     │
-│  │   ObsidianRAG Plugin (TS)      │     │
-│  │                                │     │
-│  │  • Chat View                   │     │
-│  │  • Server Manager              │     │
-│  │  • Settings                    │     │
-│  └──────────┬─────────────────────┘     │
-└─────────────┼───────────────────────────┘
-              │ HTTP (localhost:8000)
-              ▼
-┌─────────────────────────────────────────┐
-│    Backend (Python)                     │
-│                                         │
-│  FastAPI → LangGraph → Ollama          │
-│              ↓                          │
-│        ChromaDB + Reranker              │
-└─────────────────────────────────────────┘
++-------------------------------------------+
+|             Obsidian                       |
+|  +-------------------------------------+  |
+|  |   ObsidianRAG Plugin (TypeScript)   |  |
+|  |                                     |  |
+|  |  - Chat UI                          |  |
+|  |  - Server Manager                   |  |
+|  |  - Provider Settings                |  |
+|  +----------------+--------------------+  |
++-------------------|------------------------+
+                    | HTTP (localhost:8000)
+                    v
++-------------------------------------------+
+|   Backend (Python / FastAPI)              |
+|                                           |
+|   LLM Provider Layer                      |
+|   (Ollama | LM Studio | Custom)          |
+|        |                                  |
+|   LangGraph Agent                         |
+|   Retrieve -> Rerank -> Generate          |
+|        |                                  |
+|   ChromaDB (Vector Store)                 |
++-------------------------------------------+
 ```
 
 ### RAG Pipeline
@@ -175,138 +203,164 @@ flowchart LR
     L --> A[Answer]
 ```
 
-**Retrieve Node**:
-1. Hybrid search (60% vector, 40% BM25)
+**Retrieve Node:**
+1. Hybrid search (60% vector similarity, 40% BM25 keyword matching)
 2. Reranking with BAAI/bge-reranker-v2-m3
-3. GraphRAG expansion (follows `[[wikilinks]]`)
-4. Score filtering (removes low-relevance < 0.3)
+3. GraphRAG expansion via `[[wikilinks]]`
+4. Score filtering (removes documents below 0.3 relevance)
 
-**Generate Node**:
-1. Build prompt with context
-2. Stream tokens from Ollama LLM
-3. Return answer + sources
+**Generate Node:**
+1. Build prompt with retrieved context
+2. Stream tokens from the configured LLM
+3. Return answer with source documents and scores
 
 ---
 
-## 🤖 Supported Models
+## Supported Models
 
-### LLMs (via Ollama)
+### LLMs
+
+Any model available in your configured provider. Recommended options for Ollama:
 
 | Model | Size | Best For | Install |
 |-------|------|----------|---------|
-| `gemma3` | 5GB | General use, balanced | `ollama pull gemma3` |
-| `qwen2.5` | 4.4GB | Spanish, multilingual | `ollama pull qwen2.5` |
-| `qwen3` | 5GB | Better reasoning | `ollama pull qwen3` |
-| `llama3.2` | 2GB | Smaller, faster | `ollama pull llama3.2` |
+| `gemma3` | 5 GB | General use, balanced | `ollama pull gemma3` |
+| `qwen2.5` | 4.4 GB | Spanish, multilingual | `ollama pull qwen2.5` |
+| `qwen3` | 5 GB | Better reasoning | `ollama pull qwen3` |
+| `llama3.2` | 2 GB | Smaller, faster | `ollama pull llama3.2` |
 
 ### Embeddings
 
-- **HuggingFace** (default): `paraphrase-multilingual-mpnet-base-v2` (auto-downloads)
-- **Ollama** (optional): `nomic-embed-text` (`ollama pull nomic-embed-text`)
+| Provider | Model | Notes |
+|----------|-------|-------|
+| **Ollama** (default) | `qwen3-embedding` | Recommended. Auto-downloaded on first run. |
+| **HuggingFace** | `paraphrase-multilingual-mpnet-base-v2` | Alternative. Set `OBSIDIANRAG_EMBEDDING_PROVIDER=huggingface`. |
 
 ---
 
-## 🔧 Troubleshooting
+## Docker Deployment
 
-See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for detailed solutions.
+### Basic Usage
 
-### Quick Fixes
-
-**❌ Server shows "Offline"**
 ```bash
-# Make sure backend is installed
-pip install obsidianrag
+OBSIDIAN_VAULT_PATH=/path/to/your/vault docker compose up
+```
 
-# Start manually
+### Requirements
+
+- Docker or Podman with compose support
+- Ollama running on the host machine
+
+### Configuration
+
+Set these in your environment or in a `.env` file:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OBSIDIAN_VAULT_PATH` | Yes | Host path to your Obsidian vault |
+| `LLM_MODEL` | No | Model name (default: `gemma3`) |
+
+The container connects to the host's Ollama instance via `host.docker.internal`. The HuggingFace model cache is persisted in a named volume to avoid re-downloading on container restarts.
+
+### Security
+
+The Docker setup includes:
+- `no-new-privileges` security option
+- 4 GB memory limit
+- Health check on `/health` endpoint
+- Non-root user (`appuser`)
+
+---
+
+## Troubleshooting
+
+**Server shows "Offline"**
+```bash
+pip install obsidianrag
 obsidianrag serve --vault /path/to/vault
 ```
 
-**❌ "Ollama not running"**
+**"Ollama not running"**
 ```bash
-# Make sure Ollama is running
 ollama serve
-
-# Verify
 curl http://localhost:11434/api/tags
 ```
 
-**❌ Model not found**
+**Model not found**
 ```bash
 ollama pull gemma3
 ```
 
+See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for more solutions.
+
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 ObsidianRAG/
-├── backend/              # Python backend (PyPI package)
-│   ├── obsidianrag/      # Main package
-│   │   ├── api/          # FastAPI server
-│   │   ├── cli/          # CLI commands
-│   │   ├── core/         # RAG logic (LangGraph, ChromaDB)
-│   │   └── config/       # Settings
-│   └── tests/            # 79 tests
-│
-├── plugin/               # Obsidian plugin (TypeScript)
-│   ├── src/main.ts       # Plugin entry point
-│   ├── tests/            # 32 tests
-│   └── styles.css        # UI styles
-│
-└── docs/                 # Documentation
+|-- backend/                  Python backend (PyPI package)
+|   |-- obsidianrag/
+|   |   |-- api/              FastAPI server
+|   |   |-- cli/              CLI commands
+|   |   |-- core/             RAG logic
+|   |   |   |-- qa_agent.py       LangGraph agent
+|   |   |   |-- qa_service.py     Retrieval and reranking
+|   |   |   |-- db_service.py     ChromaDB management
+|   |   |   |-- llm_provider.py   Multi-provider LLM support
+|   |   |   `-- metadata_tracker.py  Incremental indexing
+|   |   `-- config.py         Pydantic settings
+|   |-- tests/                88 tests
+|   |-- Dockerfile            Multi-stage build
+|   `-- pyproject.toml
+|
+|-- plugin/                   Obsidian plugin (TypeScript)
+|   |-- src/main.ts           Plugin entry point
+|   |-- tests/                Unit tests
+|   `-- styles.css            UI styles
+|
+|-- docker-compose.yml        Container orchestration
+|-- .env.example              Configuration template
+`-- docs/                     Documentation
 ```
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ```bash
-# Backend tests (79 tests)
+# Backend (88 tests)
 cd backend
 uv run pytest
 
-# Plugin tests (32 tests)
+# Plugin
 cd plugin
 pnpm test
 ```
 
-**Coverage**:
-- Backend: 42% (focus on core logic)
-- Plugin: Unit tests for HTTP/parsing/settings
-
 ---
 
-## 🤝 Contributing
+## Contributing
 
-We welcome contributions!
+Contributions are welcome. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
 
-1. Fork the repo
-2. Create a feature branch: `git checkout -b feature/awesome-feature`
-3. Commit changes: `git commit -m 'feat: add awesome feature'`
-4. Push: `git push origin feature/awesome-feature`
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/your-feature`
+3. Commit changes: `git commit -m 'feat: add your feature'`
+4. Push: `git push origin feature/your-feature`
 5. Open a Pull Request
 
-See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
+---
+
+## License
+
+MIT License. See [LICENSE](LICENSE).
 
 ---
 
-## 📄 License
+## Acknowledgments
 
-MIT License - see [LICENSE](LICENSE)
-
----
-
-## 🙏 Acknowledgments
-
-- [LangChain](https://github.com/langchain-ai/langchain) & [LangGraph](https://github.com/langchain-ai/langgraph) - RAG framework
-- [Ollama](https://ollama.ai/) - Local LLM runtime
-- [Obsidian](https://obsidian.md/) - Note-taking app
-- [ChromaDB](https://www.trychroma.com/) - Vector database
-
----
-
-<p align="center">
-  Made with ❤️ for the Obsidian community<br/>
-  🌟 Star us on <a href="https://github.com/Vasallo94/ObsidianRAG">GitHub</a>
-</p>
+- [LangChain](https://github.com/langchain-ai/langchain) and [LangGraph](https://github.com/langchain-ai/langgraph) — RAG framework
+- [Ollama](https://ollama.ai/) — Local LLM runtime
+- [Obsidian](https://obsidian.md/) — Note-taking application
+- [ChromaDB](https://www.trychroma.com/) — Vector database
