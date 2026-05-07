@@ -885,7 +885,7 @@ class SetupModal extends Modal {
     const li2 = requirements.createEl("li");
     li2.createEl("strong", { text: "obsidianrag" });
     li2.appendText(" package - ");
-    li2.createEl("code", { text: "pip install obsidianrag" });
+    li2.createEl("code", { text: "uv add obsidianrag" });
 
     const li3 = requirements.createEl("li");
 
@@ -1937,7 +1937,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
     const hLi2 = ul.createEl("li");
     hLi2.createEl("strong", { text: "obsidianrag" });
     hLi2.appendText(" package: ");
-    hLi2.createEl("code", { text: "pip install obsidianrag" });
+    hLi2.createEl("code", { text: "uv add obsidianrag" });
 
     const hLi3 = ul.createEl("li");
     hLi3.createEl("strong", { text: "Ollama" });

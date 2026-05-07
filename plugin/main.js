@@ -595,7 +595,7 @@ var SetupModal = class extends import_obsidian.Modal {
     const li2 = requirements.createEl("li");
     li2.createEl("strong", { text: "obsidianrag" });
     li2.appendText(" package - ");
-    li2.createEl("code", { text: "pip install obsidianrag" });
+    li2.createEl("code", { text: "uv add obsidianrag" });
     const li3 = requirements.createEl("li");
     li3.createEl("strong", { text: "Ollama" });
     li3.appendText(" - Local LLM server from ");
@@ -1293,7 +1293,7 @@ var ObsidianRAGSettingTab = class extends import_obsidian.PluginSettingTab {
     const hLi2 = ul.createEl("li");
     hLi2.createEl("strong", { text: "obsidianrag" });
     hLi2.appendText(" package: ");
-    hLi2.createEl("code", { text: "pip install obsidianrag" });
+    hLi2.createEl("code", { text: "uv add obsidianrag" });
     const hLi3 = ul.createEl("li");
     hLi3.createEl("strong", { text: "Ollama" });
     hLi3.appendText(" running locally with at least one model");

@@ -2,11 +2,13 @@
 
 **Ask questions about your Obsidian notes using local AI**
 
-[![Python](https://img.shields.io/badge/Python-3.11+-blue)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/Tests-88%20passing-brightgreen)](https://github.com/Vasallo94/ObsidianRAG/actions)
-[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
-[![Obsidian Plugin](https://img.shields.io/badge/Obsidian-Plugin-purple)](https://obsidian.md)
-[![Docker](https://img.shields.io/badge/Docker-Ready-blue)](docker-compose.yml)
+[![GitHub stars](https://img.shields.io/github/stars/Vasallo94/ObsidianRAG)](https://github.com/Vasallo94/ObsidianRAG/stargazers)
+[![PyPI](https://img.shields.io/pypi/v/obsidianrag)](https://pypi.org/project/obsidianrag/)
+[![Tests](https://img.shields.io/github/actions/workflow/status/Vasallo94/ObsidianRAG/test-backend.yml?label=tests)](https://github.com/Vasallo94/ObsidianRAG/actions/workflows/test-backend.yml)
+[![License](https://img.shields.io/github/license/Vasallo94/ObsidianRAG)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org/)
+[![Obsidian Plugin](https://img.shields.io/badge/obsidian-plugin-purple)](https://obsidian.md)
+[![Docker](https://img.shields.io/badge/docker-ghcr.io-blue)](https://ghcr.io/vasallo94/obsidianrag-backend)
 
 A RAG (Retrieval-Augmented Generation) system for querying your Obsidian vault using **LangGraph** and **local LLMs**. Supports **Ollama**, **LM Studio**, and any **OpenAI-compatible** server. All processing runs on your machine — fully private, fully offline.
 
@@ -40,7 +42,7 @@ A RAG (Retrieval-Augmented Generation) system for querying your Obsidian vault u
 2. **Install the backend**
 
    ```bash
-   pip install obsidianrag
+   uv add obsidianrag
    ```
 
 3. **Install Ollama** and pull a model
@@ -243,8 +245,14 @@ Any model available in your configured provider. Recommended options for Ollama:
 ### Basic Usage
 
 ```bash
+# Pull the pre-built image and start
 OBSIDIAN_VAULT_PATH=/path/to/your/vault docker compose up
+
+# Or build locally
+OBSIDIAN_VAULT_PATH=/path/to/your/vault docker compose up --build
 ```
+
+The pre-built image is published to `ghcr.io/vasallo94/obsidianrag-backend:latest` on every push to main.
 
 ### Requirements
 
@@ -276,7 +284,7 @@ The Docker setup includes:
 
 **Server shows "Offline"**
 ```bash
-pip install obsidianrag
+uv add obsidianrag
 obsidianrag serve --vault /path/to/vault
 ```
 
@@ -310,7 +318,7 @@ ObsidianRAG/
 |   |   |   |-- llm_provider.py   Multi-provider LLM support
 |   |   |   `-- metadata_tracker.py  Incremental indexing
 |   |   `-- config.py         Pydantic settings
-|   |-- tests/                88 tests
+|   |-- tests/
 |   |-- Dockerfile            Multi-stage build
 |   `-- pyproject.toml
 |
@@ -329,7 +337,7 @@ ObsidianRAG/
 ## Testing
 
 ```bash
-# Backend (88 tests)
+# Backend
 cd backend
 uv run pytest
 
