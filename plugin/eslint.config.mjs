@@ -29,9 +29,20 @@ export default tseslint.config(
       'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': ['warn', { 'argsIgnorePattern': '^_' }],
       '@typescript-eslint/no-explicit-any': 'error',
-      // Disable overly strict rules for Obsidian plugin context
       '@typescript-eslint/no-misused-promises': ['error', {
         'checksVoidReturn': { 'arguments': false }
+      }],
+      'obsidianmd/ui/sentence-case': ['error', {
+        enforceCamelCaseLower: true,
+        ignoreRegex: [
+          '\\bRAG\\b',
+          '\\bLLM\\b',
+          'LM Studio',
+          'obsidianrag',
+          '[Oo]llama',
+          'gemma',
+          'lm-studio',
+        ],
       }],
     },
   },

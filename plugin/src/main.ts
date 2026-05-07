@@ -5,7 +5,7 @@
  * Uses a Python backend (obsidianrag) with Ollama for LLM inference.
  */
 
-import { ChildProcess, exec, spawn } from "child_process";
+import { exec, spawn } from "child_process";
 import {
     App,
     Component,
@@ -195,7 +195,7 @@ interface ProviderModelsResponse {
 
 export default class ObsidianRAGPlugin extends Plugin {
   settings!: ObsidianRAGSettings;
-  private serverProcess: ChildProcess | null = null;
+  private serverProcess: ReturnType<typeof spawn> | null = null;
   private apiBaseUrl: string = "";
   private restartAttempts: number = 0;
   private maxRestartAttempts: number = 3;
@@ -859,14 +859,14 @@ class SetupModal extends Modal {
     this.currentStep = step;
     this.contentEl_modal.empty();
 
-    const steps = [
-      this.renderRequirements.bind(this),
-      this.renderConfiguration.bind(this),
-      this.renderComplete.bind(this),
+    const steps: (() => void)[] = [
+      () => this.renderRequirements(),
+      () => this.renderConfiguration(),
+      () => this.renderComplete(),
     ];
 
     if (step < steps.length) {
-      steps[step]();
+      steps[step]?.();
     }
   }
 
@@ -1021,7 +1021,7 @@ class SetupModal extends Modal {
 
     const buttons = el.createDiv("modal-button-container");
 
-    const backBtn = buttons.createEl("button", { text: "← Back" });
+    const backBtn = buttons.createEl("button", { text: "← back" });
     backBtn.addEventListener("click", () => this.showStep(0));
 
     const nextBtn = buttons.createEl("button", { text: "Finish →", cls: "mod-cta" });
