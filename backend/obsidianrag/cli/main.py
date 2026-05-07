@@ -4,10 +4,11 @@ from pathlib import Path
 from typing import Literal, Optional, cast
 
 import typer
-from obsidianrag.core.llm_provider import normalize_llm_provider
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+
+from obsidianrag.core.llm_provider import normalize_llm_provider
 
 app = typer.Typer(
     name="obsidianrag",
