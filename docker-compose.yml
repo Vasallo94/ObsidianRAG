@@ -1,6 +1,7 @@
 services:
   backend:
-    build: ./backend
+    image: ghcr.io/vasallo94/obsidianrag-backend:latest
+    # build: ./backend  # uncomment to build locally instead of pulling
     ports:
       - "8000:8000"
     volumes:
