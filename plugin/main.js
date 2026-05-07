@@ -153,12 +153,12 @@ var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
     this.statusBarItem.empty();
     if (running) {
       this.statusBarItem.setText("RAG *");
-      this.statusBarItem.setAttribute("title", "Vault RAG: Online - Click to open chat");
+      this.statusBarItem.setAttribute("title", "Vault RAG: online - click to open chat");
       this.statusBarItem.addClass("status-online");
       this.statusBarItem.removeClass("status-offline");
     } else {
       this.statusBarItem.setText("RAG -");
-      this.statusBarItem.setAttribute("title", "Vault RAG: Offline - Click to start server");
+      this.statusBarItem.setAttribute("title", "Vault RAG: offline - click to start server");
       this.statusBarItem.addClass("status-offline");
       this.statusBarItem.removeClass("status-online");
     }
@@ -766,7 +766,6 @@ var AskQuestionModal = class extends import_obsidian.Modal {
         answer,
         this.resultEl,
         "",
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
         this
       );
     } catch (error) {
@@ -1197,7 +1196,7 @@ var ObsidianRAGSettingTab = class extends import_obsidian.PluginSettingTab {
     );
     if (this.plugin.settings.llmProvider === "custom") {
       new import_obsidian.Setting(containerEl).setName("API format").setDesc("Protocol spoken by the custom server").addDropdown(
-        (dropdown) => dropdown.addOption("ollama", "Ollama").addOption("chat-completions", "Chat Completions").setValue(this.plugin.settings.llmApiFormat).onChange(async (value) => {
+        (dropdown) => dropdown.addOption("ollama", "Ollama").addOption("chat-completions", "Chat completions").setValue(this.plugin.settings.llmApiFormat).onChange(async (value) => {
           this.plugin.settings.llmApiFormat = value;
           await this.plugin.saveSettings();
           this.display();
@@ -1247,7 +1246,7 @@ var ObsidianRAGSettingTab = class extends import_obsidian.PluginSettingTab {
       );
     }
     new import_obsidian.Setting(containerEl).setName("RAG").setHeading();
-    new import_obsidian.Setting(containerEl).setName("Use reranker").setDesc("Enable CrossEncoder reranking for better relevance (slower but more accurate)").addToggle(
+    new import_obsidian.Setting(containerEl).setName("Use reranker").setDesc("Enable cross-encoder reranking for better relevance (slower but more accurate)").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.useReranker).onChange(async (value) => {
         this.plugin.settings.useReranker = value;
         await this.plugin.saveSettings();

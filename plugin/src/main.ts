@@ -5,9 +5,10 @@
  * Uses a Python backend (obsidianrag) with Ollama for LLM inference.
  */
 
-import { exec, spawn } from "child_process";
+import { ChildProcess, exec, spawn } from "child_process";
 import {
     App,
+    Component,
     ItemView,
     MarkdownRenderer,
     Modal,
@@ -194,7 +195,7 @@ interface ProviderModelsResponse {
 
 export default class ObsidianRAGPlugin extends Plugin {
   settings!: ObsidianRAGSettings;
-  private serverProcess: ReturnType<typeof spawn> | null = null;
+  private serverProcess: ChildProcess | null = null;
   private apiBaseUrl: string = "";
   private restartAttempts: number = 0;
   private maxRestartAttempts: number = 3;
@@ -324,17 +325,13 @@ export default class ObsidianRAGPlugin extends Plugin {
     this.statusBarItem.empty();
 
     if (running) {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       this.statusBarItem.setText("RAG *");
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
-      this.statusBarItem.setAttribute("title", "Vault RAG: Online - Click to open chat");
+      this.statusBarItem.setAttribute("title", "Vault RAG: online - click to open chat");
       this.statusBarItem.addClass("status-online");
       this.statusBarItem.removeClass("status-offline");
     } else {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       this.statusBarItem.setText("RAG -");
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
-      this.statusBarItem.setAttribute("title", "Vault RAG: Offline - Click to start server");
+      this.statusBarItem.setAttribute("title", "Vault RAG: offline - click to start server");
       this.statusBarItem.addClass("status-offline");
       this.statusBarItem.removeClass("status-online");
     }
@@ -369,12 +366,10 @@ export default class ObsidianRAGPlugin extends Plugin {
   async startServer(): Promise<boolean> {
     // First check if already running
     if (await this.isServerRunning()) {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       new Notice("Vault RAG server is already running");
       return true;
     }
 
-    // eslint-disable-next-line obsidianmd/ui/sentence-case
     new Notice("Starting Vault RAG server...");
 
     try {
@@ -465,7 +460,6 @@ export default class ObsidianRAGPlugin extends Plugin {
       const ready = await this.waitForServer(30000);
       if (ready) {
         this.restartAttempts = 0; // Reset on successful start
-        // eslint-disable-next-line obsidianmd/ui/sentence-case
         new Notice("Vault RAG server started successfully!");
         void this.updateStatusBar();
         return true;
@@ -525,7 +519,6 @@ export default class ObsidianRAGPlugin extends Plugin {
       console.debug("[ObsidianRAG] Could not kill process by port:", e);
     }
 
-    // eslint-disable-next-line obsidianmd/ui/sentence-case
     new Notice("Vault RAG server stopped");
     void this.updateStatusBar();
   }
@@ -629,8 +622,7 @@ export default class ObsidianRAGPlugin extends Plugin {
         throw new Error(`Server error: ${response.status}`);
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-      return response.json;
+      return response.json as AskResponse;
     } catch (error) {
       return {
         result: "",
@@ -756,8 +748,7 @@ export default class ObsidianRAGPlugin extends Plugin {
         });
 
         if (response.status >= 200 && response.status < 300) {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-          return response.json;
+          return response.json as T;
         }
 
         lastError = new Error(`HTTP ${response.status}`);
@@ -855,7 +846,6 @@ class SetupModal extends Modal {
     contentEl.empty();
     contentEl.addClass("obsidianrag-setup-modal");
 
-    // eslint-disable-next-line obsidianmd/ui/sentence-case
     new Setting(contentEl).setName("Welcome to Vault RAG").setHeading();
 
     // Fetch available models
@@ -876,7 +866,6 @@ class SetupModal extends Modal {
     ];
 
     if (step < steps.length) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
       steps[step]();
     }
   }
@@ -894,23 +883,19 @@ class SetupModal extends Modal {
     li1.appendText(" - Required for the backend");
 
     const li2 = requirements.createEl("li");
-    // eslint-disable-next-line obsidianmd/ui/sentence-case
     li2.createEl("strong", { text: "obsidianrag" });
     li2.appendText(" package - ");
-    // eslint-disable-next-line obsidianmd/ui/sentence-case
     li2.createEl("code", { text: "pip install obsidianrag" });
 
     const li3 = requirements.createEl("li");
 
     li3.createEl("strong", { text: "Ollama" });
     li3.appendText(" - Local LLM server from ");
-    // eslint-disable-next-line obsidianmd/ui/sentence-case
     li3.createEl("a", { text: "ollama.ai", href: "https://ollama.ai" });
 
     const li4 = requirements.createEl("li");
 
     li4.appendText("At least one Ollama model - ");
-    // eslint-disable-next-line obsidianmd/ui/sentence-case
     li4.createEl("code", { text: "ollama pull gemma3" });
 
     el.createEl("p", {
@@ -955,12 +940,10 @@ class SetupModal extends Modal {
         }));
 
     new Setting(el)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setName("LLM provider")
       .setDesc("Local runtime used for answer generation")
       .addDropdown(dropdown => dropdown
         .addOption("ollama", "Ollama")
-        // eslint-disable-next-line obsidianmd/ui/sentence-case
         .addOption("lmstudio", "LM Studio")
         .addOption("custom", "Custom")
         .setValue(this.plugin.settings.llmProvider)
@@ -979,7 +962,6 @@ class SetupModal extends Modal {
         }));
 
     new Setting(el)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setName("LLM base URL")
       .addText(text => text
         .setValue(this.plugin.settings.llmBaseUrl)
@@ -990,7 +972,6 @@ class SetupModal extends Modal {
 
     // Model - populated from provider when possible
     const modelSetting = new Setting(el)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setName("LLM model");
 
     if (this.availableModels.length > 0) {
@@ -1018,7 +999,6 @@ class SetupModal extends Modal {
       modelSetting
         .setDesc("Could not list models. Enter the model name manually.")
         .addText(text => text
-          // eslint-disable-next-line obsidianmd/ui/sentence-case
           .setPlaceholder("gemma3")
           .setValue(this.plugin.settings.llmModel)
           .onChange(async (value) => {
@@ -1041,7 +1021,6 @@ class SetupModal extends Modal {
 
     const buttons = el.createDiv("modal-button-container");
 
-    // eslint-disable-next-line obsidianmd/ui/sentence-case
     const backBtn = buttons.createEl("button", { text: "← Back" });
     backBtn.addEventListener("click", () => this.showStep(0));
 
@@ -1054,7 +1033,6 @@ class SetupModal extends Modal {
 
 
     new Setting(el).setName("Setup complete").setHeading();
-    // eslint-disable-next-line obsidianmd/ui/sentence-case
     el.createEl("p", { text: "You're all set to use Vault RAG." });
 
     const tips = el.createEl("ul");
@@ -1105,7 +1083,6 @@ class AskQuestionModal extends Modal {
     contentEl.empty();
     contentEl.addClass("obsidianrag-ask-modal");
 
-    // eslint-disable-next-line obsidianmd/ui/sentence-case
     new Setting(contentEl).setName("Ask Vault RAG").setHeading();
 
     // Input
@@ -1146,7 +1123,6 @@ class AskQuestionModal extends Modal {
     if (!question) return;
 
     if (!(await this.plugin.isServerRunning())) {
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       this.resultEl.setText("Server is not running. Start it first.");
       return;
     }
@@ -1174,8 +1150,7 @@ class AskQuestionModal extends Modal {
         answer,
         this.resultEl,
         "",
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
-        this as any
+        this as unknown as Component
       );
     } catch (error) {
       this.resultEl.setText(`Error: ${error}`);
@@ -1214,7 +1189,6 @@ class ChatView extends ItemView {
   }
 
   getDisplayText(): string {
-    // eslint-disable-next-line obsidianmd/ui/sentence-case
     return "Vault RAG";
   }
 
@@ -1229,7 +1203,6 @@ class ChatView extends ItemView {
 
     // Header
     const header = container.createDiv("obsidianrag-header");
-    // eslint-disable-next-line obsidianmd/ui/sentence-case
     header.createEl("span", { text: "Vault RAG", cls: "obsidianrag-header-title" });
 
     // Header controls
@@ -1730,7 +1703,6 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
       .setDesc("Command to start the backend, usually 'obsidianrag'")
       .addText((text) =>
         text
-          // eslint-disable-next-line obsidianmd/ui/sentence-case
           .setPlaceholder("obsidianrag")
           .setValue(this.plugin.settings.pythonPath)
           .onChange(async (value) => {
@@ -1755,13 +1727,11 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setName("LLM provider")
       .setDesc("Runtime used for answer generation")
       .addDropdown((dropdown) =>
         dropdown
           .addOption("ollama", "Ollama")
-          // eslint-disable-next-line obsidianmd/ui/sentence-case
           .addOption("lmstudio", "LM Studio")
           .addOption("custom", "Custom")
           .setValue(this.plugin.settings.llmProvider)
@@ -1786,8 +1756,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
         .addDropdown((dropdown) =>
           dropdown
             .addOption("ollama", "Ollama")
-            // eslint-disable-next-line obsidianmd/ui/sentence-case
-            .addOption("chat-completions", "Chat Completions")
+            .addOption("chat-completions", "Chat completions")
             .setValue(this.plugin.settings.llmApiFormat)
             .onChange(async (value: "ollama" | "chat-completions") => {
               this.plugin.settings.llmApiFormat = value;
@@ -1798,9 +1767,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
     }
 
     new Setting(containerEl)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setName("LLM base URL")
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setDesc("Provider endpoint, for example Ollama or LM Studio local server")
       .addText((text) =>
         text
@@ -1815,11 +1782,9 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
     if (this.plugin.settings.llmApiFormat === "chat-completions") {
       new Setting(containerEl)
         .setName("API key")
-        // eslint-disable-next-line obsidianmd/ui/sentence-case
         .setDesc("Optional. LM Studio accepts any value.")
         .addText((text) =>
           text
-            // eslint-disable-next-line obsidianmd/ui/sentence-case
             .setPlaceholder("lm-studio")
             .setValue(this.plugin.settings.llmApiKey)
             .onChange(async (value) => {
@@ -1831,7 +1796,6 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
 
     // LLM Model - dynamically populated from provider when possible
     const modelSetting = new Setting(containerEl)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setName("LLM model")
       .setDesc("Model to use for answering questions");
 
@@ -1864,7 +1828,6 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
         .setDesc("Could not list models. Enter the model name manually.")
         .addText((text) =>
           text
-            // eslint-disable-next-line obsidianmd/ui/sentence-case
             .setPlaceholder("gemma3")
             .setValue(this.plugin.settings.llmModel)
             .onChange(async (value) => {
@@ -1882,8 +1845,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
     new Setting(containerEl)
 
       .setName("Use reranker")
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
-      .setDesc("Enable CrossEncoder reranking for better relevance (slower but more accurate)")
+      .setDesc("Enable cross-encoder reranking for better relevance (slower but more accurate)")
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.useReranker)
@@ -1973,19 +1935,15 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
     hLi1.appendText(" installed and accessible");
 
     const hLi2 = ul.createEl("li");
-    // eslint-disable-next-line obsidianmd/ui/sentence-case
     hLi2.createEl("strong", { text: "obsidianrag" });
     hLi2.appendText(" package: ");
-    // eslint-disable-next-line obsidianmd/ui/sentence-case
     hLi2.createEl("code", { text: "pip install obsidianrag" });
 
     const hLi3 = ul.createEl("li");
     hLi3.createEl("strong", { text: "Ollama" });
     hLi3.appendText(" running locally with at least one model");
 
-    // eslint-disable-next-line obsidianmd/ui/sentence-case
     const pLink = helpEl.createEl("p", { text: "Install Ollama from " });
-    // eslint-disable-next-line obsidianmd/ui/sentence-case
     pLink.createEl("a", { text: "ollama.ai", href: "https://ollama.ai" });
 
     // Reset Setup
