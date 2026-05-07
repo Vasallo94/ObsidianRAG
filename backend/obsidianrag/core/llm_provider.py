@@ -56,7 +56,7 @@ def create_chat_model(settings: Settings | None = None) -> tuple[BaseChatModel, 
         return ChatOllama(
             model=model_name,
             base_url=settings.ollama_base_url,
-            timeout=settings.request_timeout,
+            client_kwargs={"timeout": settings.request_timeout},
         ), model_name
 
     api_format = normalize_api_format(
@@ -70,7 +70,7 @@ def create_chat_model(settings: Settings | None = None) -> tuple[BaseChatModel, 
         return ChatOllama(
             model=model_name,
             base_url=settings.ollama_base_url,
-            timeout=settings.request_timeout,
+            client_kwargs={"timeout": settings.request_timeout},
         ), model_name
 
     if api_format == "chat-completions":
@@ -87,7 +87,7 @@ def create_chat_model(settings: Settings | None = None) -> tuple[BaseChatModel, 
                 model=model_name,
                 base_url=settings.compatible_base_url.rstrip("/"),
                 api_key=SecretStr(settings.compatible_api_key),
-                request_timeout=settings.request_timeout,
+                timeout=settings.request_timeout,
             ),
             model_name,
         )

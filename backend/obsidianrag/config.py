@@ -4,14 +4,14 @@ import os
 from pathlib import Path
 from typing import List, Literal
 
-from pydantic import ConfigDict, Field
-from pydantic_settings import BaseSettings
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings with environment variable support"""
 
-    model_config = ConfigDict(
+    model_config = SettingsConfigDict(
         env_prefix="OBSIDIANRAG_",
         env_file=".env",
         env_file_encoding="utf-8",

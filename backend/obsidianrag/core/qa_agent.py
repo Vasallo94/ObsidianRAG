@@ -372,9 +372,7 @@ def generate_node(state: AgentState, llm_chain, tracer: Optional[GraphTracer] = 
     )
     llm_time = time.time() - start_llm
 
-    logger.info(
-        "[GENERATE NODE] Answer generated (%d chars) in %.2fs", len(response), llm_time
-    )
+    logger.info("[GENERATE NODE] Answer generated (%d chars) in %.2fs", len(response), llm_time)
 
     if tracer:
         tracer.exit_node(
@@ -412,12 +410,8 @@ def create_qa_graph(db):
 
     workflow = StateGraph(AgentState)
 
-    workflow.add_node(
-        "retrieve", lambda state: retrieve_node(state, retriever, db, tracer=tracer)
-    )
-    workflow.add_node(
-        "generate", lambda state: generate_node(state, llm_chain, tracer=tracer)
-    )
+    workflow.add_node("retrieve", lambda state: retrieve_node(state, retriever, db, tracer=tracer))
+    workflow.add_node("generate", lambda state: generate_node(state, llm_chain, tracer=tracer))
 
     workflow.set_entry_point("retrieve")
     workflow.add_edge("retrieve", "generate")

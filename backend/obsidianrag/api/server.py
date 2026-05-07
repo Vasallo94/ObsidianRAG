@@ -72,7 +72,7 @@ def _strip_vault_prefix(source: str) -> str:
     settings = get_settings()
     vault = settings.obsidian_path
     if vault and source.startswith(vault):
-        relative = source[len(vault):]
+        relative = source[len(vault) :]
         return relative.lstrip("/")
     return source
 
@@ -208,6 +208,8 @@ def _register_routes(application: FastAPI):
             history = _chat_histories.get(session_id)
 
             # Snapshot refs under lock, run inference outside
+            if _db_lock is None:
+                raise HTTPException(status_code=503, detail="System not initialized")
             async with _db_lock:
                 current_app = _qa_app
 
@@ -424,6 +426,8 @@ def _register_routes(application: FastAPI):
             logger.info("Database rebuild request received")
             global _db, _qa_app, _retriever
 
+            if _db_lock is None:
+                raise HTTPException(status_code=503, detail="System not initialized")
             async with _db_lock:
                 _db = None
                 _qa_app = None

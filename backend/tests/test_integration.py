@@ -14,7 +14,9 @@ class TestFullRAGPipeline:
         """Test complete flow: index vault → query → get answer."""
         # Setup mock LLM
         mock_llm = MagicMock()
-        mock_llm.invoke.return_value.content = "Machine learning is a subset of artificial intelligence."
+        mock_llm.invoke.return_value.content = (
+            "Machine learning is a subset of artificial intelligence."
+        )
         mock_create_chat_model.return_value = (mock_llm, "gemma3")
 
         # Flow:

@@ -199,7 +199,9 @@ def load_all_obsidian_documents(obsidian_path: str) -> List[Document]:
                         loaded_files += 1
 
                         if len(links) > 5:
-                            logger.debug("Note '%s' has %d links: %s...", file, len(links), links[:5])
+                            logger.debug(
+                                "Note '%s' has %d links: %s...", file, len(links), links[:5]
+                            )
 
                 except Exception as e:
                     error_files += 1
