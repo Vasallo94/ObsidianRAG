@@ -255,6 +255,7 @@ plugin/node_modules/
 
 # TypeScript cache
 *.tsbuildinfo
+plugin/lint_report*.json
 
 # npm/pnpm
 .npm/

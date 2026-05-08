@@ -49,7 +49,6 @@ var DEFAULT_SETTINGS = {
 var ObsidianRAGPlugin = class extends import_obsidian.Plugin {
   constructor() {
     super(...arguments);
-    // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
     this.serverProcess = null;
     this.apiBaseUrl = "";
     this.restartAttempts = 0;
