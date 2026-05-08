@@ -620,4 +620,7 @@ async def ask_question_graph_streaming(
         import traceback
 
         logger.error(traceback.format_exc())
-        yield {"type": "error", "message": str(e)}
+        yield {
+            "type": "error",
+            "message": "An error occurred while processing your request",
+        }
