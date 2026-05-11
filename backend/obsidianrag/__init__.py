@@ -14,7 +14,7 @@ Usage:
     $ obsidianrag status
 """
 
-__version__ = "3.0.2"
+__version__ = "3.0.3"
 __author__ = "Enrique Vasallo"
 
 from obsidianrag.core.rag import ObsidianRAG

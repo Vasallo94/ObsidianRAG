@@ -42,7 +42,7 @@ A RAG (Retrieval-Augmented Generation) system for querying your Obsidian vault u
 2. **Install the backend**
 
    ```bash
-   uv add obsidianrag
+   uv tool install obsidianrag
    ```
 
 3. **Install Ollama** and pull a model
@@ -284,7 +284,7 @@ The Docker setup includes:
 
 **Server shows "Offline"**
 ```bash
-uv add obsidianrag
+uv tool install obsidianrag
 obsidianrag serve --vault /path/to/vault
 ```
 

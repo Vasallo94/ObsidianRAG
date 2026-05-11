@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.3] - 2026-05-11
+
 ### Added
 - Flexible LLM provider support: Ollama, LM Studio, and OpenAI-compatible servers
 - Docker deployment with docker-compose (multi-stage build, CPU-only PyTorch)

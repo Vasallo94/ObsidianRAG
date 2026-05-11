@@ -4,7 +4,7 @@ Python backend providing RAG (Retrieval-Augmented Generation) capabilities for O
 
 [![PyPI](https://img.shields.io/badge/PyPI-obsidianrag-blue)](https://pypi.org/project/obsidianrag/)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/Tests-77%20passing-brightgreen)](https://github.com/Vasallo94/ObsidianRAG/actions)
+[![Tests](https://img.shields.io/badge/Tests-88%20passing-brightgreen)](https://github.com/Vasallo94/ObsidianRAG/actions)
 
 ---
 
@@ -45,13 +45,22 @@ obsidianrag serve --vault /path/to/vault
 
 # Custom port and model
 obsidianrag serve --vault ~/notes --port 9000 --model qwen2.5
+
+# LM Studio
+obsidianrag serve --vault ~/notes --provider lmstudio --model my-model
+
+# Custom OpenAI-compatible server
+obsidianrag serve --vault ~/notes --provider custom \
+  --base-url http://my-server:8080/v1 \
+  --api-format chat-completions \
+  --api-key my-key
 ```
 
 #### Index Vault
 
 ```bash
 # Full rebuild
-obsidianrag index --vault /path/to/vault --rebuild
+obsidianrag index --vault /path/to/vault --force
 
 # Incremental (only changed notes)
 obsidianrag index --vault /path/to/vault
@@ -286,7 +295,7 @@ uv run pytest --cov=obsidianrag --cov-report=html
 - `tests/test_db_service.py` - Database (16 tests)
 - `tests/test_integration.py` - E2E flows (16 tests)
 
-**Total**: 77 tests, 42% coverage
+**Total**: 88 tests
 
 ---
 
