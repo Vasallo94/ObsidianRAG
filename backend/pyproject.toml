@@ -32,6 +32,8 @@ dependencies = [
     "langchain-chroma>=0.1.4",
     "langchain-huggingface>=0.1.0",
     "langchain-text-splitters>=0.3.0",
+    "langchain-classic>=1.0.7",
+    "langsmith>=0.8.0",
     "langgraph>=0.2.45",
 
     # Vector store and retrieval
@@ -44,6 +46,7 @@ dependencies = [
     "uvicorn>=0.32.0",
     "httpx>=0.27.2",
     "requests>=2.32.3",
+    "urllib3>=2.7.0",
 
     # ML and embeddings
     "torch>=2.5.0",
