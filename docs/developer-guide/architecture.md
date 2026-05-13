@@ -91,3 +91,11 @@ flowchart LR
     Chunker -->|Chunks| Embedder
     Embedder -->|Vectors| DB
 ```
+
+## Retrieval Modernization
+
+Hybrid retrieval currently keeps a small compatibility dependency on
+`langchain_classic` for retriever composition and reranking adapters. New
+retrieval work should follow the migration plan in
+[LangChain Classic Migration Plan](langchain-classic-migration.md) and avoid
+adding more `langchain_classic` surface area.

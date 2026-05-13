@@ -80,6 +80,10 @@ pnpm install
 pnpm run dev
 ```
 
+Backend maintainers: see
+[LangChain Classic Migration Plan](docs/developer-guide/langchain-classic-migration.md)
+before changing retrieval or reranking internals.
+
 ---
 
 ## LLM Providers
