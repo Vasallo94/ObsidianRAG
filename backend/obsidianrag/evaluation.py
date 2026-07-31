@@ -2,6 +2,7 @@
 
 import json
 import math
+import statistics
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -14,6 +15,7 @@ from langchain_core.documents import Document
 class EvaluationCase:
     question: str
     expected_sources: tuple[str, ...]
+    relevance_grades: tuple[tuple[str, float], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -21,17 +23,26 @@ class CaseResult:
     question: str
     expected_sources: tuple[str, ...]
     retrieved_sources: tuple[str, ...]
+    precision: float
     recall: float
+    hit: float
     reciprocal_rank: float
+    average_precision: float
+    ndcg: float
     latency_seconds: float
 
 
 @dataclass(frozen=True)
 class EvaluationResult:
     cases: tuple[CaseResult, ...]
+    precision_at_k: float
     recall_at_k: float
+    hit_rate_at_k: float
     mean_reciprocal_rank: float
+    mean_average_precision_at_k: float
+    ndcg_at_k: float
     mean_latency_seconds: float
+    p50_latency_seconds: float
     p95_latency_seconds: float
     k: int
 
@@ -60,10 +71,28 @@ def load_dataset(path: Path) -> tuple[EvaluationCase, ...]:
             or not all(isinstance(source, str) and source.strip() for source in sources)
         ):
             raise ValueError(f"Case {index} must have non-empty expected_sources")
+        expected_sources = tuple(_normalize_relative(source) for source in sources)
+        raw_grades = raw.get("relevance_grades", [])
+        if not isinstance(raw_grades, list):
+            raise ValueError(f"Case {index} relevance_grades must be a list")
+        grades = []
+        for grade in raw_grades:
+            if (
+                not isinstance(grade, dict)
+                or not isinstance(grade.get("source"), str)
+                or not isinstance(grade.get("grade"), (int, float))
+                or grade["grade"] <= 0
+            ):
+                raise ValueError(f"Case {index} has an invalid relevance grade")
+            source = _normalize_relative(grade["source"])
+            if source not in expected_sources:
+                raise ValueError(f"Case {index} grades a source not listed in expected_sources")
+            grades.append((source, float(grade["grade"])))
         cases.append(
             EvaluationCase(
                 question=question.strip(),
-                expected_sources=tuple(_normalize_relative(source) for source in sources),
+                expected_sources=expected_sources,
+                relevance_grades=tuple(grades),
             )
         )
 
@@ -85,19 +114,33 @@ def evaluate_retrieval(
         started = time.perf_counter()
         sources = _unique_sources(retrieve(case.question), vault_path)[:k]
         latency = time.perf_counter() - started
-        expected = set(case.expected_sources)
-        hits = expected.intersection(sources)
-        first_rank = next(
-            (rank for rank, source in enumerate(sources, 1) if source in expected),
-            None,
+        grades = {source: 1.0 for source in case.expected_sources}
+        grades.update(dict(case.relevance_grades))
+        gains = [grades.get(source, 0.0) for source in sources]
+        hits = sum(gain > 0 for gain in gains)
+        first_rank = next((rank for rank, gain in enumerate(gains, 1) if gain > 0), None)
+        relevant_seen = 0
+        precision_sum = 0.0
+        for rank, gain in enumerate(gains, 1):
+            if gain > 0:
+                relevant_seen += 1
+                precision_sum += relevant_seen / rank
+        ideal_gains = sorted(grades.values(), reverse=True)[:k]
+        dcg = sum((2**gain - 1) / math.log2(rank + 1) for rank, gain in enumerate(gains, 1))
+        ideal_dcg = sum(
+            (2**gain - 1) / math.log2(rank + 1) for rank, gain in enumerate(ideal_gains, 1)
         )
         results.append(
             CaseResult(
                 question=case.question,
                 expected_sources=case.expected_sources,
                 retrieved_sources=tuple(sources),
-                recall=len(hits) / len(expected),
+                precision=hits / k,
+                recall=hits / len(grades),
+                hit=float(hits > 0),
                 reciprocal_rank=1.0 / first_rank if first_rank else 0.0,
+                average_precision=precision_sum / min(len(grades), k),
+                ndcg=dcg / ideal_dcg if ideal_dcg else 0.0,
                 latency_seconds=latency,
             )
         )
@@ -106,9 +149,15 @@ def evaluate_retrieval(
     p95_index = max(0, math.ceil(len(latencies) * 0.95) - 1)
     return EvaluationResult(
         cases=tuple(results),
+        precision_at_k=sum(result.precision for result in results) / len(results),
         recall_at_k=sum(result.recall for result in results) / len(results),
+        hit_rate_at_k=sum(result.hit for result in results) / len(results),
         mean_reciprocal_rank=sum(result.reciprocal_rank for result in results) / len(results),
+        mean_average_precision_at_k=sum(result.average_precision for result in results)
+        / len(results),
+        ndcg_at_k=sum(result.ndcg for result in results) / len(results),
         mean_latency_seconds=sum(latencies) / len(latencies),
+        p50_latency_seconds=statistics.median(latencies),
         p95_latency_seconds=latencies[p95_index],
         k=k,
     )

@@ -364,9 +364,14 @@ def evaluate(
             f"{case.latency_seconds * 1000:.1f} ms",
         )
     console.print(table)
+    console.print(f"Precision@{k}: [bold]{result.precision_at_k:.3f}[/bold]")
     console.print(f"Recall@{k}: [bold]{result.recall_at_k:.3f}[/bold]")
+    console.print(f"Hit rate@{k}: [bold]{result.hit_rate_at_k:.3f}[/bold]")
     console.print(f"MRR: [bold]{result.mean_reciprocal_rank:.3f}[/bold]")
+    console.print(f"MAP@{k}: [bold]{result.mean_average_precision_at_k:.3f}[/bold]")
+    console.print(f"nDCG@{k}: [bold]{result.ndcg_at_k:.3f}[/bold]")
     console.print(f"Mean latency: [bold]{result.mean_latency_seconds * 1000:.1f} ms[/bold]")
+    console.print(f"p50 latency: [bold]{result.p50_latency_seconds * 1000:.1f} ms[/bold]")
     console.print(f"p95 latency: [bold]{result.p95_latency_seconds * 1000:.1f} ms[/bold]")
 
     if output:

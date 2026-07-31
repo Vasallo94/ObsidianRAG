@@ -33,6 +33,31 @@ def test_load_dataset_validates_and_normalizes_sources(tmp_path):
     )
 
 
+def test_load_dataset_parses_graded_relevance(tmp_path):
+    dataset = tmp_path / "dataset.json"
+    dataset.write_text(
+        json.dumps(
+            {
+                "cases": [
+                    {
+                        "question": "Which source matters most?",
+                        "expected_sources": ["Primary.md", "Related.md"],
+                        "relevance_grades": [
+                            {"source": "Primary.md", "grade": 3},
+                            {"source": "Related.md", "grade": 1},
+                        ],
+                    }
+                ]
+            }
+        )
+    )
+
+    assert load_dataset(dataset)[0].relevance_grades == (
+        ("Primary.md", 3.0),
+        ("Related.md", 1.0),
+    )
+
+
 def test_load_dataset_rejects_empty_cases(tmp_path):
     dataset = tmp_path / "dataset.json"
     dataset.write_text('{"cases": []}')
@@ -61,13 +86,41 @@ def test_evaluate_retrieval_deduplicates_chunks_and_computes_metrics(tmp_path):
     result = evaluate_retrieval(retrieve, cases, vault, k=2)
 
     assert result.cases[0].retrieved_sources == ("Other.md", "Notes/Expected.md")
+    assert result.cases[0].precision == 0.5
     assert result.cases[0].recall == 1.0
+    assert result.cases[0].hit == 1.0
     assert result.cases[0].reciprocal_rank == 0.5
+    assert result.cases[0].average_precision == 0.5
+    assert result.cases[0].ndcg == pytest.approx(0.6309297536)
     assert result.cases[1].recall == 0.0
+    assert result.precision_at_k == 0.25
     assert result.recall_at_k == 0.5
+    assert result.hit_rate_at_k == 0.5
     assert result.mean_reciprocal_rank == 0.25
+    assert result.mean_average_precision_at_k == 0.25
+    assert result.ndcg_at_k == pytest.approx(0.3154648768)
     assert result.mean_latency_seconds >= 0
-    assert result.p95_latency_seconds >= result.mean_latency_seconds
+    assert result.p50_latency_seconds >= 0
+    assert result.p95_latency_seconds >= result.p50_latency_seconds
+
+
+def test_evaluate_retrieval_uses_graded_relevance_for_ndcg(tmp_path):
+    case = EvaluationCase(
+        "question",
+        ("Primary.md", "Related.md"),
+        (("Primary.md", 3.0), ("Related.md", 1.0)),
+    )
+    documents = [
+        Document(page_content="related", metadata={"source": "Related.md"}),
+        Document(page_content="primary", metadata={"source": "Primary.md"}),
+    ]
+
+    result = evaluate_retrieval(lambda _: documents, (case,), tmp_path, k=2)
+
+    assert result.precision_at_k == 1.0
+    assert result.recall_at_k == 1.0
+    assert result.mean_average_precision_at_k == 1.0
+    assert result.ndcg_at_k == pytest.approx(0.7098097414)
 
 
 def test_evaluate_retrieval_rejects_invalid_k(tmp_path):

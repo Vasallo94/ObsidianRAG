@@ -18,3 +18,18 @@ obsidianrag evaluate evaluation/questions.json --vault evaluation/sample-vault -
 ```
 
 The fixture covers English and Spanish questions, exact technical terms, aliases, headings, wikilinks, and similarly named notes. It is a smoke benchmark, not evidence of production retrieval quality. Larger community-contributed datasets should follow the same schema without including private notes.
+
+The evaluator reports source-level Precision@k, Recall@k, hit rate, MRR, MAP@k, nDCG@k, and mean/p50/p95 latency. Cases may include graded relevance:
+
+```json
+{
+  "question": "Which document defines the deployment policy?",
+  "expected_sources": ["Primary.md", "Related.md"],
+  "relevance_grades": [
+    {"source": "Primary.md", "grade": 3},
+    {"source": "Related.md", "grade": 1}
+  ]
+}
+```
+
+Sources without an explicit grade use binary relevance 1.
