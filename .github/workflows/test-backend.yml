@@ -39,7 +39,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --dev --extra v4
 
       - name: Run linting
         run: |
@@ -91,7 +91,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --dev
+          uv sync --dev --extra v4
 
       - name: Run type checking
         run: uv run mypy .

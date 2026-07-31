@@ -1,6 +1,8 @@
 """Reproducible retrieval evaluation for ObsidianRAG."""
 
 import json
+import math
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable, Iterable
@@ -21,6 +23,7 @@ class CaseResult:
     retrieved_sources: tuple[str, ...]
     recall: float
     reciprocal_rank: float
+    latency_seconds: float
 
 
 @dataclass(frozen=True)
@@ -28,6 +31,8 @@ class EvaluationResult:
     cases: tuple[CaseResult, ...]
     recall_at_k: float
     mean_reciprocal_rank: float
+    mean_latency_seconds: float
+    p95_latency_seconds: float
     k: int
 
     def to_dict(self) -> dict:
@@ -77,7 +82,9 @@ def evaluate_retrieval(
 
     results = []
     for case in cases:
+        started = time.perf_counter()
         sources = _unique_sources(retrieve(case.question), vault_path)[:k]
+        latency = time.perf_counter() - started
         expected = set(case.expected_sources)
         hits = expected.intersection(sources)
         first_rank = next(
@@ -91,13 +98,18 @@ def evaluate_retrieval(
                 retrieved_sources=tuple(sources),
                 recall=len(hits) / len(expected),
                 reciprocal_rank=1.0 / first_rank if first_rank else 0.0,
+                latency_seconds=latency,
             )
         )
 
+    latencies = sorted(result.latency_seconds for result in results)
+    p95_index = max(0, math.ceil(len(latencies) * 0.95) - 1)
     return EvaluationResult(
         cases=tuple(results),
         recall_at_k=sum(result.recall for result in results) / len(results),
         mean_reciprocal_rank=sum(result.reciprocal_rank for result in results) / len(results),
+        mean_latency_seconds=sum(latencies) / len(latencies),
+        p95_latency_seconds=latencies[p95_index],
         k=k,
     )
 

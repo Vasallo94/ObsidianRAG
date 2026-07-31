@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Versioned `/capabilities` endpoint for plugin/backend compatibility checks
 - Retrieval evaluation CLI with Recall@k and MRR metrics
+- Public multilingual retrieval fixture for reproducible smoke benchmarks
+- Optional experimental v4 index using SQLite FTS5 and embedded LanceDB
+- `v4-index` and `v4-search` commands plus v3/v4 evaluation selection
 - Regression tests for incremental index updates, process ownership, and secret handling
 
 ### Changed

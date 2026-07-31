@@ -1,0 +1,28 @@
+{
+  "cases": [
+    {
+      "question": "How do I roll back a failed deployment?",
+      "expected_sources": ["Operations/Deployment Runbook.md"]
+    },
+    {
+      "question": "¿Cómo roto las credenciales de producción?",
+      "expected_sources": ["Operations/Secret Rotation.md"]
+    },
+    {
+      "question": "What does error code ORG-429 mean?",
+      "expected_sources": ["Reference/Error Codes.md"]
+    },
+    {
+      "question": "¿Cuál es la política de copias de seguridad?",
+      "expected_sources": ["Operations/Backup Policy.md"]
+    },
+    {
+      "question": "Which note describes cartography exports?",
+      "expected_sources": ["Research/Cartography.md"]
+    },
+    {
+      "question": "Where is the Art project publishing checklist?",
+      "expected_sources": ["Projects/Art.md"]
+    }
+  ]
+}

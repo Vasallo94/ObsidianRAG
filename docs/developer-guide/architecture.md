@@ -99,3 +99,28 @@ Hybrid retrieval currently keeps a small compatibility dependency on
 retrieval work should follow the migration plan in
 [LangChain Classic Migration Plan](langchain-classic-migration.md) and avoid
 adding more `langchain_classic` surface area.
+
+## Experimental v4 Vertical
+
+The optional v4 vertical validates a framework-independent storage boundary without changing the production v3 API:
+
+```mermaid
+flowchart LR
+    Vault[Markdown vault] --> Chunker[Existing v3 chunker]
+    Chunker --> Catalog[(SQLite catalog + FTS5)]
+    Chunker --> Vectors[(Embedded LanceDB)]
+    Query[Query] --> FTS[Lexical search]
+    Query --> Vector[Vector search]
+    FTS --> RRF[Reciprocal rank fusion]
+    Vector --> RRF
+    RRF --> Results[Ranked chunks]
+```
+
+- SQLite is authoritative for chunk text, source paths, lexical search, and index metadata.
+- LanceDB is a rebuildable vector index keyed by deterministic chunk IDs.
+- Every full build writes a new isolated revision, validates catalog/vector counts, and atomically switches `active.json`.
+- Previous revisions remain available for rollback.
+- The experiment reuses the current parser, chunker, and embedding providers so retrieval storage can be compared without changing every variable at once.
+- `obsidianrag evaluate --engine v3|v4` runs both implementations against the same expected-source dataset.
+
+The vertical deliberately excludes generation, reranking, incremental v4 updates, and plugin routing. Those move only after public evaluation demonstrates parity or improvement.

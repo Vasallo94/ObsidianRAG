@@ -195,3 +195,21 @@ class TestCLIHelp:
         result = runner.invoke(app, ["index", "--help"])
         assert result.exit_code == 0
         assert "--force" in result.stdout or "force" in result.stdout.lower()
+
+    def test_v4_commands_are_discoverable(self, runner):
+        result = runner.invoke(app, ["--help"])
+
+        assert result.exit_code == 0
+        assert "v4-index" in result.stdout
+        assert "v4-search" in result.stdout
+
+    def test_evaluate_rejects_unknown_engine(self, runner, mock_vault, tmp_path):
+        dataset = tmp_path / "questions.json"
+        dataset.write_text('{"cases":[{"question":"q","expected_sources":["note.md"]}]}')
+
+        result = runner.invoke(
+            app,
+            ["evaluate", str(dataset), "--vault", str(mock_vault), "--engine", "unknown"],
+        )
+
+        assert result.exit_code == 2

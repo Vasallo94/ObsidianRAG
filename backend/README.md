@@ -96,6 +96,19 @@ obsidianrag evaluate evaluation.json --vault /path/to/vault --reranker --output 
 
 The command reports source Recall@k and mean reciprocal rank (MRR).
 
+#### Experimental v4 Retrieval
+
+Install the optional embedded LanceDB backend, build an isolated index revision, and compare it with v3:
+
+```bash
+pip install 'obsidianrag[v4]'
+obsidianrag v4-index --vault /path/to/vault
+obsidianrag v4-search "deployment rollback" --vault /path/to/vault
+obsidianrag evaluate evaluation.json --vault /path/to/vault --engine v4 --k 10
+```
+
+Experimental indexes live under `.obsidianrag/v4`, do not modify the v3 Chroma index, and can be removed safely. Each full build creates a validated revision before atomically switching the active manifest.
+
 #### Ask Question (CLI)
 
 ```bash

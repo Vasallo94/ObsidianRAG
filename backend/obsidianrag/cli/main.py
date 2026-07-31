@@ -238,19 +238,78 @@ def ask(
             console.print(f"  {i}. {Path(source_path).name}")
 
 
+@app.command("v4-index")
+def v4_index(
+    vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
+):
+    """Build and atomically activate an experimental SQLite + LanceDB index."""
+    from obsidianrag.config import configure_from_vault
+    from obsidianrag.core.db_service import get_embeddings
+    from obsidianrag.v4 import build_index
+
+    vault_path = Path(get_vault_path(vault)).resolve()
+    configure_from_vault(str(vault_path))
+    try:
+        with console.status("[bold green]Building experimental v4 index..."):
+            result = build_index(vault_path, get_embeddings())
+    except RuntimeError as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(1) from error
+
+    console.print(
+        Panel.fit(
+            f"Revision: {result.revision}\nNotes: {result.notes}\nChunks: {result.chunks}",
+            title="Experimental v4 index ready",
+        )
+    )
+
+
+@app.command("v4-search")
+def v4_search(
+    query: str = typer.Argument(..., help="Query to retrieve from the experimental index"),
+    vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
+    k: int = typer.Option(10, "--k", min=1, help="Chunks to return"),
+):
+    """Search the active experimental index without calling an LLM."""
+    from obsidianrag.config import configure_from_vault
+    from obsidianrag.core.db_service import get_embeddings
+    from obsidianrag.v4 import ExperimentalRetriever
+
+    vault_path = Path(get_vault_path(vault)).resolve()
+    configure_from_vault(str(vault_path))
+    try:
+        retriever = ExperimentalRetriever(vault_path, get_embeddings())
+        try:
+            documents = retriever.invoke(query, k=k)
+        finally:
+            retriever.close()
+    except RuntimeError as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(1) from error
+
+    for rank, document in enumerate(documents, 1):
+        source = document.metadata.get("source", "Unknown")
+        score = document.metadata.get("score", 0.0)
+        console.print(f"{rank}. [cyan]{source}[/cyan] ({score:.6f})")
+
+
 @app.command()
 def evaluate(
     dataset: Path = typer.Argument(..., help="JSON dataset with questions and expected sources"),
     vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
     k: int = typer.Option(10, "--k", min=1, help="Unique source notes to evaluate"),
-    reranker: bool = typer.Option(False, "--reranker", help="Include the configured reranker"),
+    reranker: bool = typer.Option(False, "--reranker", help="Include the v3 reranker"),
+    engine: Literal["v3", "v4"] = typer.Option("v3", "--engine", help="Retrieval engine: v3 or v4"),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write JSON results"),
 ):
     """Evaluate retrieval against expected source notes without calling an LLM."""
     from obsidianrag.config import configure_from_vault, get_settings
-    from obsidianrag.core.db_service import load_or_create_db
-    from obsidianrag.core.qa_service import create_retriever_with_reranker
     from obsidianrag.evaluation import evaluate_retrieval, load_dataset
+
+    if engine == "v4" and reranker:
+        raise typer.BadParameter(
+            "the experimental v4 engine does not yet rerank", param_hint="--reranker"
+        )
 
     vault_path = Path(get_vault_path(vault)).resolve()
     try:
@@ -261,35 +320,70 @@ def evaluate(
 
     configure_from_vault(str(vault_path))
     settings = get_settings()
-    settings.use_reranker = reranker
-    settings.retrieval_k = max(settings.retrieval_k, k)
-    settings.bm25_k = max(settings.bm25_k, k)
-    if reranker:
-        settings.reranker_top_n = max(settings.reranker_top_n, k)
 
-    with console.status("[bold green]Loading index and evaluating retrieval..."):
-        db = load_or_create_db(str(vault_path))
-        if db is None:
-            console.print("[red]Could not load the vault index.[/red]")
-            raise typer.Exit(1)
-        retriever = create_retriever_with_reranker(db)
-        result = evaluate_retrieval(retriever.invoke, cases, vault_path, k=k)
+    with console.status(f"[bold green]Evaluating {engine} retrieval..."):
+        if engine == "v4":
+            from obsidianrag.core.db_service import get_embeddings
+            from obsidianrag.v4 import ExperimentalRetriever
+
+            try:
+                retriever = ExperimentalRetriever(vault_path, get_embeddings())
+                try:
+                    result = evaluate_retrieval(retriever.invoke, cases, vault_path, k=k)
+                finally:
+                    retriever.close()
+            except RuntimeError as error:
+                console.print(f"[red]{error}[/red]")
+                raise typer.Exit(1) from error
+        else:
+            from obsidianrag.core.db_service import load_or_create_db
+            from obsidianrag.core.qa_service import create_retriever_with_reranker
+
+            settings.use_reranker = reranker
+            settings.retrieval_k = max(settings.retrieval_k, k)
+            settings.bm25_k = max(settings.bm25_k, k)
+            if reranker:
+                settings.reranker_top_n = max(settings.reranker_top_n, k)
+            db = load_or_create_db(str(vault_path))
+            if db is None:
+                console.print("[red]Could not load the vault index.[/red]")
+                raise typer.Exit(1)
+            retriever = create_retriever_with_reranker(db)
+            result = evaluate_retrieval(retriever.invoke, cases, vault_path, k=k)
 
     table = Table(title=f"Retrieval Evaluation (k={k})")
     table.add_column("Question")
     table.add_column("Recall", justify="right")
     table.add_column("Reciprocal rank", justify="right")
+    table.add_column("Latency", justify="right")
     for case in result.cases:
-        table.add_row(case.question, f"{case.recall:.3f}", f"{case.reciprocal_rank:.3f}")
+        table.add_row(
+            case.question,
+            f"{case.recall:.3f}",
+            f"{case.reciprocal_rank:.3f}",
+            f"{case.latency_seconds * 1000:.1f} ms",
+        )
     console.print(table)
     console.print(f"Recall@{k}: [bold]{result.recall_at_k:.3f}[/bold]")
     console.print(f"MRR: [bold]{result.mean_reciprocal_rank:.3f}[/bold]")
+    console.print(f"Mean latency: [bold]{result.mean_latency_seconds * 1000:.1f} ms[/bold]")
+    console.print(f"p95 latency: [bold]{result.p95_latency_seconds * 1000:.1f} ms[/bold]")
 
     if output:
         import json
 
+        embedding_model = (
+            settings.ollama_embedding_model
+            if settings.embedding_provider == "ollama"
+            else settings.embedding_model
+        )
+        payload = {
+            "engine": engine,
+            "embedding_signature": f"{settings.embedding_provider}:{embedding_model}",
+            **result.to_dict(),
+        }
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
+        output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         console.print(f"Results written to {output}")
 
 

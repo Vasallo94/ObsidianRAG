@@ -66,6 +66,8 @@ def test_evaluate_retrieval_deduplicates_chunks_and_computes_metrics(tmp_path):
     assert result.cases[1].recall == 0.0
     assert result.recall_at_k == 0.5
     assert result.mean_reciprocal_rank == 0.25
+    assert result.mean_latency_seconds >= 0
+    assert result.p95_latency_seconds >= result.mean_latency_seconds
 
 
 def test_evaluate_retrieval_rejects_invalid_k(tmp_path):
