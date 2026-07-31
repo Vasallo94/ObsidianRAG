@@ -52,16 +52,18 @@ def test_load_dataset_parses_graded_relevance(tmp_path):
                             {"source": "Primary.md", "grade": 3},
                             {"source": "Related.md", "grade": 1},
                         ],
+                        "supporting_evidence": [
+                            {"source": "Primary.md", "quote": "required sentence"}
+                        ],
                     }
                 ]
             }
         )
     )
 
-    assert load_dataset(dataset)[0].relevance_grades == (
-        ("Primary.md", 3.0),
-        ("Related.md", 1.0),
-    )
+    case = load_dataset(dataset)[0]
+    assert case.relevance_grades == (("Primary.md", 3.0), ("Related.md", 1.0))
+    assert case.supporting_evidence == (("Primary.md", "required sentence"),)
 
 
 def test_load_dataset_rejects_empty_cases(tmp_path):
@@ -76,7 +78,11 @@ def test_evaluate_retrieval_deduplicates_chunks_and_computes_metrics(tmp_path):
     vault = tmp_path / "vault"
     vault.mkdir()
     cases = (
-        EvaluationCase("question one", ("Notes/Expected.md",)),
+        EvaluationCase(
+            "question one",
+            ("Notes/Expected.md",),
+            supporting_evidence=(("Notes/Expected.md", "b"),),
+        ),
         EvaluationCase("question two", ("Missing.md",)),
     )
 
@@ -105,12 +111,27 @@ def test_evaluate_retrieval_deduplicates_chunks_and_computes_metrics(tmp_path):
     assert result.mean_reciprocal_rank == 0.25
     assert result.mean_average_precision_at_k == 0.25
     assert result.ndcg_at_k == pytest.approx(0.3154648768)
+    assert result.evidence_recall_at_k == 1.0
     for metric, (low, high) in result.confidence_intervals_95.items():
         value = getattr(result, metric)
         assert low <= value <= high
     assert result.mean_latency_seconds >= 0
     assert result.p50_latency_seconds >= 0
     assert result.p95_latency_seconds >= result.p50_latency_seconds
+
+
+def test_evidence_recall_detects_wrong_chunk_from_correct_source(tmp_path):
+    case = EvaluationCase(
+        "question",
+        ("Expected.md",),
+        supporting_evidence=(("Expected.md", "specific supporting sentence"),),
+    )
+    documents = [Document(page_content="wrong chunk", metadata={"source": "Expected.md"})]
+
+    result = evaluate_retrieval(lambda _: documents, (case,), tmp_path, k=1)
+
+    assert result.recall_at_k == 1.0
+    assert result.evidence_recall_at_k == 0.0
 
 
 def test_evaluate_retrieval_uses_graded_relevance_for_ndcg(tmp_path):

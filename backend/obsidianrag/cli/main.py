@@ -269,16 +269,24 @@ def v4_search(
     query: str = typer.Argument(..., help="Query to retrieve from the experimental index"),
     vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
     k: int = typer.Option(10, "--k", min=1, help="Chunks to return"),
+    lexical_only: bool = typer.Option(
+        False, "--lexical-only", help="Use SQLite FTS5 without an embedding model"
+    ),
 ):
     """Search the active experimental index without calling an LLM."""
     from obsidianrag.config import configure_from_vault
-    from obsidianrag.core.db_service import get_embeddings
-    from obsidianrag.v4 import ExperimentalRetriever
+    from obsidianrag.v4 import ExperimentalLexicalRetriever, ExperimentalRetriever
 
     vault_path = Path(get_vault_path(vault)).resolve()
     configure_from_vault(str(vault_path))
     try:
-        retriever = ExperimentalRetriever(vault_path, get_embeddings())
+        retriever: ExperimentalLexicalRetriever | ExperimentalRetriever
+        if lexical_only:
+            retriever = ExperimentalLexicalRetriever(vault_path)
+        else:
+            from obsidianrag.core.db_service import get_embeddings
+
+            retriever = ExperimentalRetriever(vault_path, get_embeddings())
         try:
             documents = retriever.invoke(query, k=k)
         finally:
@@ -299,17 +307,17 @@ def evaluate(
     vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
     k: int = typer.Option(10, "--k", min=1, help="Unique source notes to evaluate"),
     reranker: bool = typer.Option(False, "--reranker", help="Include the v3 reranker"),
-    engine: Literal["v3", "v4"] = typer.Option("v3", "--engine", help="Retrieval engine: v3 or v4"),
+    engine: Literal["v3", "v4", "v4-fts"] = typer.Option(
+        "v3", "--engine", help="Retrieval engine: v3, v4, or embedding-free v4-fts"
+    ),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write JSON results"),
 ):
     """Evaluate retrieval against expected source notes without calling an LLM."""
     from obsidianrag.config import configure_from_vault, get_settings
     from obsidianrag.evaluation import evaluate_retrieval, load_dataset
 
-    if engine == "v4" and reranker:
-        raise typer.BadParameter(
-            "the experimental v4 engine does not yet rerank", param_hint="--reranker"
-        )
+    if engine != "v3" and reranker:
+        raise typer.BadParameter("the v4 engines do not yet rerank", param_hint="--reranker")
 
     vault_path = Path(get_vault_path(vault)).resolve()
     try:
@@ -322,14 +330,22 @@ def evaluate(
     settings = get_settings()
 
     with console.status(f"[bold green]Evaluating {engine} retrieval..."):
-        if engine == "v4":
-            from obsidianrag.core.db_service import get_embeddings
-            from obsidianrag.v4 import ExperimentalRetriever
+        if engine in {"v4", "v4-fts"}:
+            from functools import partial
+
+            from obsidianrag.v4 import ExperimentalLexicalRetriever, ExperimentalRetriever
 
             try:
-                retriever = ExperimentalRetriever(vault_path, get_embeddings())
+                retriever: ExperimentalLexicalRetriever | ExperimentalRetriever
+                if engine == "v4-fts":
+                    retriever = ExperimentalLexicalRetriever(vault_path)
+                else:
+                    from obsidianrag.core.db_service import get_embeddings
+
+                    retriever = ExperimentalRetriever(vault_path, get_embeddings())
                 try:
-                    result = evaluate_retrieval(retriever.invoke, cases, vault_path, k=k)
+                    retrieve = partial(retriever.invoke, k=max(k * 5, 25))
+                    result = evaluate_retrieval(retrieve, cases, vault_path, k=k)
                 finally:
                     retriever.close()
             except RuntimeError as error:
@@ -364,14 +380,22 @@ def evaluate(
             f"{case.latency_seconds * 1000:.1f} ms",
         )
     console.print(table)
-    metrics = (
+    metrics = [
         (f"Precision@{k}", "precision_at_k", result.precision_at_k),
         (f"Recall@{k}", "recall_at_k", result.recall_at_k),
         (f"Hit rate@{k}", "hit_rate_at_k", result.hit_rate_at_k),
         ("MRR", "mean_reciprocal_rank", result.mean_reciprocal_rank),
         (f"MAP@{k}", "mean_average_precision_at_k", result.mean_average_precision_at_k),
         (f"nDCG@{k}", "ndcg_at_k", result.ndcg_at_k),
-    )
+    ]
+    if result.evidence_recall_at_k is not None:
+        metrics.append(
+            (
+                f"Evidence recall@{k}",
+                "evidence_recall_at_k",
+                result.evidence_recall_at_k,
+            )
+        )
     for label, key, value in metrics:
         low, high = result.confidence_intervals_95[key]
         console.print(f"{label}: [bold]{value:.3f}[/bold] (95% CI {low:.3f}–{high:.3f})")
@@ -387,9 +411,14 @@ def evaluate(
             if settings.embedding_provider == "ollama"
             else settings.embedding_model
         )
+        signature = (
+            "none:sqlite-fts5"
+            if engine == "v4-fts"
+            else f"{settings.embedding_provider}:{embedding_model}"
+        )
         payload = {
             "engine": engine,
-            "embedding_signature": f"{settings.embedding_provider}:{embedding_model}",
+            "embedding_signature": signature,
             **result.to_dict(),
         }
         output.parent.mkdir(parents=True, exist_ok=True)

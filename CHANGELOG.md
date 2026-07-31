@@ -9,10 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Versioned `/capabilities` endpoint for plugin/backend compatibility checks
-- Retrieval evaluation CLI with Precision@k, Recall@k, hit rate, MRR, MAP@k, graded nDCG@k, deterministic 95% bootstrap confidence intervals, and latency percentiles
+- Retrieval evaluation CLI with Precision@k, Recall@k, hit rate, MRR, MAP@k, graded nDCG@k, chunk-level evidence recall, deterministic 95% bootstrap confidence intervals, and latency percentiles
 - Public multilingual retrieval fixture for reproducible smoke benchmarks
 - Optional experimental v4 index using SQLite FTS5 and embedded LanceDB
 - `v4-index` and `v4-search` commands plus v3/v4 evaluation selection
+- Embedding-free `v4-fts` evaluation and `v4-search --lexical-only` modes
 - Offline `compare-evaluations` command with paired bootstrap metric deltas
 - Regression tests for incremental index updates, process ownership, and secret handling
 

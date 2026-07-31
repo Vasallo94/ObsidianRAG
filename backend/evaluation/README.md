@@ -15,11 +15,12 @@ Run the experimental v4 engine:
 pip install 'obsidianrag[v4]'
 obsidianrag v4-index --vault evaluation/sample-vault
 obsidianrag evaluate evaluation/questions.json --vault evaluation/sample-vault --engine v4 --k 5
+obsidianrag evaluate evaluation/questions.json --vault evaluation/sample-vault --engine v4-fts --k 5
 ```
 
 The fixture covers English and Spanish questions, exact technical terms, aliases, headings, wikilinks, and similarly named notes. It is a smoke benchmark, not evidence of production retrieval quality. Larger community-contributed datasets should follow the same schema without including private notes.
 
-The evaluator reports source-level Precision@k, Recall@k, hit rate, MRR, MAP@k, nDCG@k, deterministic 95% bootstrap confidence intervals, and mean/p50/p95 latency. Cases may include graded relevance:
+The evaluator reports source-level Precision@k, Recall@k, hit rate, MRR, MAP@k, nDCG@k, evidence recall, deterministic 95% bootstrap confidence intervals, and mean/p50/p95 latency. Evidence recall checks that the selected chunk contains each declared `supporting_evidence` quote, preventing a correct note with the wrong chunk from counting as fully grounded. Cases may include graded relevance:
 
 ```json
 {

@@ -13,6 +13,46 @@ from obsidianrag.v4.index import active_revision, embedding_signature, require_l
 RRF_CONSTANT = 60
 
 
+class ExperimentalLexicalRetriever:
+    """Retrieve chunks from the authoritative SQLite FTS5 catalog without embeddings."""
+
+    def __init__(self, vault_path: Path):
+        self.revision_path = active_revision(vault_path.resolve())
+        self.connection = sqlite3.connect(
+            f"file:{self.revision_path / 'catalog.sqlite3'}?mode=ro", uri=True
+        )
+
+    def close(self) -> None:
+        self.connection.close()
+
+    def invoke(self, query: str, k: int = 10) -> list[Document]:
+        if not query.strip():
+            return []
+        terms = re.findall(r"\w+", query, flags=re.UNICODE)
+        if not terms:
+            return []
+        expression = " OR ".join(f'"{term}"' for term in terms)
+        rows = self.connection.execute(
+            "SELECT c.chunk_id, c.note_path, c.ordinal, c.text, bm25(chunks_fts) "
+            "FROM chunks_fts JOIN chunks c ON c.chunk_id = chunks_fts.chunk_id "
+            "WHERE chunks_fts MATCH ? ORDER BY bm25(chunks_fts) LIMIT ?",
+            (expression, k),
+        )
+        return [
+            Document(
+                page_content=row[3],
+                metadata={
+                    "chunk_id": row[0],
+                    "source": row[1],
+                    "ordinal": row[2],
+                    "score": -row[4],
+                    "retrieval_type": "lexical",
+                },
+            )
+            for row in rows
+        ]
+
+
 class ExperimentalRetriever:
     """Retrieve chunks from the active experimental index revision."""
 

@@ -204,6 +204,12 @@ class TestCLIHelp:
         assert "v4-search" in result.stdout
         assert "compare-evaluations" in result.stdout
 
+    def test_v4_search_help_exposes_embedding_free_mode(self, runner):
+        result = runner.invoke(app, ["v4-search", "--help"])
+
+        assert result.exit_code == 0
+        assert "--lexical-only" in result.stdout
+
     def test_evaluate_rejects_unknown_engine(self, runner, mock_vault, tmp_path):
         dataset = tmp_path / "questions.json"
         dataset.write_text('{"cases":[{"question":"q","expected_sources":["note.md"]}]}')

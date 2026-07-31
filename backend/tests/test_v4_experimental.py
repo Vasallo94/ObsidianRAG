@@ -9,7 +9,7 @@ from langchain_core.embeddings import Embeddings
 pytest.importorskip("lancedb")
 
 from obsidianrag.config import configure_from_vault
-from obsidianrag.v4 import ExperimentalRetriever, build_index
+from obsidianrag.v4 import ExperimentalLexicalRetriever, ExperimentalRetriever, build_index
 from obsidianrag.v4.index import active_revision
 
 
@@ -48,12 +48,20 @@ def test_build_and_search_experimental_index(tmp_path):
 
     assert result.notes == 6
     assert result.chunks >= result.notes
+    lexical = ExperimentalLexicalRetriever(vault)
+    try:
+        lexical_documents = lexical.invoke("What does ORG-429 mean?", k=3)
+    finally:
+        lexical.close()
+
     assert documents[0].metadata["source"] == "Reference/Error Codes.md"
     assert documents[0].metadata["retrieval_type"] in {
         "lexical",
         "lexical+vector",
         "vector",
     }
+    assert lexical_documents[0].metadata["source"] == "Reference/Error Codes.md"
+    assert lexical_documents[0].metadata["retrieval_type"] == "lexical"
 
 
 def test_active_manifest_cannot_escape_revision_directory(tmp_path):

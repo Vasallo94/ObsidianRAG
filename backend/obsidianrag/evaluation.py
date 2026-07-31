@@ -17,6 +17,7 @@ class EvaluationCase:
     question: str
     expected_sources: tuple[str, ...]
     relevance_grades: tuple[tuple[str, float], ...] = ()
+    supporting_evidence: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,7 @@ class CaseResult:
     reciprocal_rank: float
     average_precision: float
     ndcg: float
+    evidence_recall: float | None
     latency_seconds: float
 
 
@@ -42,6 +44,7 @@ class EvaluationResult:
     mean_reciprocal_rank: float
     mean_average_precision_at_k: float
     ndcg_at_k: float
+    evidence_recall_at_k: float | None
     mean_latency_seconds: float
     p50_latency_seconds: float
     p95_latency_seconds: float
@@ -90,11 +93,28 @@ def load_dataset(path: Path) -> tuple[EvaluationCase, ...]:
             if source not in expected_sources:
                 raise ValueError(f"Case {index} grades a source not listed in expected_sources")
             grades.append((source, float(grade["grade"])))
+        raw_evidence = raw.get("supporting_evidence", [])
+        if not isinstance(raw_evidence, list):
+            raise ValueError(f"Case {index} supporting_evidence must be a list")
+        evidence = []
+        for item in raw_evidence:
+            if (
+                not isinstance(item, dict)
+                or not isinstance(item.get("source"), str)
+                or not isinstance(item.get("quote"), str)
+                or not item["quote"]
+            ):
+                raise ValueError(f"Case {index} has invalid supporting evidence")
+            source = _normalize_relative(item["source"])
+            if source not in expected_sources:
+                raise ValueError(f"Case {index} evidence source is not expected")
+            evidence.append((source, item["quote"]))
         cases.append(
             EvaluationCase(
                 question=question.strip(),
                 expected_sources=expected_sources,
                 relevance_grades=tuple(grades),
+                supporting_evidence=tuple(evidence),
             )
         )
 
@@ -114,7 +134,8 @@ def evaluate_retrieval(
     results = []
     for case in cases:
         started = time.perf_counter()
-        sources = _unique_sources(retrieve(case.question), vault_path)[:k]
+        documents = _unique_documents_by_source(retrieve(case.question), vault_path)[:k]
+        sources = [_document_source(document, vault_path) for document in documents]
         latency = time.perf_counter() - started
         grades = {source: 1.0 for source in case.expected_sources}
         grades.update(dict(case.relevance_grades))
@@ -132,6 +153,16 @@ def evaluate_retrieval(
         ideal_dcg = sum(
             (2**gain - 1) / math.log2(rank + 1) for rank, gain in enumerate(ideal_gains, 1)
         )
+        evidence_hits = sum(
+            any(
+                _document_source(document, vault_path) == source and quote in document.page_content
+                for document in documents
+            )
+            for source, quote in case.supporting_evidence
+        )
+        evidence_recall = (
+            evidence_hits / len(case.supporting_evidence) if case.supporting_evidence else None
+        )
         results.append(
             CaseResult(
                 question=case.question,
@@ -143,12 +174,16 @@ def evaluate_retrieval(
                 reciprocal_rank=1.0 / first_rank if first_rank else 0.0,
                 average_precision=precision_sum / min(len(grades), k),
                 ndcg=dcg / ideal_dcg if ideal_dcg else 0.0,
+                evidence_recall=evidence_recall,
                 latency_seconds=latency,
             )
         )
 
     latencies = sorted(result.latency_seconds for result in results)
     p95_index = max(0, math.ceil(len(latencies) * 0.95) - 1)
+    evidence_values = [
+        result.evidence_recall for result in results if result.evidence_recall is not None
+    ]
     metric_values = {
         "precision_at_k": [result.precision for result in results],
         "recall_at_k": [result.recall for result in results],
@@ -157,6 +192,8 @@ def evaluate_retrieval(
         "mean_average_precision_at_k": [result.average_precision for result in results],
         "ndcg_at_k": [result.ndcg for result in results],
     }
+    if evidence_values:
+        metric_values["evidence_recall_at_k"] = evidence_values
     return EvaluationResult(
         cases=tuple(results),
         precision_at_k=sum(result.precision for result in results) / len(results),
@@ -166,6 +203,7 @@ def evaluate_retrieval(
         mean_average_precision_at_k=sum(result.average_precision for result in results)
         / len(results),
         ndcg_at_k=sum(result.ndcg for result in results) / len(results),
+        evidence_recall_at_k=(statistics.fmean(evidence_values) if evidence_values else None),
         mean_latency_seconds=sum(latencies) / len(latencies),
         p50_latency_seconds=statistics.median(latencies),
         p95_latency_seconds=latencies[p95_index],
@@ -191,6 +229,12 @@ def compare_evaluation_results(baseline: dict, candidate: dict, *, samples: int 
     candidate_cases = _cases_by_question(candidate)
     if baseline_cases.keys() != candidate_cases.keys():
         raise ValueError("Evaluation results must contain the same questions")
+    if all(
+        case.get("evidence_recall") is not None
+        and candidate_cases[question].get("evidence_recall") is not None
+        for question, case in baseline_cases.items()
+    ):
+        fields["evidence_recall_at_k"] = "evidence_recall"
 
     metrics = {}
     for seed, (name, field) in enumerate(fields.items()):
@@ -238,28 +282,28 @@ def _bootstrap_mean_ci(
     return means[math.floor(0.025 * (samples - 1))], means[math.ceil(0.975 * (samples - 1))]
 
 
-def _unique_sources(documents: Iterable[Document], vault_path: Path) -> list[str]:
-    sources = []
+def _unique_documents_by_source(documents: Iterable[Document], vault_path: Path) -> list[Document]:
+    unique = []
     seen = set()
-    vault = vault_path.resolve()
-
     for document in documents:
-        source = str(document.metadata.get("source", ""))
-        if not source:
-            continue
-        path = Path(source)
-        if path.is_absolute():
-            try:
-                source = path.resolve().relative_to(vault).as_posix()
-            except ValueError:
-                source = path.as_posix()
-        else:
-            source = _normalize_relative(source)
-        if source not in seen:
+        source = _document_source(document, vault_path)
+        if source and source not in seen:
             seen.add(source)
-            sources.append(source)
+            unique.append(document)
+    return unique
 
-    return sources
+
+def _document_source(document: Document, vault_path: Path) -> str:
+    source = str(document.metadata.get("source", ""))
+    if not source:
+        return ""
+    path = Path(source)
+    if path.is_absolute():
+        try:
+            return path.resolve().relative_to(vault_path.resolve()).as_posix()
+        except ValueError:
+            return path.as_posix()
+    return _normalize_relative(source)
 
 
 def _normalize_relative(source: str) -> str:

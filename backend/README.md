@@ -94,7 +94,7 @@ obsidianrag evaluate evaluation.json --vault /path/to/vault --k 10
 obsidianrag evaluate evaluation.json --vault /path/to/vault --reranker --output results.json
 ```
 
-The command reports source Precision@k, Recall@k, hit rate, MRR, MAP@k, nDCG@k, deterministic 95% bootstrap confidence intervals, and mean/p50/p95 retrieval latency. Add optional `relevance_grades` entries (`source` plus a positive numeric `grade`) to dataset cases for graded nDCG; expected sources without an explicit grade default to relevance 1.
+The command reports source Precision@k, Recall@k, hit rate, MRR, MAP@k, nDCG@k, evidence recall, deterministic 95% bootstrap confidence intervals, and mean/p50/p95 retrieval latency. Add optional `relevance_grades` entries (`source` plus a positive numeric `grade`) to dataset cases for graded nDCG; expected sources without an explicit grade default to relevance 1. Cases with `supporting_evidence` also measure whether the retrieved chunk contains the cited ground-truth passage, rather than merely matching the correct note.
 
 Compare two saved runs without loading an embedding model:
 
@@ -112,10 +112,12 @@ Install the optional embedded LanceDB backend, build an isolated index revision,
 pip install 'obsidianrag[v4]'
 obsidianrag v4-index --vault /path/to/vault
 obsidianrag v4-search "deployment rollback" --vault /path/to/vault
+obsidianrag v4-search "deployment rollback" --vault /path/to/vault --lexical-only
 obsidianrag evaluate evaluation.json --vault /path/to/vault --engine v4 --k 10
+obsidianrag evaluate evaluation.json --vault /path/to/vault --engine v4-fts --k 10
 ```
 
-Experimental indexes live under `.obsidianrag/v4`, do not modify the v3 Chroma index, and can be removed safely. Each full build creates a validated revision before atomically switching the active manifest.
+Experimental indexes live under `.obsidianrag/v4`, do not modify the v3 Chroma index, and can be removed safely. Each full build creates a validated revision before atomically switching the active manifest. The `v4-fts` engine and `--lexical-only` search use the SQLite catalog without loading an embedding model; building or refreshing the index still requires embeddings.
 
 #### Ask Question (CLI)
 
