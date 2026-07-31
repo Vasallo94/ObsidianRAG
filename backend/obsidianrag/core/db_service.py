@@ -331,11 +331,11 @@ def load_or_create_db(
     embeddings = get_embeddings()
     persist_directory = settings.db_path
 
-    if (
-        os.path.exists(persist_directory)
-        and not force_rebuild
-        and settings.enable_incremental_indexing
-    ):
+    if os.path.exists(persist_directory) and not force_rebuild:
+        if not settings.enable_incremental_indexing:
+            logger.info("Incremental indexing disabled; loading existing database")
+            return Chroma(persist_directory=persist_directory, embedding_function=embeddings)
+
         logger.info("Checking for changes for incremental update")
         tracker = FileMetadataTracker(settings.metadata_file)
 

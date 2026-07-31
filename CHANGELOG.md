@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Incremental updates verify new chunks before deleting the previous valid revision
 - Incremental reads now reject paths outside the configured vault
 - Health responses now include the backend version expected by the plugin
+- Disabling incremental indexing now loads an existing database instead of rebuilding it
 
 ### Security
 - The plugin no longer kills arbitrary processes listening on its configured port

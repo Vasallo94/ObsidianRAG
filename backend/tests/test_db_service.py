@@ -12,6 +12,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from obsidianrag.core.db_service import (
     extract_obsidian_links,
     load_documents_from_paths,
+    load_or_create_db,
     update_db_incrementally,
 )
 
@@ -104,6 +105,32 @@ class TestChromaIntegration:
         persist_dir.mkdir(parents=True, exist_ok=True)
 
         assert persist_dir.parent.name == ".obsidianrag"
+
+    @patch("obsidianrag.core.db_service.load_all_obsidian_documents")
+    @patch("obsidianrag.core.db_service.Chroma")
+    @patch("obsidianrag.core.db_service.get_embeddings")
+    @patch("obsidianrag.core.db_service.get_settings")
+    def test_disabled_incremental_mode_loads_existing_database(
+        self, mock_get_settings, mock_get_embeddings, mock_chroma, mock_load_documents, tmp_path
+    ):
+        persist_dir = tmp_path / "db"
+        persist_dir.mkdir()
+        settings = SimpleNamespace(
+            obsidian_path=str(tmp_path),
+            db_path=str(persist_dir),
+            enable_incremental_indexing=False,
+        )
+        mock_get_settings.return_value = settings
+        expected = MagicMock()
+        mock_chroma.return_value = expected
+
+        result = load_or_create_db(str(tmp_path))
+
+        assert result is expected
+        mock_chroma.assert_called_once_with(
+            persist_directory=str(persist_dir), embedding_function=mock_get_embeddings.return_value
+        )
+        mock_load_documents.assert_not_called()
 
 
 class TestLinkExtraction:
