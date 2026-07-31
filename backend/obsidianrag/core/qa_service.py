@@ -1,8 +1,8 @@
 """QA Service with hybrid search and reranking"""
 
 import logging
-from typing import List, cast
 
+import httpx
 from langchain_classic.retrievers import (
     ContextualCompressionRetriever,
     EnsembleRetriever,
@@ -39,9 +39,7 @@ def verify_ollama_available():
     """Verify that Ollama is running and accessible"""
     settings = get_settings()
     try:
-        import requests
-
-        response = requests.get(f"{settings.ollama_base_url}/api/tags", timeout=2)
+        response = httpx.get(f"{settings.ollama_base_url}/api/tags", timeout=2)
         response.raise_for_status()
         logger.info("Ollama is available")
     except Exception as e:
@@ -130,21 +128,3 @@ def create_retriever_with_reranker(db):
     else:
         logger.info("Reranker disabled in configuration")
         return ensemble_retriever
-
-
-def retrieve_with_links(retriever, query: str) -> List[Document]:
-    """Retrieve documents and their linked references (GraphRAG)"""
-    docs = retriever.invoke(query)
-
-    linked_sources = set()
-    for doc in docs:
-        links_str = doc.metadata.get("links", "")
-        if links_str:
-            for link in links_str.split(","):
-                if link.strip():
-                    linked_sources.add(link.strip())
-
-    if linked_sources:
-        logger.info("GraphRAG: Found %d linked notes", len(linked_sources))
-
-    return cast(List[Document], docs)

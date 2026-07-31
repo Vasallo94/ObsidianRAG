@@ -66,7 +66,7 @@ Replace classic retriever orchestration with explicit components:
 
 5. Retrieval interface
    - Expose a small internal function or class with `.retrieve(query)`.
-   - Keep `retrieve_with_links()` compatible with returned `Document` objects.
+   - Keep linked-document expansion compatible with returned `Document` objects.
 
 ## Migration Steps
 

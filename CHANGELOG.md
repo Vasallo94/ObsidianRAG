@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Replaced the plugin's `builtin-modules` dependency with Node's native `builtinModules` API
+- Reused the existing HTTPX dependency for Ollama availability checks
+- Simplified duplicated development and CI configuration
+
+### Removed
+- Generated plugin bundle from version control; releases continue to build it automatically
+- Duplicate manifests and backend configuration
+- Unused direct and plugin build dependencies
+- Dead `retrieve_with_links` helper
+
 ## [3.0.3] - 2026-05-11
 
 ### Added

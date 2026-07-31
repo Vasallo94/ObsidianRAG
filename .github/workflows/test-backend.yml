@@ -39,9 +39,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: |
-          uv sync --dev
-          uv pip install pytest pytest-cov pytest-asyncio
+        run: uv sync --dev
 
       - name: Run linting
         run: |
