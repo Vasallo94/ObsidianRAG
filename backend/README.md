@@ -104,6 +104,19 @@ obsidianrag compare-evaluations v3-results.json v4-results.json --output compari
 
 The comparison pairs cases by question and reports baseline, candidate, delta, paired 95% bootstrap interval, and improved/regressed query counts for every retrieval metric.
 
+Evaluate grounded answers through any external JSON stdin/stdout agent command. This uses SQLite FTS5 for retrieval and does not load an embedding model:
+
+```bash
+uv run obsidianrag evaluate-agent private-ground-truth.json \
+  --vault /path/to/vault \
+  --generator-command "python -m obsidianrag.pi_agent_adapter" \
+  --judge-command "python -m obsidianrag.pi_agent_adapter" \
+  --allow-private-data \
+  --output agent-results.json
+```
+
+`--allow-private-data` is mandatory because retrieved note chunks are passed to the external commands, which may call a remote provider. The bundled Pi adapter defaults to `openai-codex/gpt-5.6-luna`; override it with `OBSIDIANRAG_PI_MODEL`.
+
 #### Experimental v4 Retrieval
 
 Install the optional embedded LanceDB backend, build an isolated index revision, and compare it with v3:

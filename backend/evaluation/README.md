@@ -36,3 +36,5 @@ The evaluator reports source-level Precision@k, Recall@k, hit rate, MRR, MAP@k, 
 Sources without an explicit grade use binary relevance 1.
 
 Saved runs can be compared offline with `obsidianrag compare-evaluations baseline.json candidate.json`. Cases are paired by question, and the command reports metric deltas with paired 95% bootstrap intervals.
+
+`obsidianrag evaluate-agent` sends FTS5-retrieved chunks to external JSON stdin/stdout generator and judge commands, then reports source/evidence recall, required-fact coverage, citation precision/recall, correctness, faithfulness, and answer relevance with confidence intervals. It requires explicit `--allow-private-data` confirmation because external commands may use remote providers. `python -m obsidianrag.pi_agent_adapter` is an optional Pi/Luna adapter for this protocol.

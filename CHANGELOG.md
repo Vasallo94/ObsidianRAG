@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `v4-index` and `v4-search` commands plus v3/v4 evaluation selection
 - Embedding-free `v4-fts` evaluation and `v4-search --lexical-only` modes
 - Offline `compare-evaluations` command with paired bootstrap metric deltas
+- External JSON agent evaluation with FTS5 retrieval, grounded answer metrics, and explicit private-data confirmation
+- Optional Pi/Luna adapter for remote generation and judging without local inference
 - Regression tests for incremental index updates, process ownership, and secret handling
 
 ### Changed

@@ -210,6 +210,25 @@ class TestCLIHelp:
         assert result.exit_code == 0
         assert "--lexical-only" in result.stdout
 
+    def test_external_agent_evaluation_requires_private_data_confirmation(self, runner, tmp_path):
+        dataset = tmp_path / "private.json"
+        dataset.write_text('{"cases":[{}]}')
+
+        result = runner.invoke(
+            app,
+            [
+                "evaluate-agent",
+                str(dataset),
+                "--generator-command",
+                "generator",
+                "--judge-command",
+                "judge",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "--allow-private-data" in result.stdout
+
     def test_evaluate_rejects_unknown_engine(self, runner, mock_vault, tmp_path):
         dataset = tmp_path / "questions.json"
         dataset.write_text('{"cases":[{"question":"q","expected_sources":["note.md"]}]}')

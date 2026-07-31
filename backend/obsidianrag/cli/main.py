@@ -426,6 +426,68 @@ def evaluate(
         console.print(f"Results written to {output}")
 
 
+@app.command("evaluate-agent")
+def evaluate_agent(
+    dataset: Path = typer.Argument(..., help="Private ground-truth dataset JSON"),
+    generator_command: str = typer.Option(..., "--generator-command", help="JSON agent command"),
+    judge_command: str = typer.Option(..., "--judge-command", help="JSON judge command"),
+    vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
+    k: int = typer.Option(5, "--k", min=1, help="Unique FTS5 source chunks per question"),
+    batch_size: int = typer.Option(6, "--batch-size", min=1, help="Cases per agent call"),
+    timeout: int = typer.Option(300, "--timeout", min=1, help="Seconds per agent call"),
+    allow_private_data: bool = typer.Option(
+        False,
+        "--allow-private-data",
+        help="Confirm that note chunks may be sent to the external commands",
+    ),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write result JSON"),
+):
+    """Evaluate FTS5-grounded answers with external JSON generator and judge commands."""
+    import json
+
+    from obsidianrag.agent_evaluation import evaluate_with_external_agent
+    from obsidianrag.v4 import ExperimentalLexicalRetriever
+
+    if not allow_private_data:
+        console.print("[red]Pass --allow-private-data to send note chunks externally.[/red]")
+        raise typer.Exit(2)
+    try:
+        raw = json.loads(dataset.read_text(encoding="utf-8"))
+        raw_cases = raw.get("cases") if isinstance(raw, dict) else None
+        if not isinstance(raw_cases, list) or not raw_cases:
+            raise ValueError("Dataset must contain a non-empty cases list")
+        retriever = ExperimentalLexicalRetriever(Path(get_vault_path(vault)).resolve())
+        try:
+            result = evaluate_with_external_agent(
+                raw_cases,
+                retriever,
+                generator_command=generator_command,
+                judge_command=judge_command,
+                k=k,
+                batch_size=batch_size,
+                timeout=timeout,
+            )
+        finally:
+            retriever.close()
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(1) from error
+
+    table = Table(title=f"External Agent Evaluation ({result['case_count']} cases)")
+    table.add_column("Metric")
+    table.add_column("Mean", justify="right")
+    table.add_column("95% CI", justify="right")
+    for name, metric in result["metrics"].items():
+        low, high = metric["confidence_interval_95"]
+        table.add_row(name, f"{metric['mean']:.3f}", f"{low:.3f}–{high:.3f}")
+    console.print(table)
+
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+        console.print(f"Results written to {output}")
+
+
 @app.command("compare-evaluations")
 def compare_evaluations(
     baseline: Path = typer.Argument(..., help="Baseline evaluation result JSON"),
