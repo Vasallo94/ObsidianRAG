@@ -1,6 +1,7 @@
 """Database service for vector storage and document management"""
 
 import gc
+import hashlib
 import logging
 import os
 import re
@@ -115,12 +116,18 @@ def _is_safe_path(filepath: str, vault_path: str) -> bool:
         return False
 
 
-def load_documents_from_paths(filepaths: Set[str]) -> List[Document]:
-    """Load documents from specific file paths with link extraction"""
+def load_documents_from_paths(
+    filepaths: Set[str], *, raise_on_error: bool = False
+) -> List[Document]:
+    """Load documents from specific paths within the configured vault."""
     documents = []
+    vault_path = get_settings().obsidian_path
 
     for filepath in filepaths:
         try:
+            if not vault_path or not _is_safe_path(filepath, vault_path):
+                raise ValueError(f"Path is outside the configured vault: {filepath}")
+
             with open(filepath, "r", encoding="utf-8") as f:
                 content = f.read()
 
@@ -137,9 +144,68 @@ def load_documents_from_paths(filepaths: Set[str]) -> List[Document]:
 
         except Exception as e:
             logger.warning("Could not load %s: %s", filepath, e)
+            if raise_on_error:
+                raise
 
     logger.info("Loaded %d documents from specified paths", len(documents))
     return documents
+
+
+def _chunk_ids(filepath: str, content: str, chunks: List[Document]) -> List[str]:
+    """Create stable IDs so interrupted updates can be retried safely."""
+    content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    return [
+        hashlib.sha256(
+            f"{filepath}\0{content_hash}\0{index}\0{chunk.page_content}".encode()
+        ).hexdigest()
+        for index, chunk in enumerate(chunks)
+    ]
+
+
+def _replace_file_chunks(db: Chroma, filepath: str) -> None:
+    """Add and verify a file's new chunks before removing its previous chunks."""
+    documents = load_documents_from_paths({filepath}, raise_on_error=True)
+    chunks = get_text_splitter().split_documents(documents)
+    new_ids = _chunk_ids(filepath, documents[0].page_content, chunks)
+    new_id_set = set(new_ids)
+    old_ids = set(db.get(where={"source": filepath}).get("ids", []))
+
+    if old_ids == new_id_set:
+        return
+
+    # Recover from a crash after the new revision was inserted.
+    if new_id_set and new_id_set.issubset(old_ids):
+        stale_ids = old_ids - new_id_set
+        if stale_ids:
+            db.delete(ids=list(stale_ids))
+        return
+
+    # Remove a partial insert from an interrupted prior attempt, preserving old chunks.
+    partial_ids = old_ids & new_id_set
+    if partial_ids:
+        db.delete(ids=list(partial_ids))
+        old_ids -= partial_ids
+
+    if not chunks:
+        if old_ids:
+            db.delete(ids=list(old_ids))
+        return
+
+    try:
+        db.add_documents(chunks, ids=new_ids)
+        stored_ids = set(db.get(ids=new_ids).get("ids", []))
+        if stored_ids != new_id_set:
+            raise RuntimeError(f"Only {len(stored_ids)} of {len(new_ids)} chunks were stored")
+    except Exception:
+        # Best-effort cleanup; the previous revision remains available.
+        try:
+            db.delete(ids=new_ids)
+        except Exception as cleanup_error:
+            logger.error("Could not clean partial chunks for %s: %s", filepath, cleanup_error)
+        raise
+
+    if old_ids:
+        db.delete(ids=list(old_ids))
 
 
 def load_all_obsidian_documents(obsidian_path: str) -> List[Document]:
@@ -221,46 +287,30 @@ def load_all_obsidian_documents(obsidian_path: str) -> List[Document]:
 def update_db_incrementally(
     db: Chroma, new_files: Set[str], modified_files: Set[str], deleted_files: Set[str]
 ) -> Chroma:
-    """Update database incrementally with only changed files."""
+    """Update changed files without discarding the last valid revision on failure."""
     logger.info("Applying incremental update to database")
+    failures = []
 
-    if deleted_files:
-        logger.info("Removing %d deleted documents", len(deleted_files))
-        for filepath in deleted_files:
-            try:
-                db.delete(where={"source": filepath})
-            except Exception as e:
-                logger.warning("Could not delete %s: %s", filepath, e)
+    for filepath in sorted(deleted_files):
+        try:
+            db.delete(where={"source": filepath})
+        except Exception as e:
+            logger.error("Could not delete %s: %s", filepath, e)
+            failures.append(filepath)
 
     files_to_process = new_files | modified_files
-
     if files_to_process:
         logger.info("Processing %d new/modified documents", len(files_to_process))
 
-        # For modified files: load new version FIRST, then swap
-        for filepath in modified_files:
-            try:
-                new_docs = load_documents_from_paths({filepath})
-                if new_docs:
-                    text_splitter = get_text_splitter()
-                    new_chunks = text_splitter.split_documents(new_docs)
-                    if new_chunks:
-                        db.delete(where={"source": filepath})
-                        db.add_documents(new_chunks)
-                        logger.debug("Updated %s (%d chunks)", filepath, len(new_chunks))
-            except Exception as e:
-                logger.error("Failed to update %s, keeping old version: %s", filepath, e)
+    for filepath in sorted(files_to_process):
+        try:
+            _replace_file_chunks(db, filepath)
+        except Exception as e:
+            logger.error("Failed to update %s; previous chunks kept: %s", filepath, e)
+            failures.append(filepath)
 
-        # Load and chunk new documents
-        if new_files:
-            documents = load_documents_from_paths(new_files)
-            if documents:
-                text_splitter = get_text_splitter()
-                texts = text_splitter.split_documents(documents)
-                logger.info("Created %d text chunks from new files", len(texts))
-                if texts:
-                    db.add_documents(texts)
-                    logger.info("New documents added to database")
+    if failures:
+        raise RuntimeError(f"Incremental update failed for {len(failures)} file(s)")
 
     return db
 

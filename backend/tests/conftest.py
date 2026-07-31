@@ -151,16 +151,14 @@ def mock_ollama_available():
     }
 
     with patch("httpx.get", return_value=mock_response):
-        with patch("requests.get", return_value=mock_response):
-            yield
+        yield
 
 
 @pytest.fixture
 def mock_ollama_unavailable():
     """Mock Ollama as unavailable."""
     with patch("httpx.get", side_effect=Exception("Connection refused")):
-        with patch("requests.get", side_effect=Exception("Connection refused")):
-            yield
+        yield
 
 
 # ============================================================

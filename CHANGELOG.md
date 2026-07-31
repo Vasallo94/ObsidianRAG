@@ -7,10 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Versioned `/capabilities` endpoint for plugin/backend compatibility checks
+- Retrieval evaluation CLI with Recall@k and MRR metrics
+- Regression tests for incremental index updates, process ownership, and secret handling
+
 ### Changed
 - Replaced the plugin's `builtin-modules` dependency with Node's native `builtinModules` API
 - Reused the existing HTTPX dependency for Ollama availability checks
 - Simplified duplicated development and CI configuration
+- Plugin API keys are now session-only and passed to the backend through its environment
+
+### Fixed
+- Incremental updates verify new chunks before deleting the previous valid revision
+- Incremental reads now reject paths outside the configured vault
+- Health responses now include the backend version expected by the plugin
+
+### Security
+- The plugin no longer kills arbitrary processes listening on its configured port
+- API keys are no longer exposed in backend process arguments or persisted by the plugin
 
 ### Removed
 - Generated plugin bundle from version control; releases continue to build it automatically

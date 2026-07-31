@@ -10,6 +10,7 @@
 # Local configuration
 .env
 .venv/
+.afp/
 
 # Python
 __pycache__/

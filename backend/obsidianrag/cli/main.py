@@ -239,6 +239,61 @@ def ask(
 
 
 @app.command()
+def evaluate(
+    dataset: Path = typer.Argument(..., help="JSON dataset with questions and expected sources"),
+    vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
+    k: int = typer.Option(10, "--k", min=1, help="Unique source notes to evaluate"),
+    reranker: bool = typer.Option(False, "--reranker", help="Include the configured reranker"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write JSON results"),
+):
+    """Evaluate retrieval against expected source notes without calling an LLM."""
+    from obsidianrag.config import configure_from_vault, get_settings
+    from obsidianrag.core.db_service import load_or_create_db
+    from obsidianrag.core.qa_service import create_retriever_with_reranker
+    from obsidianrag.evaluation import evaluate_retrieval, load_dataset
+
+    vault_path = Path(get_vault_path(vault)).resolve()
+    try:
+        cases = load_dataset(dataset)
+    except (OSError, ValueError) as error:
+        console.print(f"[red]Invalid evaluation dataset: {error}[/red]")
+        raise typer.Exit(2) from error
+
+    configure_from_vault(str(vault_path))
+    settings = get_settings()
+    settings.use_reranker = reranker
+    settings.retrieval_k = max(settings.retrieval_k, k)
+    settings.bm25_k = max(settings.bm25_k, k)
+    if reranker:
+        settings.reranker_top_n = max(settings.reranker_top_n, k)
+
+    with console.status("[bold green]Loading index and evaluating retrieval..."):
+        db = load_or_create_db(str(vault_path))
+        if db is None:
+            console.print("[red]Could not load the vault index.[/red]")
+            raise typer.Exit(1)
+        retriever = create_retriever_with_reranker(db)
+        result = evaluate_retrieval(retriever.invoke, cases, vault_path, k=k)
+
+    table = Table(title=f"Retrieval Evaluation (k={k})")
+    table.add_column("Question")
+    table.add_column("Recall", justify="right")
+    table.add_column("Reciprocal rank", justify="right")
+    for case in result.cases:
+        table.add_row(case.question, f"{case.recall:.3f}", f"{case.reciprocal_rank:.3f}")
+    console.print(table)
+    console.print(f"Recall@{k}: [bold]{result.recall_at_k:.3f}[/bold]")
+    console.print(f"MRR: [bold]{result.mean_reciprocal_rank:.3f}[/bold]")
+
+    if output:
+        import json
+
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
+        console.print(f"Results written to {output}")
+
+
+@app.command()
 def version():
     """Show version information."""
     from obsidianrag import __version__

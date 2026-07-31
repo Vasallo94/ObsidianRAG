@@ -50,10 +50,10 @@ obsidianrag serve --vault ~/notes --port 9000 --model qwen2.5
 obsidianrag serve --vault ~/notes --provider lmstudio --model my-model
 
 # Custom OpenAI-compatible server
-obsidianrag serve --vault ~/notes --provider custom \
+OBSIDIANRAG_COMPATIBLE_API_KEY=my-key \
+  obsidianrag serve --vault ~/notes --provider custom \
   --base-url http://my-server:8080/v1 \
-  --api-format chat-completions \
-  --api-key my-key
+  --api-format chat-completions
 ```
 
 #### Index Vault
@@ -71,6 +71,30 @@ obsidianrag index --vault /path/to/vault
 ```bash
 obsidianrag status --vault /path/to/vault
 ```
+
+#### Evaluate Retrieval
+
+Create a dataset with questions and the source notes that retrieval should find:
+
+```json
+{
+  "cases": [
+    {
+      "question": "Where is the deployment procedure?",
+      "expected_sources": ["Operations/Deployment.md"]
+    }
+  ]
+}
+```
+
+Run retrieval without calling an LLM:
+
+```bash
+obsidianrag evaluate evaluation.json --vault /path/to/vault --k 10
+obsidianrag evaluate evaluation.json --vault /path/to/vault --reranker --output results.json
+```
+
+The command reports source Recall@k and mean reciprocal rank (MRR).
 
 #### Ask Question (CLI)
 
