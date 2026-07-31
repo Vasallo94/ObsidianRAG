@@ -94,7 +94,7 @@ obsidianrag evaluate evaluation.json --vault /path/to/vault --k 10
 obsidianrag evaluate evaluation.json --vault /path/to/vault --reranker --output results.json
 ```
 
-The command reports source Precision@k, Recall@k, hit rate, MRR, MAP@k, nDCG@k, and mean/p50/p95 retrieval latency. Add optional `relevance_grades` entries (`source` plus a positive numeric `grade`) to dataset cases for graded nDCG; expected sources without an explicit grade default to relevance 1.
+The command reports source Precision@k, Recall@k, hit rate, MRR, MAP@k, nDCG@k, deterministic 95% bootstrap confidence intervals, and mean/p50/p95 retrieval latency. Add optional `relevance_grades` entries (`source` plus a positive numeric `grade`) to dataset cases for graded nDCG; expected sources without an explicit grade default to relevance 1.
 
 #### Experimental v4 Retrieval
 

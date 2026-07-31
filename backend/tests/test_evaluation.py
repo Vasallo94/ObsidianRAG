@@ -5,7 +5,12 @@ import json
 import pytest
 from langchain_core.documents import Document
 
-from obsidianrag.evaluation import EvaluationCase, evaluate_retrieval, load_dataset
+from obsidianrag.evaluation import (
+    EvaluationCase,
+    _bootstrap_mean_ci,
+    evaluate_retrieval,
+    load_dataset,
+)
 
 
 def test_load_dataset_validates_and_normalizes_sources(tmp_path):
@@ -99,6 +104,9 @@ def test_evaluate_retrieval_deduplicates_chunks_and_computes_metrics(tmp_path):
     assert result.mean_reciprocal_rank == 0.25
     assert result.mean_average_precision_at_k == 0.25
     assert result.ndcg_at_k == pytest.approx(0.3154648768)
+    for metric, (low, high) in result.confidence_intervals_95.items():
+        value = getattr(result, metric)
+        assert low <= value <= high
     assert result.mean_latency_seconds >= 0
     assert result.p50_latency_seconds >= 0
     assert result.p95_latency_seconds >= result.p50_latency_seconds
@@ -121,6 +129,13 @@ def test_evaluate_retrieval_uses_graded_relevance_for_ndcg(tmp_path):
     assert result.recall_at_k == 1.0
     assert result.mean_average_precision_at_k == 1.0
     assert result.ndcg_at_k == pytest.approx(0.7098097414)
+
+
+def test_bootstrap_interval_is_deterministic_and_handles_one_value():
+    assert _bootstrap_mean_ci([0.5], seed=0) == (0.5, 0.5)
+    assert _bootstrap_mean_ci([0.0, 1.0], seed=7, samples=100) == _bootstrap_mean_ci(
+        [0.0, 1.0], seed=7, samples=100
+    )
 
 
 def test_evaluate_retrieval_rejects_invalid_k(tmp_path):

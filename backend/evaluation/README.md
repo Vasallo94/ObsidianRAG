@@ -19,7 +19,7 @@ obsidianrag evaluate evaluation/questions.json --vault evaluation/sample-vault -
 
 The fixture covers English and Spanish questions, exact technical terms, aliases, headings, wikilinks, and similarly named notes. It is a smoke benchmark, not evidence of production retrieval quality. Larger community-contributed datasets should follow the same schema without including private notes.
 
-The evaluator reports source-level Precision@k, Recall@k, hit rate, MRR, MAP@k, nDCG@k, and mean/p50/p95 latency. Cases may include graded relevance:
+The evaluator reports source-level Precision@k, Recall@k, hit rate, MRR, MAP@k, nDCG@k, deterministic 95% bootstrap confidence intervals, and mean/p50/p95 latency. Cases may include graded relevance:
 
 ```json
 {

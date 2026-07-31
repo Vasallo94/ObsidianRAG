@@ -364,12 +364,17 @@ def evaluate(
             f"{case.latency_seconds * 1000:.1f} ms",
         )
     console.print(table)
-    console.print(f"Precision@{k}: [bold]{result.precision_at_k:.3f}[/bold]")
-    console.print(f"Recall@{k}: [bold]{result.recall_at_k:.3f}[/bold]")
-    console.print(f"Hit rate@{k}: [bold]{result.hit_rate_at_k:.3f}[/bold]")
-    console.print(f"MRR: [bold]{result.mean_reciprocal_rank:.3f}[/bold]")
-    console.print(f"MAP@{k}: [bold]{result.mean_average_precision_at_k:.3f}[/bold]")
-    console.print(f"nDCG@{k}: [bold]{result.ndcg_at_k:.3f}[/bold]")
+    metrics = (
+        (f"Precision@{k}", "precision_at_k", result.precision_at_k),
+        (f"Recall@{k}", "recall_at_k", result.recall_at_k),
+        (f"Hit rate@{k}", "hit_rate_at_k", result.hit_rate_at_k),
+        ("MRR", "mean_reciprocal_rank", result.mean_reciprocal_rank),
+        (f"MAP@{k}", "mean_average_precision_at_k", result.mean_average_precision_at_k),
+        (f"nDCG@{k}", "ndcg_at_k", result.ndcg_at_k),
+    )
+    for label, key, value in metrics:
+        low, high = result.confidence_intervals_95[key]
+        console.print(f"{label}: [bold]{value:.3f}[/bold] (95% CI {low:.3f}–{high:.3f})")
     console.print(f"Mean latency: [bold]{result.mean_latency_seconds * 1000:.1f} ms[/bold]")
     console.print(f"p50 latency: [bold]{result.p50_latency_seconds * 1000:.1f} ms[/bold]")
     console.print(f"p95 latency: [bold]{result.p95_latency_seconds * 1000:.1f} ms[/bold]")

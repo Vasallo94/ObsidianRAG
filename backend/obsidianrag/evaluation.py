@@ -2,6 +2,7 @@
 
 import json
 import math
+import random
 import statistics
 import time
 from dataclasses import asdict, dataclass
@@ -44,6 +45,7 @@ class EvaluationResult:
     mean_latency_seconds: float
     p50_latency_seconds: float
     p95_latency_seconds: float
+    confidence_intervals_95: dict[str, tuple[float, float]]
     k: int
 
     def to_dict(self) -> dict:
@@ -147,6 +149,14 @@ def evaluate_retrieval(
 
     latencies = sorted(result.latency_seconds for result in results)
     p95_index = max(0, math.ceil(len(latencies) * 0.95) - 1)
+    metric_values = {
+        "precision_at_k": [result.precision for result in results],
+        "recall_at_k": [result.recall for result in results],
+        "hit_rate_at_k": [result.hit for result in results],
+        "mean_reciprocal_rank": [result.reciprocal_rank for result in results],
+        "mean_average_precision_at_k": [result.average_precision for result in results],
+        "ndcg_at_k": [result.ndcg for result in results],
+    }
     return EvaluationResult(
         cases=tuple(results),
         precision_at_k=sum(result.precision for result in results) / len(results),
@@ -159,8 +169,23 @@ def evaluate_retrieval(
         mean_latency_seconds=sum(latencies) / len(latencies),
         p50_latency_seconds=statistics.median(latencies),
         p95_latency_seconds=latencies[p95_index],
+        confidence_intervals_95={
+            metric: _bootstrap_mean_ci(values, seed=index)
+            for index, (metric, values) in enumerate(metric_values.items())
+        },
         k=k,
     )
+
+
+def _bootstrap_mean_ci(
+    values: list[float], *, seed: int, samples: int = 2000
+) -> tuple[float, float]:
+    """Return a deterministic percentile bootstrap interval for a sample mean."""
+    if len(values) == 1:
+        return values[0], values[0]
+    rng = random.Random(seed)
+    means = sorted(statistics.fmean(rng.choice(values) for _ in values) for _ in range(samples))
+    return means[math.floor(0.025 * (samples - 1))], means[math.ceil(0.975 * (samples - 1))]
 
 
 def _unique_sources(documents: Iterable[Document], vault_path: Path) -> list[str]:
