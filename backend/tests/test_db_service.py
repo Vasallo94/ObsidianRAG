@@ -1,5 +1,6 @@
 """Tests for ObsidianRAG Database Service (ChromaDB)."""
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -10,11 +11,14 @@ from langchain_core.embeddings import Embeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from obsidianrag.core.db_service import (
+    _create_chroma_in_batches,
     extract_obsidian_links,
+    load_all_obsidian_documents,
     load_documents_from_paths,
     load_or_create_db,
     update_db_incrementally,
 )
+from obsidianrag.core.metadata_tracker import FileMetadataTracker
 
 
 class DeterministicEmbeddings(Embeddings):
@@ -99,6 +103,20 @@ class TestChromaIntegration:
         expected_name = "obsidian_notes"
         assert expected_name == "obsidian_notes"
 
+    @patch("obsidianrag.core.db_service.Chroma")
+    def test_full_build_embeds_in_bounded_batches(self, mock_chroma):
+        db = MagicMock()
+        stored_ids = set()
+        db.get.side_effect = lambda ids: {"ids": list(stored_ids.intersection(ids))}
+        db.add_documents.side_effect = lambda _documents, ids: stored_ids.update(ids)
+        mock_chroma.return_value = db
+        documents = [Document(page_content=f"chunk {index}") for index in range(5)]
+
+        result = _create_chroma_in_batches(documents, MagicMock(), "/tmp/db", batch_size=2)
+
+        assert result is db
+        assert [len(call.kwargs["ids"]) for call in db.add_documents.call_args_list] == [2, 2, 1]
+
     def test_persist_directory_structure(self, mock_vault):
         """Test that persist directory has correct structure."""
         persist_dir = mock_vault / ".obsidianrag" / "db"
@@ -131,6 +149,20 @@ class TestChromaIntegration:
             persist_directory=str(persist_dir), embedding_function=mock_get_embeddings.return_value
         )
         mock_load_documents.assert_not_called()
+
+
+def test_full_load_excludes_application_and_trash_directories(tmp_path):
+    (tmp_path / "Kept.md").write_text("kept")
+    for directory in (".obsidian", ".obsidianrag", ".trash", ".git", "node_modules"):
+        path = tmp_path / directory
+        path.mkdir()
+        (path / "Ignored.md").write_text("ignored")
+
+    documents = load_all_obsidian_documents(str(tmp_path))
+
+    assert [Path(document.metadata["source"]).name for document in documents] == ["Kept.md"]
+    tracked = FileMetadataTracker(str(tmp_path / "metadata.json")).get_current_files(str(tmp_path))
+    assert [Path(source).name for source in tracked] == ["Kept.md"]
 
 
 class TestLinkExtraction:

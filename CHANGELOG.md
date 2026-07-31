@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Incremental reads now reject paths outside the configured vault
 - Health responses now include the backend version expected by the plugin
 - Disabling incremental indexing now loads an existing database instead of rebuilding it
+- Full Chroma rebuilds embed bounded batches with retries instead of sending the entire vault to Ollama
+- BM25 retrieval now normalizes case and punctuation for multilingual queries
+- Indexing now excludes Obsidian internals, trash, Git data, and dependency directories
 
 ### Security
 - The plugin no longer kills arbitrary processes listening on its configured port

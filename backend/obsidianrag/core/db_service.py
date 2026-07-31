@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import shutil
+import time
 import uuid
 from pathlib import Path
 from typing import List, Optional, Set
@@ -18,7 +19,7 @@ from langchain_ollama import OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from obsidianrag.config import get_settings
-from obsidianrag.core.metadata_tracker import FileMetadataTracker
+from obsidianrag.core.metadata_tracker import EXCLUDED_DIRECTORIES, FileMetadataTracker
 from obsidianrag.utils.ollama import pull_ollama_model
 
 logger = logging.getLogger(__name__)
@@ -208,6 +209,45 @@ def _replace_file_chunks(db: Chroma, filepath: str) -> None:
         db.delete(ids=list(old_ids))
 
 
+def _create_chroma_in_batches(
+    texts: List[Document], embeddings: Embeddings, persist_directory: str, batch_size: int = 64
+) -> Chroma:
+    """Create a Chroma collection without sending the full vault to the embedder at once."""
+    db = Chroma(
+        persist_directory=persist_directory,
+        embedding_function=embeddings,
+        collection_metadata={"hnsw:space": "cosine"},
+    )
+    for start in range(0, len(texts), batch_size):
+        batch = texts[start : start + batch_size]
+        ids = [
+            hashlib.sha256(
+                f"{chunk.metadata.get('source', '')}\0{start + offset}\0{chunk.page_content}".encode()
+            ).hexdigest()
+            for offset, chunk in enumerate(batch)
+        ]
+        expected_ids = set(ids)
+        for attempt in range(3):
+            try:
+                stored_ids = set(db.get(ids=ids).get("ids", []))
+                if stored_ids != expected_ids:
+                    if stored_ids:
+                        db.delete(ids=list(stored_ids))
+                    db.add_documents(batch, ids=ids)
+                    stored_ids = set(db.get(ids=ids).get("ids", []))
+                if stored_ids != expected_ids:
+                    raise RuntimeError(
+                        f"Only {len(stored_ids)} of {len(expected_ids)} chunks were stored"
+                    )
+                break
+            except Exception:
+                if attempt == 2:
+                    raise
+                time.sleep(attempt + 1)
+        logger.info("Embedded %d/%d chunks", min(start + batch_size, len(texts)), len(texts))
+    return db
+
+
 def load_all_obsidian_documents(obsidian_path: str) -> List[Document]:
     """Load all documents from Obsidian vault using recursive walk"""
     logger.info("Loading Obsidian documents (.md) recursively")
@@ -217,7 +257,6 @@ def load_all_obsidian_documents(obsidian_path: str) -> List[Document]:
         ".canvas",
         "untitled",
     ]
-
     documents = []
     total_files = 0
     loaded_files = 0
@@ -225,7 +264,10 @@ def load_all_obsidian_documents(obsidian_path: str) -> List[Document]:
     error_files = 0
     total_links_found = 0
 
-    for root, _, files in os.walk(obsidian_path, followlinks=False):
+    for root, directories, files in os.walk(obsidian_path, followlinks=False):
+        directories[:] = [
+            directory for directory in directories if directory not in EXCLUDED_DIRECTORIES
+        ]
         for file in files:
             if file.endswith(".md"):
                 total_files += 1
@@ -378,12 +420,7 @@ def load_or_create_db(
         logger.info("Creating new database in temporary directory: %s", temp_dir)
 
         try:
-            temp_db = Chroma.from_documents(
-                texts,
-                embeddings,
-                persist_directory=temp_dir,
-                collection_metadata={"hnsw:space": "cosine"},
-            )
+            temp_db = _create_chroma_in_batches(texts, embeddings, temp_dir)
 
             del temp_db
             gc.collect()
@@ -404,12 +441,7 @@ def load_or_create_db(
             raise e
     else:
         logger.info("Creating new vector database")
-        db = Chroma.from_documents(
-            texts,
-            embeddings,
-            persist_directory=persist_directory,
-            collection_metadata={"hnsw:space": "cosine"},
-        )
+        db = _create_chroma_in_batches(texts, embeddings, persist_directory)
         logger.info("Vector database created successfully")
 
     if settings.enable_incremental_indexing:

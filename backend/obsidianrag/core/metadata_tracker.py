@@ -8,6 +8,8 @@ from typing import Dict, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
+EXCLUDED_DIRECTORIES = frozenset({".git", ".obsidian", ".obsidianrag", ".trash", "node_modules"})
+
 
 class FileMetadataTracker:
     """Tracks file metadata to detect changes for incremental indexing"""
@@ -52,7 +54,10 @@ class FileMetadataTracker:
         """
         current_files = {}
 
-        for root, _, files in os.walk(obsidian_path):
+        for root, directories, files in os.walk(obsidian_path):
+            directories[:] = [
+                directory for directory in directories if directory not in EXCLUDED_DIRECTORIES
+            ]
             for file in files:
                 if file.endswith(".md"):
                     filepath = os.path.join(root, file)

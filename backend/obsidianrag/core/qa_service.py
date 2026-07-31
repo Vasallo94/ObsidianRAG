@@ -1,6 +1,7 @@
 """QA Service with hybrid search and reranking"""
 
 import logging
+import re
 
 import httpx
 from langchain_classic.retrievers import (
@@ -49,6 +50,11 @@ def verify_ollama_available():
         )
 
 
+def _tokenize_bm25(text: str) -> list[str]:
+    """Tokenize lexical queries consistently across case and punctuation."""
+    return re.findall(r"\w+", text.lower())
+
+
 def create_hybrid_retriever(db):
     """Create a hybrid retriever with BM25 + Vector search."""
     settings = get_settings()
@@ -77,7 +83,7 @@ def create_hybrid_retriever(db):
         )
 
         docs = [Document(page_content=t, metadata=m) for t, m in zip(texts, metadatas)]
-        bm25_retriever = BM25Retriever.from_documents(docs)
+        bm25_retriever = BM25Retriever.from_documents(docs, preprocess_func=_tokenize_bm25)
         bm25_retriever.k = settings.bm25_k
         logger.info("   BM25 k=%d", settings.bm25_k)
 

@@ -6,6 +6,11 @@ from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 
 from obsidianrag.core.qa_agent import AgentState, extract_links_from_content
+from obsidianrag.core.qa_service import _tokenize_bm25
+
+
+def test_bm25_tokenizer_normalizes_case_and_punctuation():
+    assert _tokenize_bm25("¿Gemini 2.5 FLASH?") == ["gemini", "2", "5", "flash"]
 
 
 class TestAgentState:
