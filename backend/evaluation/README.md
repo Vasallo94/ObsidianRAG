@@ -33,3 +33,5 @@ The evaluator reports source-level Precision@k, Recall@k, hit rate, MRR, MAP@k, 
 ```
 
 Sources without an explicit grade use binary relevance 1.
+
+Saved runs can be compared offline with `obsidianrag compare-evaluations baseline.json candidate.json`. Cases are paired by question, and the command reports metric deltas with paired 95% bootstrap intervals.

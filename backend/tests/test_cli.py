@@ -202,6 +202,7 @@ class TestCLIHelp:
         assert result.exit_code == 0
         assert "v4-index" in result.stdout
         assert "v4-search" in result.stdout
+        assert "compare-evaluations" in result.stdout
 
     def test_evaluate_rejects_unknown_engine(self, runner, mock_vault, tmp_path):
         dataset = tmp_path / "questions.json"

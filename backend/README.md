@@ -96,6 +96,14 @@ obsidianrag evaluate evaluation.json --vault /path/to/vault --reranker --output 
 
 The command reports source Precision@k, Recall@k, hit rate, MRR, MAP@k, nDCG@k, deterministic 95% bootstrap confidence intervals, and mean/p50/p95 retrieval latency. Add optional `relevance_grades` entries (`source` plus a positive numeric `grade`) to dataset cases for graded nDCG; expected sources without an explicit grade default to relevance 1.
 
+Compare two saved runs without loading an embedding model:
+
+```bash
+obsidianrag compare-evaluations v3-results.json v4-results.json --output comparison.json
+```
+
+The comparison pairs cases by question and reports baseline, candidate, delta, paired 95% bootstrap interval, and improved/regressed query counts for every retrieval metric.
+
 #### Experimental v4 Retrieval
 
 Install the optional embedded LanceDB backend, build an isolated index revision, and compare it with v3:

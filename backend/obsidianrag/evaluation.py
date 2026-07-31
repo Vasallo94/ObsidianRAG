@@ -177,6 +177,56 @@ def evaluate_retrieval(
     )
 
 
+def compare_evaluation_results(baseline: dict, candidate: dict, *, samples: int = 10000) -> dict:
+    """Compare two evaluation result payloads with paired bootstrap intervals."""
+    fields = {
+        "precision_at_k": "precision",
+        "recall_at_k": "recall",
+        "hit_rate_at_k": "hit",
+        "mean_reciprocal_rank": "reciprocal_rank",
+        "mean_average_precision_at_k": "average_precision",
+        "ndcg_at_k": "ndcg",
+    }
+    baseline_cases = _cases_by_question(baseline)
+    candidate_cases = _cases_by_question(candidate)
+    if baseline_cases.keys() != candidate_cases.keys():
+        raise ValueError("Evaluation results must contain the same questions")
+
+    metrics = {}
+    for seed, (name, field) in enumerate(fields.items()):
+        baseline_values = [float(case[field]) for case in baseline_cases.values()]
+        candidate_values = [float(candidate_cases[question][field]) for question in baseline_cases]
+        deltas = [candidate - base for base, candidate in zip(baseline_values, candidate_values)]
+        metrics[name] = {
+            "baseline": statistics.fmean(baseline_values),
+            "candidate": statistics.fmean(candidate_values),
+            "delta": statistics.fmean(deltas),
+            "confidence_interval_95": _bootstrap_mean_ci(deltas, seed=seed, samples=samples),
+            "improved_queries": sum(delta > 0 for delta in deltas),
+            "regressed_queries": sum(delta < 0 for delta in deltas),
+            "tied_queries": sum(delta == 0 for delta in deltas),
+        }
+    return {
+        "baseline_engine": baseline.get("engine", "baseline"),
+        "candidate_engine": candidate.get("engine", "candidate"),
+        "case_count": len(baseline_cases),
+        "metrics": metrics,
+    }
+
+
+def _cases_by_question(payload: dict) -> dict[str, dict]:
+    raw_cases = payload.get("cases")
+    if not isinstance(raw_cases, list) or not raw_cases:
+        raise ValueError("Evaluation result must contain a non-empty cases list")
+    cases = {}
+    for case in raw_cases:
+        question = case.get("question") if isinstance(case, dict) else None
+        if not isinstance(question, str) or not question or question in cases:
+            raise ValueError("Evaluation result questions must be non-empty and unique")
+        cases[question] = case
+    return cases
+
+
 def _bootstrap_mean_ci(
     values: list[float], *, seed: int, samples: int = 2000
 ) -> tuple[float, float]:

@@ -8,6 +8,7 @@ from langchain_core.documents import Document
 from obsidianrag.evaluation import (
     EvaluationCase,
     _bootstrap_mean_ci,
+    compare_evaluation_results,
     evaluate_retrieval,
     load_dataset,
 )
@@ -129,6 +130,47 @@ def test_evaluate_retrieval_uses_graded_relevance_for_ndcg(tmp_path):
     assert result.recall_at_k == 1.0
     assert result.mean_average_precision_at_k == 1.0
     assert result.ndcg_at_k == pytest.approx(0.7098097414)
+
+
+def test_compare_evaluation_results_pairs_cases_by_question():
+    def case(question, value):
+        return {
+            "question": question,
+            "precision": value,
+            "recall": value,
+            "hit": value,
+            "reciprocal_rank": value,
+            "average_precision": value,
+            "ndcg": value,
+        }
+
+    result = compare_evaluation_results(
+        {"engine": "v3", "cases": [case("a", 0.2), case("b", 0.4)]},
+        {"engine": "v4", "cases": [case("b", 0.5), case("a", 0.4)]},
+        samples=100,
+    )
+
+    assert result["baseline_engine"] == "v3"
+    assert result["candidate_engine"] == "v4"
+    assert result["case_count"] == 2
+    assert result["metrics"]["ndcg_at_k"]["delta"] == pytest.approx(0.15)
+    assert result["metrics"]["ndcg_at_k"]["improved_queries"] == 2
+
+
+def test_compare_evaluation_results_rejects_different_questions():
+    case = {
+        "precision": 1,
+        "recall": 1,
+        "hit": 1,
+        "reciprocal_rank": 1,
+        "average_precision": 1,
+        "ndcg": 1,
+    }
+    with pytest.raises(ValueError, match="same questions"):
+        compare_evaluation_results(
+            {"cases": [{"question": "a", **case}]},
+            {"cases": [{"question": "b", **case}]},
+        )
 
 
 def test_bootstrap_interval_is_deterministic_and_handles_one_value():

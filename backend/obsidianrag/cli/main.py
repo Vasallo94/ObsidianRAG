@@ -397,6 +397,54 @@ def evaluate(
         console.print(f"Results written to {output}")
 
 
+@app.command("compare-evaluations")
+def compare_evaluations(
+    baseline: Path = typer.Argument(..., help="Baseline evaluation result JSON"),
+    candidate: Path = typer.Argument(..., help="Candidate evaluation result JSON"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write comparison JSON"),
+):
+    """Compare two result files using paired bootstrap confidence intervals."""
+    import json
+
+    from obsidianrag.evaluation import compare_evaluation_results
+
+    try:
+        result = compare_evaluation_results(
+            json.loads(baseline.read_text(encoding="utf-8")),
+            json.loads(candidate.read_text(encoding="utf-8")),
+        )
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(1) from error
+
+    table = Table(
+        title=f"{result['candidate_engine']} − {result['baseline_engine']} "
+        f"({result['case_count']} paired queries)"
+    )
+    table.add_column("Metric")
+    table.add_column("Baseline", justify="right")
+    table.add_column("Candidate", justify="right")
+    table.add_column("Delta", justify="right")
+    table.add_column("95% CI", justify="right")
+    table.add_column("Better / worse", justify="right")
+    for name, metric in result["metrics"].items():
+        low, high = metric["confidence_interval_95"]
+        table.add_row(
+            name,
+            f"{metric['baseline']:.3f}",
+            f"{metric['candidate']:.3f}",
+            f"{metric['delta']:+.3f}",
+            f"{low:+.3f}–{high:+.3f}",
+            f"{metric['improved_queries']} / {metric['regressed_queries']}",
+        )
+    console.print(table)
+
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(result, indent=2), encoding="utf-8")
+        console.print(f"Results written to {output}")
+
+
 @app.command()
 def version():
     """Show version information."""

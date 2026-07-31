@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Public multilingual retrieval fixture for reproducible smoke benchmarks
 - Optional experimental v4 index using SQLite FTS5 and embedded LanceDB
 - `v4-index` and `v4-search` commands plus v3/v4 evaluation selection
+- Offline `compare-evaluations` command with paired bootstrap metric deltas
 - Regression tests for incremental index updates, process ownership, and secret handling
 
 ### Changed
