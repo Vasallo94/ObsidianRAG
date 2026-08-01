@@ -63,9 +63,19 @@ def _configure(
     statuses,
     pipelines=(),
 ) -> tuple[server.FastAPI, MagicMock, MagicMock]:
-    status_mock = MagicMock(side_effect=statuses if isinstance(statuses, list) else None)
-    if not isinstance(statuses, list):
-        status_mock.return_value = statuses
+    if isinstance(statuses, list):
+        status_values = iter(statuses)
+        current_status = None
+
+        def next_status(_vault, embeddings=None):
+            nonlocal current_status
+            if embeddings is None:
+                current_status = next(status_values)
+            return current_status
+
+        status_mock = MagicMock(side_effect=next_status)
+    else:
+        status_mock = MagicMock(return_value=statuses)
     pipeline_mock = MagicMock(side_effect=list(pipelines))
     monkeypatch.setattr(server, "get_embeddings", MagicMock(return_value=MagicMock()))
     monkeypatch.setattr(server, "index_status", status_mock)
@@ -118,7 +128,7 @@ def test_apps_isolate_settings_without_creating_v3_directories(
     vault_two.mkdir()
     seen: list[tuple[Path, str]] = []
 
-    def inspect_status(vault: Path, _embeddings) -> IndexStatus:
+    def inspect_status(vault: Path, _embeddings=None) -> IndexStatus:
         seen.append((vault, get_settings().obsidian_path))
         return _status()
 

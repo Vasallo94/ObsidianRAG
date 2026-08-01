@@ -170,6 +170,9 @@ class _Runtime:
 
     async def _raw_status(self):
         vault = self._require_vault()
+        status = await await_thread(index_status, vault)
+        if status.state not in {"current", "stale"}:
+            return status
         embeddings = await await_thread(get_embeddings)
         return await await_thread(index_status, vault, embeddings)
 

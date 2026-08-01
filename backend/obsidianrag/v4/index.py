@@ -451,7 +451,7 @@ def build_index(
                 _safe_rmtree(revisions, revision_path, revision_identity)
 
 
-def index_status(vault_path: Path, embeddings: Embeddings) -> IndexStatus:
+def index_status(vault_path: Path, embeddings: Embeddings | None = None) -> IndexStatus:
     """Inspect the active index without creating files or loading indexed content."""
     vault = vault_path.resolve()
     root = _v4_root(vault)
@@ -492,8 +492,18 @@ def index_status(vault_path: Path, embeddings: Embeddings) -> IndexStatus:
             for path, snapshot in snapshots.items()
         )
         deleted = len(set(manifest) - set(snapshots))
-        fingerprint, dimension = embedding_fingerprint(embeddings)
-        _assert_incremental_compatible(metadata, fingerprint=fingerprint, dimension=dimension)
+        if metadata.get("schema_version") != str(SCHEMA_VERSION):
+            raise FullRebuildRequired("Active v4 index schema is incompatible")
+        settings = get_settings()
+        for key, value in {
+            "chunk_size": settings.chunk_size,
+            "chunk_overlap": settings.chunk_overlap,
+        }.items():
+            if metadata.get(key) != str(value):
+                raise FullRebuildRequired(f"Active v4 index {key} is incompatible")
+        if embeddings is not None:
+            fingerprint, dimension = embedding_fingerprint(embeddings)
+            _assert_incremental_compatible(metadata, fingerprint=fingerprint, dimension=dimension)
     except IndexPathError:
         raise
     except (FullRebuildRequired, IndexCorruptionError) as error:
