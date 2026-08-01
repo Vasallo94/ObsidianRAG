@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import errno
 import hashlib
 import importlib
 import json
@@ -1059,8 +1058,7 @@ def _fsync_directory(path: Path) -> None:
         finally:
             os.close(descriptor)
     except OSError as error:
-        if error.errno not in {errno.EBADF, errno.EINVAL, errno.ENOTSUP}:
-            raise IndexPathError(f"Could not sync managed directory {path}: {error}") from error
+        raise IndexPathError(f"Could not sync managed directory {path}: {error}") from error
 
 
 def _fsync_tree(path: Path) -> None:
