@@ -32,6 +32,14 @@ describe('Edge Cases', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSpawn = child_process.spawn as unknown as jest.Mock;
+    (requestUrl as jest.Mock).mockResolvedValue({
+      status: 200,
+      json: {
+        state: 'missing', active_revision: null, serving_revision: null,
+        query_ready: false, indexed_notes: 0, indexed_chunks: 0,
+        changed_notes: 0, deleted_notes: 0, reason: null
+      }
+    });
 
     const mockApp = {
       vault: {
@@ -46,6 +54,7 @@ describe('Edge Cases', () => {
     const mockManifest = {};
 
     plugin = new ObsidianRAGPlugin(mockApp as any, mockManifest as any);
+    (plugin as any).apiBaseUrl = 'http://127.0.0.1:8000';
     plugin.settings = {
       pythonPath: 'python',
       serverPort: 8000,
@@ -60,8 +69,6 @@ describe('Edge Cases', () => {
       hasCompletedSetup: true
     };
 
-    // Mock getSpawnOptionsForPlatform to return simple options
-    plugin.getSpawnOptionsForPlatform = jest.fn().mockReturnValue({});
     // Mock waitForServer to avoid actual timeout
     plugin.waitForServer = jest.fn();
     // Mock updateStatusBar
@@ -101,6 +108,35 @@ describe('Edge Cases', () => {
   });
 
   describe('Server Ownership and Secrets', () => {
+    it('never launches the backend through a shell', () => {
+      expect(plugin.getSpawnOptionsForPlatform('win32')).toEqual(expect.objectContaining({
+        shell: false,
+        windowsHide: true
+      }));
+      expect(plugin.getSpawnOptionsForPlatform('darwin')).toEqual(expect.objectContaining({
+        shell: false
+      }));
+      expect(plugin.getSpawnOptionsForPlatform('linux')).toEqual(expect.objectContaining({
+        shell: false
+      }));
+    });
+
+    it('keeps vault metacharacters in one process argument', async () => {
+      const mockProcess = {
+        stdout: { on: jest.fn() }, stderr: { on: jest.fn() },
+        on: jest.fn(), kill: jest.fn()
+      };
+      mockSpawn.mockReturnValue(mockProcess);
+      plugin.waitForServer.mockResolvedValue(true);
+      plugin.app.vault.adapter.basePath = 'C:\\Vault & Notes';
+
+      await plugin.startServer();
+
+      const args = mockSpawn.mock.calls[0][1] as string[];
+      expect(args[args.indexOf('--vault') + 1]).toBe('C:\\Vault & Notes');
+      expect(mockSpawn.mock.calls[0][2]).toEqual(expect.objectContaining({ shell: false }));
+    });
+
     it('should not expose the API key in process arguments', async () => {
       const mockProcess = {
         stdout: { on: jest.fn() },
@@ -193,7 +229,7 @@ describe('Edge Cases', () => {
       (requestUrl as jest.Mock)
         .mockResolvedValueOnce({
           status: 200,
-          json: { api_version: 3, backend_version: '3.0.3' }
+          json: { api_version: 4, backend_version: '4.0.0' }
         })
         .mockResolvedValueOnce({ status: 200, json: { status: 'ok' } });
 
@@ -201,7 +237,7 @@ describe('Edge Cases', () => {
 
       (requestUrl as jest.Mock).mockResolvedValueOnce({
         status: 200,
-        json: { api_version: 4, backend_version: '4.0.0' }
+        json: { api_version: 3, backend_version: '3.0.3' }
       });
       await expect(plugin.isServerRunning()).resolves.toBe(false);
     });
@@ -220,49 +256,53 @@ describe('Edge Cases', () => {
     });
   });
 
-  describe('Vault Stats', () => {
-    it('should handle empty vault stats', async () => {
-      (requestUrl as jest.Mock).mockResolvedValue({
-        status: 200,
-        json: {
-          total_notes: 0,
-          total_chunks: 0,
-          total_words: 0,
-          total_chars: 0,
-          avg_words_per_chunk: 0,
-          folders: 0,
-          internal_links: 0,
-          vault_path: '/test/vault'
-        }
-      });
+  describe('v4 index lifecycle', () => {
+    it('accepts only the API 4 backend contract', async () => {
+      expect(plugin.getIndexActionLabel({ state: 'missing' })).toBe('Build index');
+      expect(plugin.getIndexActionLabel({ state: 'current' })).toBe('Refresh index');
+      expect(plugin.getIndexActionLabel({ state: 'stale' })).toBe('Refresh index');
+      expect(plugin.getIndexActionLabel({ state: 'rebuild_required' })).toBe('Full rebuild');
+    });
 
-      const stats = await plugin.getStats();
-      expect(stats).toEqual(expect.objectContaining({
-        total_notes: 0,
-        total_chunks: 0
+    it('builds through the v4 lifecycle endpoint', async () => {
+      (requestUrl as jest.Mock)
+        .mockResolvedValueOnce({
+          status: 200,
+          json: { revision: 'r2', notes: 2, chunks: 3, reused_chunks: 1,
+            reindexed_notes: 1, deleted_notes: 0 }
+        })
+        .mockResolvedValueOnce({
+          status: 200,
+          json: { state: 'current', active_revision: 'r2', serving_revision: 'r2',
+            query_ready: true, indexed_notes: 2, indexed_chunks: 3,
+            changed_notes: 0, deleted_notes: 0, reason: null }
+        });
+
+      await expect(plugin.buildIndex(true)).resolves.toBe(true);
+      expect(requestUrl).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        url: 'http://127.0.0.1:8000/index/build',
+        method: 'POST',
+        body: JSON.stringify({ full_rebuild: true })
       }));
     });
 
-    it('should handle large vault stats', async () => {
-      (requestUrl as jest.Mock).mockResolvedValue({
-        status: 200,
-        json: {
-          total_notes: 10000,
-          total_chunks: 50000,
-          total_words: 1000000,
-          total_chars: 5000000,
-          avg_words_per_chunk: 200,
-          folders: 500,
-          internal_links: 20000,
-          vault_path: '/test/vault'
-        }
-      });
+    it('prunes through the v4 lifecycle endpoint', async () => {
+      (requestUrl as jest.Mock)
+        .mockResolvedValueOnce({
+          status: 200,
+          json: { active_revision: 'r2', deleted_revisions: ['r1'] }
+        })
+        .mockResolvedValueOnce({
+          status: 200,
+          json: { state: 'current', active_revision: 'r2', serving_revision: 'r2',
+            query_ready: true, indexed_notes: 2, indexed_chunks: 3,
+            changed_notes: 0, deleted_notes: 0, reason: null }
+        });
 
-      const stats = await plugin.getStats();
-      expect(stats).toEqual(expect.objectContaining({
-        total_notes: 10000,
-        total_chunks: 50000
-      }));
+      await expect(plugin.pruneIndex()).resolves.toBe(true);
+      expect(requestUrl).toHaveBeenNthCalledWith(1, {
+        url: 'http://127.0.0.1:8000/index/prune', method: 'POST'
+      });
     });
   });
 });
