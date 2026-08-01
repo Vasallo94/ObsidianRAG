@@ -13,8 +13,12 @@ pytest.importorskip("lancedb")
 
 from obsidianrag.config import configure_from_vault
 from obsidianrag.core.query_pipeline import QueryPipeline
-from obsidianrag.v4 import ExperimentalLexicalRetriever, ExperimentalRetriever, build_index
-from obsidianrag.v4.index import active_revision
+from obsidianrag.v4 import (
+    ExperimentalLexicalRetriever,
+    ExperimentalRetriever,
+    active_revision,
+    build_index,
+)
 
 
 class KeywordEmbeddings(Embeddings):
@@ -203,24 +207,30 @@ def test_multipart_pipeline_keeps_sources_from_each_query_part(tmp_path):
 
 def test_hybrid_retriever_closes_sqlite_when_initialization_fails(tmp_path):
     connection = MagicMock()
-    connection.execute.return_value = [("embedding_signature", "old")]
+    connection.execute.return_value = [
+        ("embedding_fingerprint", "old"),
+        ("embedding_dimension", "6"),
+    ]
+    lease = MagicMock()
 
     with (
         patch("obsidianrag.v4.retrieval.active_revision", return_value=tmp_path),
+        patch("obsidianrag.v4.retrieval.acquire_revision_lease", return_value=lease),
         patch("obsidianrag.v4.retrieval.sqlite3.connect", return_value=connection),
-        patch("obsidianrag.v4.retrieval.embedding_signature", return_value="new"),
+        patch("obsidianrag.v4.retrieval.embedding_fingerprint", return_value=("new", 6)),
         pytest.raises(RuntimeError, match="different embedding configuration"),
     ):
         ExperimentalRetriever(tmp_path, KeywordEmbeddings())
 
     connection.close.assert_called_once_with()
+    lease.close.assert_called_once_with()
 
 
 def test_active_manifest_cannot_escape_revision_directory(tmp_path):
     vault = copy_sample_vault(tmp_path)
     root = vault / ".obsidianrag" / "v4"
     root.mkdir(parents=True)
-    (root / "active.json").write_text('{"schema_version": 1, "revision": "../../outside"}')
+    (root / "active.json").write_text('{"schema_version": 3, "revision": "../../outside"}')
 
     with pytest.raises(RuntimeError, match="revision path"):
         active_revision(vault)

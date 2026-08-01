@@ -261,6 +261,11 @@ def ask(
 @app.command("v4-index")
 def v4_index(
     vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
+    full_rebuild: bool = typer.Option(
+        False,
+        "--full-rebuild",
+        help="Ignore the active revision and rebuild every note",
+    ),
 ):
     """Build and atomically activate an experimental SQLite + LanceDB index."""
     from obsidianrag.config import configure_from_vault
@@ -271,16 +276,44 @@ def v4_index(
     configure_from_vault(str(vault_path))
     try:
         with console.status("[bold green]Building experimental v4 index..."):
-            result = build_index(vault_path, get_embeddings())
+            result = build_index(
+                vault_path,
+                get_embeddings(),
+                full_rebuild=full_rebuild,
+            )
     except RuntimeError as error:
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(1) from error
 
     console.print(
         Panel.fit(
-            f"Revision: {result.revision}\nNotes: {result.notes}\nChunks: {result.chunks}",
-            title="Experimental v4 index ready",
+            f"Revision: {result.revision}\n"
+            f"Notes: {result.notes}\n"
+            f"Chunks: {result.chunks}\n"
+            f"Reused chunks: {result.reused_chunks}\n"
+            f"Reindexed notes: {result.reindexed_notes}\n"
+            f"Deleted notes: {result.deleted_notes}",
+            title="v4 index ready",
         )
+    )
+
+
+@app.command("v4-prune")
+def v4_prune(
+    vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
+):
+    """Delete inactive v4 revisions that are not leased by readers."""
+    from obsidianrag.v4 import prune_revisions
+
+    vault_path = Path(get_vault_path(vault)).resolve()
+    try:
+        result = prune_revisions(vault_path)
+    except RuntimeError as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(1) from error
+    console.print(
+        f"Active revision: {result.active_revision}; "
+        f"deleted inactive revisions: {len(result.deleted_revisions)}"
     )
 
 

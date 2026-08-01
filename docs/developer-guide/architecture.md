@@ -116,11 +116,14 @@ flowchart LR
     RRF --> Results[Ranked chunks]
 ```
 
-- SQLite is authoritative for chunk text, source paths, lexical search, and index metadata.
+- SQLite is authoritative for chunk text, source paths, lexical search, note hashes, and index metadata.
 - LanceDB is a rebuildable vector index keyed by deterministic chunk IDs.
-- Every full build writes a new isolated revision, validates catalog/vector counts, and atomically switches `active.json`.
-- Previous revisions remain available for rollback.
-- The experiment reuses the current parser, chunker, and embedding providers so retrieval storage can be compared without changing every variable at once.
+- Builds scan regular vault Markdown without following links and create an isolated copy-on-write revision. Unchanged vectors are copied in bounded batches; changed notes are split and embedded again; deleted notes are omitted. A zero-note vault produces a valid empty revision.
+- Synthetic probe fingerprints bind revisions to the configured embedding implementation and its actual vector space.
+- A build lock serializes writers. `active.json` changes only after SQLite integrity, foreign keys, deterministic IDs, catalog/FTS semantics, and LanceDB vector metadata have passed, followed by a final authoritative vault scan.
+- Schema, embedding, or chunk-setting changes require `v4-index --full-rebuild`.
+- Readers hold filesystem leases on their revision. `v4-prune` deletes inactive revisions only after all readers close, preserving live readers without retaining deleted text indefinitely.
+- The experiment reuses the current chunker and embedding providers so retrieval storage can be compared without changing every variable at once.
 - `obsidianrag evaluate --engine v3|v4` runs both implementations against the same expected-source dataset.
 
-The vertical deliberately excludes generation, reranking, incremental v4 updates, and plugin routing. Those move only after public evaluation demonstrates parity or improvement.
+The v4 vertical remains optional and does not change the production v3 index or plugin routing.

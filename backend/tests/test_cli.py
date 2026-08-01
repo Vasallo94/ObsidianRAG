@@ -241,8 +241,29 @@ class TestCLIHelp:
 
         assert result.exit_code == 0
         assert "v4-index" in result.stdout
+        assert "v4-prune" in result.stdout
         assert "v4-search" in result.stdout
         assert "compare-evaluations" in result.stdout
+
+    def test_v4_index_reports_incremental_counts(self, runner, tmp_path):
+        build_result = MagicMock(
+            revision="revision-2",
+            notes=3,
+            chunks=7,
+            reused_chunks=5,
+            reindexed_notes=1,
+            deleted_notes=1,
+        )
+        with (
+            patch("obsidianrag.v4.build_index", return_value=build_result),
+            patch("obsidianrag.core.db_service.get_embeddings", return_value=MagicMock()),
+        ):
+            result = runner.invoke(app, ["v4-index", "--vault", str(tmp_path)])
+
+        assert result.exit_code == 0
+        assert "Reused chunks: 5" in unstyle(result.stdout)
+        assert "Reindexed notes: 1" in unstyle(result.stdout)
+        assert "Deleted notes: 1" in unstyle(result.stdout)
 
     def test_v4_search_help_exposes_embedding_free_mode(self, runner):
         result = runner.invoke(app, ["v4-search", "--help"])
