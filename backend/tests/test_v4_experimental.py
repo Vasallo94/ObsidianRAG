@@ -2,6 +2,7 @@
 
 import asyncio
 import shutil
+import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -63,6 +64,85 @@ def test_build_and_search_experimental_index(tmp_path):
     assert len({document.metadata["source"] for document in documents}) == len(documents)
     assert lexical_documents[0].metadata["source"] == "Reference/Error Codes.md"
     assert lexical_documents[0].metadata["retrieval_type"] == "lexical"
+
+
+def test_hybrid_rrf_fuses_different_chunks_from_the_same_source():
+    retriever = ExperimentalRetriever.__new__(ExperimentalRetriever)
+    retriever.connection = sqlite3.connect(":memory:")
+    retriever.connection.execute(
+        "CREATE TABLE chunks (chunk_id TEXT, note_path TEXT, ordinal INTEGER, text TEXT)"
+    )
+    retriever.connection.executemany(
+        "INSERT INTO chunks VALUES (?, ?, ?, ?)",
+        [
+            ("b1", "B.md", 0, "B"),
+            ("a1", "A.md", 0, "A lexical"),
+            ("a2", "A.md", 1, "A vector"),
+            ("c1", "C.md", 0, "C"),
+        ],
+    )
+    try:
+        with (
+            patch.object(retriever, "_lexical_search", return_value=["b1", "a1"]),
+            patch.object(retriever, "_vector_search", return_value=["a2", "c1"]),
+            patch.object(
+                retriever,
+                "_best_lexical_chunk",
+                return_value=("a1", "A.md", 0, "A lexical", -10.0),
+            ),
+        ):
+            documents = retriever.invoke("query", k=1)
+    finally:
+        retriever.close()
+
+    assert documents[0].metadata == {
+        "chunk_id": "a1",
+        "source": "A.md",
+        "ordinal": 0,
+        "score": pytest.approx(1 / 61 + 1 / 62),
+        "lexical_score": 10.0,
+        "retrieval_type": "hybrid-source+lexical-chunk",
+    }
+    assert documents[0].page_content == "A lexical"
+
+
+def test_best_lexical_chunk_ignores_title_only_matches():
+    retriever = ExperimentalRetriever.__new__(ExperimentalRetriever)
+    retriever.connection = sqlite3.connect(":memory:")
+    retriever.connection.executescript(
+        """
+        CREATE TABLE chunks (
+            chunk_id TEXT PRIMARY KEY,
+            note_path TEXT,
+            ordinal INTEGER,
+            text TEXT
+        );
+        CREATE VIRTUAL TABLE chunks_fts USING fts5(
+            chunk_id UNINDEXED,
+            note_path UNINDEXED,
+            title,
+            text
+        );
+        """
+    )
+    rows = [
+        ("one", "Needle.md", 0, "No matching body text"),
+        ("two", "Needle.md", 1, "The needle is in this passage"),
+    ]
+    retriever.connection.executemany("INSERT INTO chunks VALUES (?, ?, ?, ?)", rows)
+    retriever.connection.executemany(
+        "INSERT INTO chunks_fts VALUES (?, ?, ?, ?)",
+        [(chunk_id, source, "TitleOnly", text) for chunk_id, source, _, text in rows],
+    )
+
+    try:
+        match = retriever._best_lexical_chunk("needle", "Needle.md")
+        title_only = retriever._best_lexical_chunk("TitleOnly", "Needle.md")
+    finally:
+        retriever.close()
+
+    assert match[:4] == ("two", "Needle.md", 1, "The needle is in this passage")
+    assert title_only is None
 
 
 def test_lexical_retriever_streams_from_pipeline_worker_thread(tmp_path):

@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - External evaluation now rejects citations outside retrieved context and gives that context to the judge
 - Evaluation comparisons now reject incompatible retrieval depths and ground-truth annotations
 - Adaptive hybrid context uses the strongest lexical score even when a vector-only result ranks first
+- Hybrid RRF now fuses lexical and vector rankings by source before selecting the strongest lexical passage
 - Query pipeline shutdown waits for active SQLite retrieval before closing the connection
 - Read-only SQLite index URIs now safely encode cross-platform paths
 - Indexing now excludes Obsidian internals, trash, Git data, and dependency directories

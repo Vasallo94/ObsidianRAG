@@ -90,38 +90,39 @@ class ExperimentalRetriever:
         candidates = max(k * 5, 25)
         lexical = self._lexical_search(query, candidates)
         vector = self._vector_search(query, candidates)
-        scores: defaultdict[str, float] = defaultdict(float)
-        channels: defaultdict[str, set[str]] = defaultdict(set)
-
-        for channel, ranked_ids in (("lexical", lexical), ("vector", vector)):
-            for rank, chunk_id in enumerate(ranked_ids, 1):
-                scores[chunk_id] += 1.0 / (RRF_CONSTANT + rank)
-                channels[chunk_id].add(channel)
-
-        ranked = sorted(scores, key=scores.__getitem__, reverse=True)
-        if not ranked:
+        chunk_ids = list(dict.fromkeys([*lexical, *vector]))
+        if not chunk_ids:
             return []
-        placeholders = ",".join("?" for _ in ranked)
+        placeholders = ",".join("?" for _ in chunk_ids)
         rows = {
             row[0]: row
             for row in self.connection.execute(
                 f"SELECT chunk_id, note_path, ordinal, text FROM chunks "
                 f"WHERE chunk_id IN ({placeholders})",
-                ranked,
+                chunk_ids,
             )
         }
-        source_candidates = []
+
+        source_scores: defaultdict[str, float] = defaultdict(float)
+        for ranked_ids in (lexical, vector):
+            seen_sources = set()
+            source_rank = 0
+            for chunk_id in ranked_ids:
+                row = rows.get(chunk_id)
+                if row is None or row[1] in seen_sources:
+                    continue
+                seen_sources.add(row[1])
+                source_rank += 1
+                source_scores[row[1]] += 1.0 / (RRF_CONSTANT + source_rank)
+
+        source_candidates = sorted(
+            source_scores, key=lambda source: (-source_scores[source], source)
+        )[:k]
         fallback_rows = {}
-        source_scores = {}
-        for chunk_id in ranked:
+        for chunk_id in chunk_ids:
             row = rows.get(chunk_id)
-            if row is None or row[1] in fallback_rows:
-                continue
-            source_candidates.append(row[1])
-            fallback_rows[row[1]] = row
-            source_scores[row[1]] = scores[chunk_id]
-            if len(source_candidates) == k:
-                break
+            if row is not None and row[1] not in fallback_rows:
+                fallback_rows[row[1]] = row
 
         documents = []
         for source in source_candidates:
@@ -150,7 +151,7 @@ class ExperimentalRetriever:
         expression = " OR ".join(f'"{term}"' for term in terms)
         rows = self.connection.execute(
             "SELECT chunk_id FROM chunks_fts WHERE chunks_fts MATCH ? "
-            "ORDER BY bm25(chunks_fts) LIMIT ?",
+            "ORDER BY bm25(chunks_fts), chunk_id LIMIT ?",
             (expression, limit),
         )
         return [row[0] for row in rows]
@@ -159,12 +160,12 @@ class ExperimentalRetriever:
         terms = re.findall(r"\w+", query, flags=re.UNICODE)
         if not terms:
             return None
-        expression = " OR ".join(f'"{term}"' for term in terms)
+        expression = "text : (" + " OR ".join(f'"{term}"' for term in terms) + ")"
         return self.connection.execute(
             "SELECT c.chunk_id, c.note_path, c.ordinal, c.text, bm25(chunks_fts) "
             "FROM chunks_fts JOIN chunks c ON c.chunk_id = chunks_fts.chunk_id "
             "WHERE chunks_fts MATCH ? AND c.note_path = ? "
-            "ORDER BY bm25(chunks_fts) LIMIT 1",
+            "ORDER BY bm25(chunks_fts), c.ordinal, c.chunk_id LIMIT 1",
             (expression, source),
         ).fetchone()
 
