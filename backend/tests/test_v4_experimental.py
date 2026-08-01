@@ -13,8 +13,12 @@ pytest.importorskip("lancedb")
 
 from obsidianrag.config import configure_from_vault
 from obsidianrag.core.query_pipeline import QueryPipeline
-from obsidianrag.v4 import ExperimentalLexicalRetriever, ExperimentalRetriever, build_index
-from obsidianrag.v4.index import active_revision
+from obsidianrag.v4 import (
+    ExperimentalLexicalRetriever,
+    ExperimentalRetriever,
+    active_revision,
+    build_index,
+)
 
 
 class KeywordEmbeddings(Embeddings):
@@ -220,7 +224,7 @@ def test_active_manifest_cannot_escape_revision_directory(tmp_path):
     vault = copy_sample_vault(tmp_path)
     root = vault / ".obsidianrag" / "v4"
     root.mkdir(parents=True)
-    (root / "active.json").write_text('{"schema_version": 1, "revision": "../../outside"}')
+    (root / "active.json").write_text('{"schema_version": 2, "revision": "../../outside"}')
 
     with pytest.raises(RuntimeError, match="revision path"):
         active_revision(vault)

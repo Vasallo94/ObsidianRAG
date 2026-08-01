@@ -192,7 +192,8 @@ OBSIDIANRAG_OLLAMA_BASE_URL=http://localhost:11434
 |   LangGraph Agent                         |
 |   Retrieve -> Rerank -> Generate          |
 |        |                                  |
-|   ChromaDB (Vector Store)                 |
+|   ChromaDB (v3 Vector Store)              |
+|   SQLite FTS5 + LanceDB (optional v4)     |
 +-------------------------------------------+
 ```
 
@@ -214,6 +215,29 @@ flowchart LR
 2. Reranking with BAAI/bge-reranker-v2-m3
 3. GraphRAG expansion via `[[wikilinks]]`
 4. Score filtering (removes documents below 0.3 relevance)
+
+### Experimental v4 index
+
+The optional v4 engine stores each revision in
+`.obsidianrag/v4/indexes/<revision>/` with a SQLite catalog and FTS5 table
+alongside a LanceDB vector table. Every build scans the vault Markdown files,
+hashes note content and index settings, and uses copy-on-write revisions:
+unchanged notes reuse their existing chunks and vectors, while added or
+modified notes are split and embedded again and deleted notes are omitted.
+
+`active.json` is replaced only after SQLite integrity and exact chunk-ID
+agreement across the catalog, FTS5, and LanceDB have passed. A cross-platform
+exclusive build lock serializes builders; failed builds remove only their
+unactivated revision, so active readers and the previous revision remain
+usable.
+
+```bash
+# Incremental by default
+obsidianrag v4-index --vault /path/to/vault
+
+# Explicitly rebuild after an embedding/schema/chunk-settings change
+obsidianrag v4-index --vault /path/to/vault --full-rebuild
+```
 
 **Generate Node:**
 1. Build prompt with retrieved context

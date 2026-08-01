@@ -261,6 +261,11 @@ def ask(
 @app.command("v4-index")
 def v4_index(
     vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
+    full_rebuild: bool = typer.Option(
+        False,
+        "--full-rebuild",
+        help="Ignore the active revision and rebuild every note",
+    ),
 ):
     """Build and atomically activate an experimental SQLite + LanceDB index."""
     from obsidianrag.config import configure_from_vault
@@ -271,7 +276,11 @@ def v4_index(
     configure_from_vault(str(vault_path))
     try:
         with console.status("[bold green]Building experimental v4 index..."):
-            result = build_index(vault_path, get_embeddings())
+            result = build_index(
+                vault_path,
+                get_embeddings(),
+                full_rebuild=full_rebuild,
+            )
     except RuntimeError as error:
         console.print(f"[red]{error}[/red]")
         raise typer.Exit(1) from error

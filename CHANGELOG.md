@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shared provider-neutral v4 query pipeline with grounded generation, abstention guidance, numeric citations, and matching synchronous/streaming prompts
 - `ask --engine v4|v4-fts` for experimental hybrid or embedding-free answer generation
 - Regression tests for incremental index updates, process ownership, and secret handling
+- Copy-on-write v4 incremental revisions with note hashing, cross-store chunk-ID validation, and a full-rebuild CLI escape hatch
 
 ### Changed
 - Replaced the plugin's `builtin-modules` dependency with Node's native `builtinModules` API
@@ -31,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Semicolon-separated multipart questions retrieve and preserve relevant context independently for each part
 - Provider-neutral generation now defaults to low-variance temperature zero with a validated configuration override
 - FTS5 generation preserves a second strong lexical passage for each query part's leading source and explicitly checks concrete details
+- v4 builders serialize with an exclusive lock and keep active revisions readable while a validated revision activates
 
 ### Fixed
 - Incremental updates verify new chunks before deleting the previous valid revision

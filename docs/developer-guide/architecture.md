@@ -116,11 +116,13 @@ flowchart LR
     RRF --> Results[Ranked chunks]
 ```
 
-- SQLite is authoritative for chunk text, source paths, lexical search, and index metadata.
+- SQLite is authoritative for chunk text, source paths, lexical search, note hashes, and index metadata.
 - LanceDB is a rebuildable vector index keyed by deterministic chunk IDs.
-- Every full build writes a new isolated revision, validates catalog/vector counts, and atomically switches `active.json`.
-- Previous revisions remain available for rollback.
-- The experiment reuses the current parser, chunker, and embedding providers so retrieval storage can be compared without changing every variable at once.
+- Builds scan vault Markdown directly and create an isolated copy-on-write revision. Unchanged chunks reuse their vectors; changed notes are split and embedded again; deleted notes are omitted.
+- A build lock serializes writers. `active.json` changes only after SQLite integrity and exact chunk-ID agreement across the catalog, FTS5, and LanceDB have passed.
+- Schema, embedding, or chunk-setting changes require `v4-index --full-rebuild`.
+- Previous revisions remain available, so existing readers and rollback paths stay valid across activation.
+- The experiment reuses the current chunker and embedding providers so retrieval storage can be compared without changing every variable at once.
 - `obsidianrag evaluate --engine v3|v4` runs both implementations against the same expected-source dataset.
 
-The vertical deliberately excludes generation, reranking, incremental v4 updates, and plugin routing. Those move only after public evaluation demonstrates parity or improvement.
+The v4 vertical remains optional and does not change the production v3 index or plugin routing.
