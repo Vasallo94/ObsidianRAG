@@ -19,6 +19,7 @@ from obsidianrag.core.llm_provider import create_chat_model, stream_chat_model_t
 MAX_QUESTION_LENGTH = 5000
 # ponytail: heuristic ceiling; replace with learned/reranked selection when benchmarks justify it.
 CONTEXT_LEXICAL_SCORE_RATIO = 0.70
+MAX_MULTIPART_SOURCES_PER_SEGMENT = 2
 
 _SYSTEM_PROMPT = """You answer questions using only the supplied Obsidian note context.
 
@@ -123,9 +124,7 @@ class QueryPipeline:
 
     def _prepare(self, question: str, history: list[tuple[str, str]]) -> _PreparedQuery:
         question = _validate_question(question)
-        with self._retrieval_lock:
-            retrieved = self.retriever.invoke(question, k=self.retrieval_k)
-        documents = self._select_context(self._unique_source_documents(retrieved))
+        documents = self._select_context(self._retrieve(question))
         source_paths = tuple(self._source_path(document) for document in documents)
         context = "\n\n".join(
             f"[SOURCE {index}]\nPath: {source}\n{document.page_content}\n[/SOURCE {index}]"
@@ -145,13 +144,52 @@ class QueryPipeline:
 
     def _result(self, prepared: _PreparedQuery, answer: str) -> QueryResult:
         citations = []
-        for match in re.finditer(r"\[(\d+)\]", answer):
+        for match in re.finditer(r"\[(?:SOURCE\s+)?(\d+)\]", answer, flags=re.IGNORECASE):
             index = int(match.group(1))
             if 1 <= index <= len(prepared.source_paths):
                 source = prepared.source_paths[index - 1]
                 if source not in citations:
                     citations.append(source)
         return QueryResult(prepared.question, answer, prepared.documents, tuple(citations))
+
+    def _retrieve(self, question: str) -> tuple[Document, ...]:
+        segments = [segment.strip() for segment in question.split(";") if segment.strip()]
+        ranked_segments = []
+        with self._retrieval_lock:
+            for segment_index, segment in enumerate(segments):
+                documents = self._unique_source_documents(
+                    self.retriever.invoke(segment, k=self.retrieval_k)
+                )
+                if len(segments) > 1:
+                    documents = documents[:MAX_MULTIPART_SOURCES_PER_SEGMENT]
+                ranked_segments.append(
+                    tuple(
+                        Document(
+                            page_content=document.page_content,
+                            metadata={
+                                **document.metadata,
+                                "context_segment": segment_index,
+                                "segment_rank": rank,
+                            },
+                        )
+                        for rank, document in enumerate(documents, 1)
+                    )
+                )
+
+        merged = []
+        seen = set()
+        for rank in range(self.k):
+            for documents in ranked_segments:
+                if rank >= len(documents):
+                    continue
+                document = documents[rank]
+                source = self._source_path(document)
+                if source not in seen:
+                    seen.add(source)
+                    merged.append(document)
+                if len(merged) == self.k:
+                    return tuple(merged)
+        return tuple(merged)
 
     def _unique_source_documents(self, documents: list[Document]) -> tuple[Document, ...]:
         unique = []
@@ -170,15 +208,21 @@ class QueryPipeline:
     def _select_context(self, documents: tuple[Document, ...]) -> tuple[Document, ...]:
         if not documents:
             return documents
-        top_score = self._lexical_score(documents[0])
-        if top_score <= 0:
-            return documents
-        threshold = top_score * CONTEXT_LEXICAL_SCORE_RATIO
-        return (documents[0],) + tuple(
-            document
-            for document in documents[1:]
-            if (score := self._lexical_score(document)) <= 0 or score >= threshold
-        )
+        top_scores = {}
+        for document in documents:
+            segment = int(document.metadata.get("context_segment", 0))
+            score = self._lexical_score(document)
+            if segment not in top_scores:
+                top_scores[segment] = score
+
+        selected = []
+        for document in documents:
+            segment = int(document.metadata.get("context_segment", 0))
+            score = self._lexical_score(document)
+            top_score = top_scores[segment]
+            if top_score <= 0 or score <= 0 or score >= top_score * CONTEXT_LEXICAL_SCORE_RATIO:
+                selected.append(document)
+        return tuple(selected)
 
     @staticmethod
     def _lexical_score(document: Document) -> float:

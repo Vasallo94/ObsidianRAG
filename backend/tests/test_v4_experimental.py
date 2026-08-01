@@ -94,6 +94,33 @@ def test_lexical_retriever_streams_from_pipeline_worker_thread(tmp_path):
     assert events[-1]["citations"] == ["Reference/Error Codes.md"]
 
 
+def test_multipart_pipeline_keeps_sources_from_each_query_part(tmp_path):
+    vault = copy_sample_vault(tmp_path)
+    configure_from_vault(str(vault))
+    build_index(vault, KeywordEmbeddings())
+    model = MagicMock()
+    model.invoke.return_value.content = "Rollback [1], rotate credentials [2]."
+    pipeline = QueryPipeline(
+        ExperimentalLexicalRetriever(vault),
+        model,
+        vault_path=vault,
+        k=5,
+        retrieval_k=25,
+    )
+
+    try:
+        result = pipeline.ask(
+            "How do I roll back a failed deployment?; "
+            "además, ¿cómo se deben rotar las credenciales de producción?"
+        )
+    finally:
+        pipeline.close()
+
+    sources = {document.metadata["source"] for document in result.documents}
+    assert "Operations/Deployment Runbook.md" in sources
+    assert "Operations/Secret Rotation.md" in sources
+
+
 def test_hybrid_retriever_closes_sqlite_when_initialization_fails(tmp_path):
     connection = MagicMock()
     connection.execute.return_value = [("embedding_signature", "old")]
