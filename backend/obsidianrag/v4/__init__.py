@@ -1,15 +1,17 @@
-"""Experimental v4 indexing and retrieval components."""
+"""v4 indexing and retrieval components."""
 
 from obsidianrag.v4.index import (
     FullRebuildRequired,
-    IncrementalIndexError,
     IndexBuildLocked,
     IndexBuildResult,
+    IndexCorruptionError,
+    IndexPathError,
+    PruneResult,
+    RevisionInUse,
     V4DependencyError,
     active_revision,
-    build_full_index,
-    build_incremental_index,
     build_index,
+    prune_revisions,
 )
 from obsidianrag.v4.retrieval import ExperimentalLexicalRetriever, ExperimentalRetriever
 
@@ -19,10 +21,12 @@ __all__ = [
     "FullRebuildRequired",
     "IndexBuildLocked",
     "IndexBuildResult",
-    "IncrementalIndexError",
+    "IndexCorruptionError",
+    "IndexPathError",
+    "PruneResult",
+    "RevisionInUse",
     "V4DependencyError",
     "active_revision",
-    "build_full_index",
-    "build_incremental_index",
     "build_index",
+    "prune_revisions",
 ]

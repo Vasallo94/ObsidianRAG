@@ -225,11 +225,13 @@ hashes note content and index settings, and uses copy-on-write revisions:
 unchanged notes reuse their existing chunks and vectors, while added or
 modified notes are split and embedded again and deleted notes are omitted.
 
-`active.json` is replaced only after SQLite integrity and exact chunk-ID
-agreement across the catalog, FTS5, and LanceDB have passed. A cross-platform
-exclusive build lock serializes builders; failed builds remove only their
-unactivated revision, so active readers and the previous revision remain
-usable.
+`active.json` is replaced only after SQLite integrity, semantic catalog/FTS
+agreement, and exact validated LanceDB vectors have passed. Embedding
+fingerprints prevent reuse across different vector spaces. A cross-platform
+exclusive lock serializes builders; failed builds remove only their
+unactivated revision, while filesystem leases keep revisions used by readers
+available. Empty vaults activate an empty revision instead of retaining deleted
+content.
 
 ```bash
 # Incremental by default
@@ -237,6 +239,9 @@ obsidianrag v4-index --vault /path/to/vault
 
 # Explicitly rebuild after an embedding/schema/chunk-settings change
 obsidianrag v4-index --vault /path/to/vault --full-rebuild
+
+# Delete inactive revisions after their readers close
+obsidianrag v4-prune --vault /path/to/vault
 ```
 
 **Generate Node:**

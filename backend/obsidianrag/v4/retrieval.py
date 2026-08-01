@@ -8,7 +8,12 @@ from pathlib import Path
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 
-from obsidianrag.v4.index import active_revision, embedding_signature, require_lancedb
+from obsidianrag.v4.index import (
+    acquire_revision_lease,
+    active_revision,
+    embedding_fingerprint,
+    require_lancedb,
+)
 
 RRF_CONSTANT = 60
 
@@ -17,15 +22,26 @@ class ExperimentalLexicalRetriever:
     """Retrieve chunks from the authoritative SQLite FTS5 catalog without embeddings."""
 
     def __init__(self, vault_path: Path):
-        self.revision_path = active_revision(vault_path.resolve())
-        self.connection = sqlite3.connect(
-            f"{(self.revision_path / 'catalog.sqlite3').as_uri()}?mode=ro",
-            uri=True,
-            check_same_thread=False,
-        )
+        self.vault_path = vault_path.resolve()
+        self.revision_path = active_revision(self.vault_path)
+        self.lease = acquire_revision_lease(self.vault_path, self.revision_path)
+        try:
+            self.connection = sqlite3.connect(
+                f"{(self.revision_path / 'catalog.sqlite3').as_uri()}?mode=ro",
+                uri=True,
+                check_same_thread=False,
+            )
+        except Exception:
+            self.lease.close()
+            raise
 
     def close(self) -> None:
-        self.connection.close()
+        try:
+            self.connection.close()
+        finally:
+            lease = getattr(self, "lease", None)
+            if lease is not None:
+                lease.close()
 
     def invoke(self, query: str, k: int = 10) -> list[Document]:
         if not query.strip():
@@ -62,14 +78,18 @@ class ExperimentalRetriever:
         self.vault_path = vault_path.resolve()
         self.embeddings = embeddings
         self.revision_path = active_revision(self.vault_path)
-        self.connection = sqlite3.connect(
-            f"{(self.revision_path / 'catalog.sqlite3').as_uri()}?mode=ro",
-            uri=True,
-            check_same_thread=False,
-        )
+        self.lease = acquire_revision_lease(self.vault_path, self.revision_path)
         try:
+            self.connection = sqlite3.connect(
+                f"{(self.revision_path / 'catalog.sqlite3').as_uri()}?mode=ro",
+                uri=True,
+                check_same_thread=False,
+            )
             metadata = dict(self.connection.execute("SELECT key, value FROM metadata"))
-            if metadata.get("embedding_signature") != embedding_signature():
+            fingerprint, dimension = embedding_fingerprint(embeddings)
+            if metadata.get("embedding_fingerprint") != fingerprint or metadata.get(
+                "embedding_dimension"
+            ) != str(dimension):
                 raise RuntimeError(
                     "The active v4 index uses a different embedding configuration. Rebuild it."
                 )
@@ -77,11 +97,19 @@ class ExperimentalRetriever:
                 require_lancedb().connect(self.revision_path / "vectors").open_table("chunks")
             )
         except Exception:
-            self.connection.close()
+            connection = getattr(self, "connection", None)
+            if connection is not None:
+                connection.close()
+            self.lease.close()
             raise
 
     def close(self) -> None:
-        self.connection.close()
+        try:
+            self.connection.close()
+        finally:
+            lease = getattr(self, "lease", None)
+            if lease is not None:
+                lease.close()
 
     def invoke(self, query: str, k: int = 10) -> list[Document]:
         """Return hybrid results using reciprocal-rank fusion."""
@@ -170,6 +198,8 @@ class ExperimentalRetriever:
         ).fetchone()
 
     def _vector_search(self, query: str, limit: int) -> list[str]:
+        if self.table.count_rows() == 0:
+            return []
         vector = self.embeddings.embed_query(query)
         query_builder = self.table.search(vector).distance_type("cosine").limit(limit)
         return [row["chunk_id"] for row in query_builder.to_list()]
