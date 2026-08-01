@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Offline `compare-evaluations` command with paired bootstrap metric deltas
 - External JSON agent evaluation with FTS5 retrieval, grounded answer metrics, and explicit private-data confirmation
 - Optional Pi/Luna adapter for remote generation and judging without local inference
+- Shared provider-neutral v4 query pipeline with grounded generation, abstention guidance, numeric citations, and matching synchronous/streaming prompts
+- `ask --engine v4|v4-fts` for experimental hybrid or embedding-free answer generation
 - Regression tests for incremental index updates, process ownership, and secret handling
 
 ### Changed

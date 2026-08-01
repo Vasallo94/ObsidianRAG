@@ -3,14 +3,8 @@ name: Plugin Tests
 on:
   push:
     branches: [main, v3-plugin]
-    paths:
-      - 'plugin/**'
-      - '.github/workflows/test-plugin.yml'
   pull_request:
     branches: [main, v3-plugin]
-    paths:
-      - 'plugin/**'
-      - '.github/workflows/test-plugin.yml'
 
 permissions:
   contents: read
@@ -34,12 +28,12 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
           cache: 'pnpm'
           cache-dependency-path: 'plugin/pnpm-lock.yaml'
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Lint
         run: pnpm lint

@@ -168,6 +168,45 @@ class TestAskCommand:
         assert result.exit_code == 0
         assert "Test answer" in result.stdout or "Answer" in result.stdout
 
+    @patch("obsidianrag.core.query_pipeline.create_v4_query_pipeline")
+    def test_ask_routes_v4_fts_and_closes_pipeline(self, create_pipeline, runner, mock_vault):
+        from langchain_core.documents import Document
+
+        pipeline = MagicMock()
+        pipeline.ask.return_value = MagicMock(
+            answer="Grounded [1].",
+            documents=(
+                Document(
+                    page_content="Grounded",
+                    metadata={"source": "Notes/Grounding.md"},
+                ),
+            ),
+        )
+        create_pipeline.return_value = pipeline
+
+        result = runner.invoke(
+            app,
+            [
+                "ask",
+                "What is grounded?",
+                "--vault",
+                str(mock_vault),
+                "--engine",
+                "v4-fts",
+                "--k",
+                "3",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Grounded" in result.stdout
+        assert "Notes/Grounding.md" in result.stdout
+        create_pipeline.assert_called_once()
+        assert create_pipeline.call_args.kwargs["engine"] == "v4-fts"
+        assert create_pipeline.call_args.kwargs["k"] == 3
+        pipeline.ask.assert_called_once_with("What is grounded?")
+        pipeline.close.assert_called_once_with()
+
     def test_ask_without_question(self, runner, mock_vault):
         """Test ask command without providing a question."""
         result = runner.invoke(app, ["ask", "--vault", str(mock_vault)])

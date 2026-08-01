@@ -217,17 +217,37 @@ def status(
 def ask(
     question: str = typer.Argument(..., help="Question to ask"),
     vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
+    engine: Literal["v3", "v4", "v4-fts"] = typer.Option(
+        "v3", "--engine", help="Query engine: v3, v4, or embedding-free v4-fts"
+    ),
+    k: int = typer.Option(5, "--k", min=1, help="Unique source notes for v4 context"),
 ):
     """Ask a question about your notes (without starting server)."""
     vault_path = get_vault_path(vault)
 
     console.print(f"[bold]{question}[/bold]\n")
 
-    from obsidianrag import ObsidianRAG
-
     with console.status("[bold green]Thinking..."):
-        rag = ObsidianRAG(vault_path)
-        answer, sources = rag.ask(question)
+        if engine == "v3":
+            from obsidianrag import ObsidianRAG
+
+            rag = ObsidianRAG(vault_path)
+            answer, sources = rag.ask(question)
+        else:
+            from obsidianrag.config import configure_from_vault, get_settings
+            from obsidianrag.core.query_pipeline import create_v4_query_pipeline
+
+            resolved_vault = Path(vault_path).resolve()
+            configure_from_vault(str(resolved_vault))
+            pipeline = create_v4_query_pipeline(
+                resolved_vault, engine=engine, k=k, settings=get_settings()
+            )
+            try:
+                result = pipeline.ask(question)
+            finally:
+                pipeline.close()
+            answer = result.answer
+            sources = list(result.documents)
 
     console.print(Panel(answer, title="Answer", border_style="green"))
 
@@ -235,7 +255,7 @@ def ask(
         console.print("\n[dim]Sources:[/dim]")
         for i, source in enumerate(sources[:5], 1):
             source_path = source.metadata.get("source", "Unknown")
-            console.print(f"  {i}. {Path(source_path).name}")
+            console.print(f"  {i}. {source_path if engine != 'v3' else Path(source_path).name}")
 
 
 @app.command("v4-index")
