@@ -88,7 +88,7 @@ class ExperimentalRetriever:
                 scores[chunk_id] += 1.0 / (RRF_CONSTANT + rank)
                 channels[chunk_id].add(channel)
 
-        ranked = sorted(scores, key=scores.__getitem__, reverse=True)[:k]
+        ranked = sorted(scores, key=scores.__getitem__, reverse=True)
         if not ranked:
             return []
         placeholders = ",".join("?" for _ in ranked)
@@ -100,20 +100,35 @@ class ExperimentalRetriever:
                 ranked,
             )
         }
-        return [
-            Document(
-                page_content=rows[chunk_id][3],
-                metadata={
-                    "chunk_id": chunk_id,
-                    "source": rows[chunk_id][1],
-                    "ordinal": rows[chunk_id][2],
-                    "score": scores[chunk_id],
-                    "retrieval_type": "+".join(sorted(channels[chunk_id])),
-                },
+        source_candidates = []
+        fallback_rows = {}
+        source_scores = {}
+        for chunk_id in ranked:
+            row = rows.get(chunk_id)
+            if row is None or row[1] in fallback_rows:
+                continue
+            source_candidates.append(row[1])
+            fallback_rows[row[1]] = row
+            source_scores[row[1]] = scores[chunk_id]
+            if len(source_candidates) == k:
+                break
+
+        documents = []
+        for source in source_candidates:
+            row = self._best_lexical_chunk(query, source) or fallback_rows[source]
+            documents.append(
+                Document(
+                    page_content=row[3],
+                    metadata={
+                        "chunk_id": row[0],
+                        "source": row[1],
+                        "ordinal": row[2],
+                        "score": source_scores[source],
+                        "retrieval_type": "hybrid-source+lexical-chunk",
+                    },
+                )
             )
-            for chunk_id in ranked
-            if chunk_id in rows
-        ]
+        return documents
 
     def _lexical_search(self, query: str, limit: int) -> list[str]:
         terms = re.findall(r"\w+", query, flags=re.UNICODE)
@@ -126,6 +141,19 @@ class ExperimentalRetriever:
             (expression, limit),
         )
         return [row[0] for row in rows]
+
+    def _best_lexical_chunk(self, query: str, source: str):
+        terms = re.findall(r"\w+", query, flags=re.UNICODE)
+        if not terms:
+            return None
+        expression = " OR ".join(f'"{term}"' for term in terms)
+        return self.connection.execute(
+            "SELECT c.chunk_id, c.note_path, c.ordinal, c.text "
+            "FROM chunks_fts JOIN chunks c ON c.chunk_id = chunks_fts.chunk_id "
+            "WHERE chunks_fts MATCH ? AND c.note_path = ? "
+            "ORDER BY bm25(chunks_fts) LIMIT 1",
+            (expression, source),
+        ).fetchone()
 
     def _vector_search(self, query: str, limit: int) -> list[str]:
         vector = self.embeddings.embed_query(query)

@@ -344,7 +344,8 @@ def evaluate(
 
                     retriever = ExperimentalRetriever(vault_path, get_embeddings())
                 try:
-                    retrieve = partial(retriever.invoke, k=max(k * 5, 25))
+                    retrieve_k = max(k * 5, 25) if engine == "v4-fts" else k
+                    retrieve = partial(retriever.invoke, k=retrieve_k)
                     result = evaluate_retrieval(retrieve, cases, vault_path, k=k)
                 finally:
                     retriever.close()

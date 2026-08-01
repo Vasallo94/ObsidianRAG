@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reused the existing HTTPX dependency for Ollama availability checks
 - Simplified duplicated development and CI configuration
 - Plugin API keys are now session-only and passed to the backend through its environment
+- Hybrid v4 ranks unique sources with vector/lexical fusion, then selects each source's best lexical chunk for stronger evidence coverage
 
 ### Fixed
 - Incremental updates verify new chunks before deleting the previous valid revision
