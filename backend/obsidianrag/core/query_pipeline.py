@@ -337,19 +337,17 @@ def create_v4_query_pipeline(
     settings: Settings | None = None,
 ) -> QueryPipeline:
     """Create a v4 query pipeline and transfer retriever ownership to it."""
-    from obsidianrag.v4 import ExperimentalLexicalRetriever, ExperimentalRetriever
+    from obsidianrag.v4 import LexicalRetriever, Retriever
 
     if k < 1:
         raise ValueError("k must be at least 1")
     resolved_vault = vault_path.resolve()
     if engine == "v4-fts":
-        retriever: ExperimentalLexicalRetriever | ExperimentalRetriever = (
-            ExperimentalLexicalRetriever(resolved_vault)
-        )
+        retriever: LexicalRetriever | Retriever = LexicalRetriever(resolved_vault)
     elif engine == "v4":
         from obsidianrag.core.db_service import get_embeddings
 
-        retriever = ExperimentalRetriever(resolved_vault, get_embeddings())
+        retriever = Retriever(resolved_vault, get_embeddings())
     else:
         raise ValueError("engine must be 'v4' or 'v4-fts'")
 

@@ -2234,6 +2234,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "lancedb" },
     { name = "langchain-chroma" },
     { name = "langchain-classic" },
     { name = "langchain-community" },
@@ -2253,11 +2254,6 @@ dependencies = [
     { name = "uvicorn" },
 ]
 
-[package.optional-dependencies]
-v4 = [
-    { name = "lancedb" },
-]
-
 [package.dev-dependencies]
 dev = [
     { name = "black" },
@@ -2272,7 +2268,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.4" },
     { name = "httpx", specifier = ">=0.27.2" },
-    { name = "lancedb", marker = "extra == 'v4'", specifier = ">=0.36.0,<0.37.0" },
+    { name = "lancedb", specifier = ">=0.36.0,<0.37.0" },
     { name = "langchain-chroma", specifier = ">=0.1.4" },
     { name = "langchain-classic", specifier = ">=1.0.7" },
     { name = "langchain-community", specifier = ">=0.3.7" },
@@ -2291,7 +2287,6 @@ requires-dist = [
     { name = "typer", specifier = ">=0.12.5" },
     { name = "uvicorn", specifier = ">=0.32.0" },
 ]
-provides-extras = ["v4"]
 
 [package.metadata.requires-dev]
 dev = [

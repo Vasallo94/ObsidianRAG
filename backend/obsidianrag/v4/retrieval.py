@@ -18,7 +18,7 @@ from obsidianrag.v4.index import (
 RRF_CONSTANT = 60
 
 
-class ExperimentalLexicalRetriever:
+class LexicalRetriever:
     """Retrieve chunks from the authoritative SQLite FTS5 catalog without embeddings."""
 
     def __init__(self, vault_path: Path):
@@ -71,7 +71,7 @@ class ExperimentalLexicalRetriever:
         ]
 
 
-class ExperimentalRetriever:
+class Retriever:
     """Retrieve chunks from the active experimental index revision."""
 
     def __init__(self, vault_path: Path, embeddings: Embeddings):

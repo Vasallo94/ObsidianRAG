@@ -328,18 +328,18 @@ def v4_search(
 ):
     """Search the active experimental index without calling an LLM."""
     from obsidianrag.config import configure_from_vault
-    from obsidianrag.v4 import ExperimentalLexicalRetriever, ExperimentalRetriever
+    from obsidianrag.v4 import LexicalRetriever, Retriever
 
     vault_path = Path(get_vault_path(vault)).resolve()
     configure_from_vault(str(vault_path))
     try:
-        retriever: ExperimentalLexicalRetriever | ExperimentalRetriever
+        retriever: LexicalRetriever | Retriever
         if lexical_only:
-            retriever = ExperimentalLexicalRetriever(vault_path)
+            retriever = LexicalRetriever(vault_path)
         else:
             from obsidianrag.core.db_service import get_embeddings
 
-            retriever = ExperimentalRetriever(vault_path, get_embeddings())
+            retriever = Retriever(vault_path, get_embeddings())
         try:
             documents = retriever.invoke(query, k=k)
         finally:
@@ -386,16 +386,16 @@ def evaluate(
         if engine in {"v4", "v4-fts"}:
             from functools import partial
 
-            from obsidianrag.v4 import ExperimentalLexicalRetriever, ExperimentalRetriever
+            from obsidianrag.v4 import LexicalRetriever, Retriever
 
             try:
-                retriever: ExperimentalLexicalRetriever | ExperimentalRetriever
+                retriever: LexicalRetriever | Retriever
                 if engine == "v4-fts":
-                    retriever = ExperimentalLexicalRetriever(vault_path)
+                    retriever = LexicalRetriever(vault_path)
                 else:
                     from obsidianrag.core.db_service import get_embeddings
 
-                    retriever = ExperimentalRetriever(vault_path, get_embeddings())
+                    retriever = Retriever(vault_path, get_embeddings())
                 try:
                     retrieve_k = max(k * 5, 25) if engine == "v4-fts" else k
                     retrieve = partial(retriever.invoke, k=retrieve_k)
@@ -503,7 +503,7 @@ def evaluate_agent(
     import json
 
     from obsidianrag.agent_evaluation import evaluate_with_external_agent
-    from obsidianrag.v4 import ExperimentalLexicalRetriever
+    from obsidianrag.v4 import LexicalRetriever
 
     if not allow_private_data:
         console.print(
@@ -516,7 +516,7 @@ def evaluate_agent(
         raw_cases = raw.get("cases") if isinstance(raw, dict) else None
         if not isinstance(raw_cases, list) or not raw_cases:
             raise ValueError("Dataset must contain a non-empty cases list")
-        retriever = ExperimentalLexicalRetriever(Path(get_vault_path(vault)).resolve())
+        retriever = LexicalRetriever(Path(get_vault_path(vault)).resolve())
         try:
             result = evaluate_with_external_agent(
                 raw_cases,

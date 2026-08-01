@@ -6,27 +6,31 @@ from obsidianrag.v4.index import (
     IndexBuildResult,
     IndexCorruptionError,
     IndexPathError,
+    IndexStatus,
     PruneResult,
     RevisionInUse,
     V4DependencyError,
     active_revision,
     build_index,
+    index_status,
     prune_revisions,
 )
-from obsidianrag.v4.retrieval import ExperimentalLexicalRetriever, ExperimentalRetriever
+from obsidianrag.v4.retrieval import LexicalRetriever, Retriever
 
 __all__ = [
-    "ExperimentalLexicalRetriever",
-    "ExperimentalRetriever",
+    "LexicalRetriever",
+    "Retriever",
     "FullRebuildRequired",
     "IndexBuildLocked",
     "IndexBuildResult",
     "IndexCorruptionError",
     "IndexPathError",
+    "IndexStatus",
     "PruneResult",
     "RevisionInUse",
     "V4DependencyError",
     "active_revision",
     "build_index",
+    "index_status",
     "prune_revisions",
 ]

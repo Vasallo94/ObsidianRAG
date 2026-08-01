@@ -567,7 +567,7 @@ def test_lexical_factory_does_not_load_embeddings_and_owns_retriever(tmp_path):
     model = MagicMock()
 
     with (
-        patch("obsidianrag.v4.ExperimentalLexicalRetriever", return_value=lexical),
+        patch("obsidianrag.v4.LexicalRetriever", return_value=lexical),
         patch("obsidianrag.core.query_pipeline.create_chat_model", return_value=(model, "test")),
         patch("obsidianrag.core.db_service.get_embeddings") as get_embeddings,
     ):
@@ -584,7 +584,7 @@ def test_lexical_factory_does_not_load_embeddings_and_owns_retriever(tmp_path):
 
 def test_factory_rejects_invalid_k_before_opening_retriever(tmp_path):
     with (
-        patch("obsidianrag.v4.ExperimentalLexicalRetriever") as lexical,
+        patch("obsidianrag.v4.LexicalRetriever") as lexical,
         pytest.raises(ValueError, match="k must be at least 1"),
     ):
         create_v4_query_pipeline(tmp_path, engine="v4-fts", k=0)
@@ -624,7 +624,7 @@ def test_factory_closes_retriever_when_model_creation_fails(tmp_path):
     lexical = MagicMock()
 
     with (
-        patch("obsidianrag.v4.ExperimentalLexicalRetriever", return_value=lexical),
+        patch("obsidianrag.v4.LexicalRetriever", return_value=lexical),
         patch(
             "obsidianrag.core.query_pipeline.create_chat_model",
             side_effect=RuntimeError("provider unavailable"),
