@@ -201,7 +201,7 @@ class TestCLIHelp:
         """Test index command help."""
         result = runner.invoke(app, ["index", "--help"])
         assert result.exit_code == 0
-        assert "--full-rebuild" in result.stdout
+        assert "--full-rebuild" in unstyle(result.stdout)
 
     def test_v4_commands_are_discoverable(self, runner):
         result = runner.invoke(app, ["--help"])

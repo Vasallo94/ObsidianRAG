@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bounded LanceDB copying and semantic cross-store validation prevent unsafe activation
 - Cancellation no longer closes a retriever while its worker thread is still running
 - Failed runtime swaps preserve the previous serving revision and expose the mismatch as stale
+- Windows durability sync opens managed files with a writable descriptor as required by `_commit`
+- External-agent commands preserve Windows executable paths without invoking a shell
 
 ### Security
 - Managed paths and Markdown scans reject symlinks and junctions

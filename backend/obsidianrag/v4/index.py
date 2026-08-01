@@ -1196,7 +1196,8 @@ def _validate_revision(revision_path: Path, expected_chunks: int | set[str]) -> 
 
 
 def _fsync_file(path: Path) -> None:
-    descriptor, _ = _open_regular(path, os.O_RDONLY)
+    flags = os.O_RDWR if os.name == "nt" else os.O_RDONLY
+    descriptor, _ = _open_regular(path, flags)
     try:
         os.fsync(descriptor)
     finally:
