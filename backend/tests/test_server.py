@@ -1,6 +1,22 @@
 """Tests for ObsidianRAG FastAPI server."""
 
+import asyncio
+
 import pytest
+
+
+class TestCapabilitiesEndpoint:
+    def test_capabilities_exposes_versioned_contract(self):
+        from obsidianrag.api.server import create_app
+
+        app = create_app()
+        route = next(route for route in app.routes if route.path == "/capabilities")
+        data = asyncio.run(route.endpoint())
+
+        assert data["api_version"] == 3
+        assert data["backend_version"]
+        assert "sse" in data["features"]
+        assert "ollama" in data["providers"]
 
 
 class TestHealthEndpoint:

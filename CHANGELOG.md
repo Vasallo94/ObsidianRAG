@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Versioned `/capabilities` endpoint for plugin/backend compatibility checks
+- Retrieval evaluation CLI with Precision@k, Recall@k, hit rate, MRR, MAP@k, graded nDCG@k, chunk-level evidence recall, deterministic 95% bootstrap confidence intervals, and latency percentiles
+- Public multilingual retrieval fixture for reproducible smoke benchmarks
+- Optional experimental v4 index using SQLite FTS5 and embedded LanceDB
+- `v4-index` and `v4-search` commands plus v3/v4 evaluation selection
+- Embedding-free `v4-fts` evaluation and `v4-search --lexical-only` modes
+- Offline `compare-evaluations` command with paired bootstrap metric deltas
+- External JSON agent evaluation with FTS5 retrieval, grounded answer metrics, and explicit private-data confirmation
+- Optional Pi/Luna adapter for remote generation and judging without local inference
+- Regression tests for incremental index updates, process ownership, and secret handling
+
+### Changed
+- Replaced the plugin's `builtin-modules` dependency with Node's native `builtinModules` API
+- Reused the existing HTTPX dependency for Ollama availability checks
+- Simplified duplicated development and CI configuration
+- Plugin API keys are now session-only and passed to the backend through its environment
+- Hybrid v4 ranks unique sources with vector/lexical fusion, then selects each source's best lexical chunk for stronger evidence coverage
+
+### Fixed
+- Incremental updates verify new chunks before deleting the previous valid revision
+- Incremental reads now reject paths outside the configured vault
+- Health responses now include the backend version expected by the plugin
+- Disabling incremental indexing now loads an existing database instead of rebuilding it
+- Full Chroma rebuilds embed bounded batches with retries instead of sending the entire vault to Ollama
+- BM25 retrieval now normalizes case and punctuation for multilingual queries
+- Indexing now excludes Obsidian internals, trash, Git data, and dependency directories
+
+### Security
+- The plugin no longer kills arbitrary processes listening on its configured port
+- API keys are no longer exposed in backend process arguments or persisted by the plugin
+
+### Removed
+- Generated plugin bundle from version control; releases continue to build it automatically
+- Duplicate manifests and backend configuration
+- Unused direct and plugin build dependencies
+- Dead `retrieve_with_links` helper
+
 ## [3.0.3] - 2026-05-11
 
 ### Added

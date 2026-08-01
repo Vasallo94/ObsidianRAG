@@ -5,7 +5,7 @@
  * Uses a Python backend (obsidianrag) with Ollama for LLM inference.
  */
 
-import { exec, spawn } from "child_process";
+import { execFile, spawn } from "child_process";
 import {
     App,
     Component,
@@ -29,6 +29,7 @@ const VIEW_TYPE_CHAT = "obsidianrag-chat-view";
 const DEFAULT_PORT = 8000;
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 1000;
+const SUPPORTED_API_VERSION = 3;
 
 // ============================================================================
 // Interfaces
@@ -55,6 +56,13 @@ interface AskResponse {
   process_time: number;
   session_id: string;
   error?: string;
+}
+
+interface CapabilitiesResponse {
+  api_version: number;
+  backend_version: string;
+  features: string[];
+  providers: string[];
 }
 
 interface HealthResponse {
@@ -200,9 +208,8 @@ export default class ObsidianRAGPlugin extends Plugin {
   private restartAttempts: number = 0;
   private maxRestartAttempts: number = 3;
   private isRestarting: boolean = false;
+  private manuallyStoppedProcesses = new WeakSet<ReturnType<typeof spawn>>();
   statusBarItem: HTMLElement | null = null;
-
-  private _manualStop = false;
 
   async onload() {
     console.debug("Loading ObsidianRAG plugin");
@@ -298,11 +305,19 @@ export default class ObsidianRAGPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) as ObsidianRAGSettings);
+    const saved = (await this.loadData()) as Partial<ObsidianRAGSettings> | null;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
+
+    // API keys are session-only. Remove keys persisted by older plugin versions.
+    if (saved && Object.prototype.hasOwnProperty.call(saved, "llmApiKey")) {
+      await this.saveSettings();
+    }
   }
 
   async saveSettings() {
-    await this.saveData(this.settings);
+    const persistedSettings: Partial<ObsidianRAGSettings> = { ...this.settings };
+    delete persistedSettings.llmApiKey;
+    await this.saveData(persistedSettings);
     this.apiBaseUrl = `http://127.0.0.1:${this.settings.serverPort}`;
   }
 
@@ -402,9 +417,6 @@ export default class ObsidianRAGPlugin extends Plugin {
           this.settings.llmApiFormat,
           this.settings.useReranker ? "--reranker" : "--no-reranker",
         ];
-        if (this.settings.llmApiKey) {
-          args.push("--api-key", this.settings.llmApiKey);
-        }
       } else {
         // macOS and Linux
         command = this.settings.pythonPath;
@@ -424,31 +436,33 @@ export default class ObsidianRAGPlugin extends Plugin {
           this.settings.llmApiFormat,
           this.settings.useReranker ? "--reranker" : "--no-reranker",
         ];
-        if (this.settings.llmApiKey) {
-          args.push("--api-key", this.settings.llmApiKey);
-        }
       }
 
-      this.serverProcess = spawn(command, args, spawnOptions);
+      const childProcess = spawn(command, args, spawnOptions);
+      this.serverProcess = childProcess;
 
-      this.serverProcess.stdout?.on("data", (data: Buffer) => {
+      childProcess.stdout?.on("data", (data: Buffer) => {
         console.debug(`[ObsidianRAG] ${data.toString()}`);
       });
 
-      this.serverProcess.stderr?.on("data", (data: Buffer) => {
+      childProcess.stderr?.on("data", (data: Buffer) => {
         console.error(`[ObsidianRAG] ${data.toString()}`);
       });
 
-      this.serverProcess.on("error", (error: Error) => {
+      childProcess.on("error", (error: Error) => {
         console.error("[ObsidianRAG] Process error:", error);
+        if (this.serverProcess === childProcess) {
+          this.serverProcess = null;
+        }
         new Notice(`Failed to start server: ${error.message}`);
       });
 
-      this.serverProcess.on("exit", (code: number) => {
+      childProcess.on("exit", (code: number) => {
         console.debug(`[ObsidianRAG] Server exited with code ${code}`);
-        this.serverProcess = null;
-        if (this._manualStop) {
-          this._manualStop = false;
+        if (this.serverProcess === childProcess) {
+          this.serverProcess = null;
+        }
+        if (this.manuallyStoppedProcesses.delete(childProcess)) {
           return;
         }
         if (this.settings.autoStartServer && !this.isRestarting) {
@@ -494,42 +508,63 @@ export default class ObsidianRAGPlugin extends Plugin {
   }
 
   async stopServer(): Promise<void> {
-    this._manualStop = true;
-
-    if (this.serverProcess) {
-      this.serverProcess.kill();
-      this.serverProcess = null;
+    if (!this.serverProcess) {
+      new Notice("No plugin-managed Vault RAG server is running");
+      return;
     }
 
-    // Also try to kill any process on the port (in case server was started externally)
-    try {
-      const platform = process.platform;
-
-      const killCmd = platform === 'win32'
-        ? `for /f "tokens=5" %a in ('netstat -aon ^| find ":${this.settings.serverPort}" ^| find "LISTENING"') do taskkill /F /PID %a`
-        : `lsof -ti:${this.settings.serverPort} | xargs kill -9 2>/dev/null`;
-
-      await new Promise<void>((resolve) => {
-        exec(killCmd, (error: Error | null) => {
-          if (error) console.debug("[ObsidianRAG] No process found on port");
-          resolve();
-        });
-      });
-    } catch (e) {
-      console.debug("[ObsidianRAG] Could not kill process by port:", e);
-    }
+    const processToStop = this.serverProcess;
+    this.serverProcess = null;
+    this.manuallyStoppedProcesses.add(processToStop);
+    await this.terminateManagedProcess(processToStop);
 
     new Notice("Vault RAG server stopped");
     void this.updateStatusBar();
   }
 
+  private async terminateManagedProcess(
+    childProcess: ReturnType<typeof spawn>,
+    platform: string = process.platform
+  ): Promise<void> {
+    if (platform === "win32" && childProcess.pid) {
+      await new Promise<void>((resolve) => {
+        execFile(
+          "taskkill",
+          ["/PID", String(childProcess.pid), "/T", "/F"],
+          (error) => {
+            if (error) {
+              childProcess.kill();
+            }
+            resolve();
+          }
+        );
+      });
+      return;
+    }
+    childProcess.kill();
+  }
+
   async isServerRunning(): Promise<boolean> {
     try {
-      const response = await requestUrl({
+      const capabilities = await requestUrl({
+        url: `${this.apiBaseUrl}/capabilities`,
+        method: "GET",
+      });
+      const contract = capabilities.json as CapabilitiesResponse;
+      if (
+        capabilities.status < 200 ||
+        capabilities.status >= 300 ||
+        contract.api_version !== SUPPORTED_API_VERSION ||
+        !contract.backend_version
+      ) {
+        return false;
+      }
+
+      const health = await requestUrl({
         url: `${this.apiBaseUrl}/health`,
         method: "GET",
       });
-      return response.status >= 200 && response.status < 300;
+      return health.status >= 200 && health.status < 300;
     } catch {
       return false;
     }
@@ -1782,16 +1817,17 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
     if (this.plugin.settings.llmApiFormat === "chat-completions") {
       new Setting(containerEl)
         .setName("API key")
-        .setDesc("Optional. LM Studio accepts any value.")
-        .addText((text) =>
+        .setDesc("Optional and session-only; it is never saved to disk. LM Studio accepts any value.")
+        .addText((text) => {
+          text.inputEl.type = "password";
           text
             .setPlaceholder("lm-studio")
             .setValue(this.plugin.settings.llmApiKey)
             .onChange(async (value) => {
               this.plugin.settings.llmApiKey = value;
               await this.plugin.saveSettings();
-            })
-        );
+            });
+        });
     }
 
     const modelSetting = new Setting(containerEl)

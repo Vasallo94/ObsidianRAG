@@ -331,14 +331,34 @@ def _register_routes(application: FastAPI):
             },
         )
 
+    @application.get("/capabilities", summary="Backend protocol capabilities")
+    async def capabilities():
+        """Describe the stable features available to API clients."""
+        from obsidianrag import __version__
+
+        return {
+            "api_version": 3,
+            "backend_version": __version__,
+            "features": [
+                "hybrid-retrieval",
+                "incremental-indexing",
+                "reranker",
+                "sse",
+            ],
+            "providers": ["ollama", "lmstudio", "custom"],
+        }
+
     @application.get("/health", summary="System status")
     async def health():
         """Check system status and show current configuration."""
         settings = get_settings()
         is_ready = _db is not None and _qa_app is not None
 
+        from obsidianrag import __version__
+
         info = {
             "status": "ok" if is_ready else "unavailable",
+            "version": __version__,
             "llm_provider": settings.llm_provider,
             "llm_api_format": settings.llm_api_format,
             "model": settings.llm_model,

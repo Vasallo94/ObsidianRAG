@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from click import unstyle
 from typer.testing import CliRunner
 
 from obsidianrag.cli.main import app
@@ -195,3 +196,47 @@ class TestCLIHelp:
         result = runner.invoke(app, ["index", "--help"])
         assert result.exit_code == 0
         assert "--force" in result.stdout or "force" in result.stdout.lower()
+
+    def test_v4_commands_are_discoverable(self, runner):
+        result = runner.invoke(app, ["--help"])
+
+        assert result.exit_code == 0
+        assert "v4-index" in result.stdout
+        assert "v4-search" in result.stdout
+        assert "compare-evaluations" in result.stdout
+
+    def test_v4_search_help_exposes_embedding_free_mode(self, runner):
+        result = runner.invoke(app, ["v4-search", "--help"])
+
+        assert result.exit_code == 0
+        assert "--lexical-only" in unstyle(result.stdout)
+
+    def test_external_agent_evaluation_requires_private_data_confirmation(self, runner, tmp_path):
+        dataset = tmp_path / "private.json"
+        dataset.write_text('{"cases":[{}]}')
+
+        result = runner.invoke(
+            app,
+            [
+                "evaluate-agent",
+                str(dataset),
+                "--generator-command",
+                "generator",
+                "--judge-command",
+                "judge",
+            ],
+        )
+
+        assert result.exit_code == 2
+        assert "--allow-private-data" in result.stdout
+
+    def test_evaluate_rejects_unknown_engine(self, runner, mock_vault, tmp_path):
+        dataset = tmp_path / "questions.json"
+        dataset.write_text('{"cases":[{"question":"q","expected_sources":["note.md"]}]}')
+
+        result = runner.invoke(
+            app,
+            ["evaluate", str(dataset), "--vault", str(mock_vault), "--engine", "unknown"],
+        )
+
+        assert result.exit_code == 2

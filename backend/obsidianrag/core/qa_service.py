@@ -1,8 +1,9 @@
 """QA Service with hybrid search and reranking"""
 
 import logging
-from typing import List, cast
+import re
 
+import httpx
 from langchain_classic.retrievers import (
     ContextualCompressionRetriever,
     EnsembleRetriever,
@@ -39,9 +40,7 @@ def verify_ollama_available():
     """Verify that Ollama is running and accessible"""
     settings = get_settings()
     try:
-        import requests
-
-        response = requests.get(f"{settings.ollama_base_url}/api/tags", timeout=2)
+        response = httpx.get(f"{settings.ollama_base_url}/api/tags", timeout=2)
         response.raise_for_status()
         logger.info("Ollama is available")
     except Exception as e:
@@ -49,6 +48,11 @@ def verify_ollama_available():
         raise ModelNotAvailableError(
             f"Ollama is not running at {settings.ollama_base_url}. Run: ollama serve"
         )
+
+
+def _tokenize_bm25(text: str) -> list[str]:
+    """Tokenize lexical queries consistently across case and punctuation."""
+    return re.findall(r"\w+", text.lower())
 
 
 def create_hybrid_retriever(db):
@@ -79,7 +83,7 @@ def create_hybrid_retriever(db):
         )
 
         docs = [Document(page_content=t, metadata=m) for t, m in zip(texts, metadatas)]
-        bm25_retriever = BM25Retriever.from_documents(docs)
+        bm25_retriever = BM25Retriever.from_documents(docs, preprocess_func=_tokenize_bm25)
         bm25_retriever.k = settings.bm25_k
         logger.info("   BM25 k=%d", settings.bm25_k)
 
@@ -130,21 +134,3 @@ def create_retriever_with_reranker(db):
     else:
         logger.info("Reranker disabled in configuration")
         return ensemble_retriever
-
-
-def retrieve_with_links(retriever, query: str) -> List[Document]:
-    """Retrieve documents and their linked references (GraphRAG)"""
-    docs = retriever.invoke(query)
-
-    linked_sources = set()
-    for doc in docs:
-        links_str = doc.metadata.get("links", "")
-        if links_str:
-            for link in links_str.split(","):
-                if link.strip():
-                    linked_sources.add(link.strip())
-
-    if linked_sources:
-        logger.info("GraphRAG: Found %d linked notes", len(linked_sources))
-
-    return cast(List[Document], docs)

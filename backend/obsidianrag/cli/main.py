@@ -238,6 +238,305 @@ def ask(
             console.print(f"  {i}. {Path(source_path).name}")
 
 
+@app.command("v4-index")
+def v4_index(
+    vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
+):
+    """Build and atomically activate an experimental SQLite + LanceDB index."""
+    from obsidianrag.config import configure_from_vault
+    from obsidianrag.core.db_service import get_embeddings
+    from obsidianrag.v4 import build_index
+
+    vault_path = Path(get_vault_path(vault)).resolve()
+    configure_from_vault(str(vault_path))
+    try:
+        with console.status("[bold green]Building experimental v4 index..."):
+            result = build_index(vault_path, get_embeddings())
+    except RuntimeError as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(1) from error
+
+    console.print(
+        Panel.fit(
+            f"Revision: {result.revision}\nNotes: {result.notes}\nChunks: {result.chunks}",
+            title="Experimental v4 index ready",
+        )
+    )
+
+
+@app.command("v4-search")
+def v4_search(
+    query: str = typer.Argument(..., help="Query to retrieve from the experimental index"),
+    vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
+    k: int = typer.Option(10, "--k", min=1, help="Chunks to return"),
+    lexical_only: bool = typer.Option(
+        False, "--lexical-only", help="Use SQLite FTS5 without an embedding model"
+    ),
+):
+    """Search the active experimental index without calling an LLM."""
+    from obsidianrag.config import configure_from_vault
+    from obsidianrag.v4 import ExperimentalLexicalRetriever, ExperimentalRetriever
+
+    vault_path = Path(get_vault_path(vault)).resolve()
+    configure_from_vault(str(vault_path))
+    try:
+        retriever: ExperimentalLexicalRetriever | ExperimentalRetriever
+        if lexical_only:
+            retriever = ExperimentalLexicalRetriever(vault_path)
+        else:
+            from obsidianrag.core.db_service import get_embeddings
+
+            retriever = ExperimentalRetriever(vault_path, get_embeddings())
+        try:
+            documents = retriever.invoke(query, k=k)
+        finally:
+            retriever.close()
+    except RuntimeError as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(1) from error
+
+    for rank, document in enumerate(documents, 1):
+        source = document.metadata.get("source", "Unknown")
+        score = document.metadata.get("score", 0.0)
+        console.print(f"{rank}. [cyan]{source}[/cyan] ({score:.6f})")
+
+
+@app.command()
+def evaluate(
+    dataset: Path = typer.Argument(..., help="JSON dataset with questions and expected sources"),
+    vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
+    k: int = typer.Option(10, "--k", min=1, help="Unique source notes to evaluate"),
+    reranker: bool = typer.Option(False, "--reranker", help="Include the v3 reranker"),
+    engine: Literal["v3", "v4", "v4-fts"] = typer.Option(
+        "v3", "--engine", help="Retrieval engine: v3, v4, or embedding-free v4-fts"
+    ),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write JSON results"),
+):
+    """Evaluate retrieval against expected source notes without calling an LLM."""
+    from obsidianrag.config import configure_from_vault, get_settings
+    from obsidianrag.evaluation import evaluate_retrieval, load_dataset
+
+    if engine != "v3" and reranker:
+        raise typer.BadParameter("the v4 engines do not yet rerank", param_hint="--reranker")
+
+    vault_path = Path(get_vault_path(vault)).resolve()
+    try:
+        cases = load_dataset(dataset)
+    except (OSError, ValueError) as error:
+        console.print(f"[red]Invalid evaluation dataset: {error}[/red]")
+        raise typer.Exit(2) from error
+
+    configure_from_vault(str(vault_path))
+    settings = get_settings()
+
+    with console.status(f"[bold green]Evaluating {engine} retrieval..."):
+        if engine in {"v4", "v4-fts"}:
+            from functools import partial
+
+            from obsidianrag.v4 import ExperimentalLexicalRetriever, ExperimentalRetriever
+
+            try:
+                retriever: ExperimentalLexicalRetriever | ExperimentalRetriever
+                if engine == "v4-fts":
+                    retriever = ExperimentalLexicalRetriever(vault_path)
+                else:
+                    from obsidianrag.core.db_service import get_embeddings
+
+                    retriever = ExperimentalRetriever(vault_path, get_embeddings())
+                try:
+                    retrieve_k = max(k * 5, 25) if engine == "v4-fts" else k
+                    retrieve = partial(retriever.invoke, k=retrieve_k)
+                    result = evaluate_retrieval(retrieve, cases, vault_path, k=k)
+                finally:
+                    retriever.close()
+            except RuntimeError as error:
+                console.print(f"[red]{error}[/red]")
+                raise typer.Exit(1) from error
+        else:
+            from obsidianrag.core.db_service import load_or_create_db
+            from obsidianrag.core.qa_service import create_retriever_with_reranker
+
+            settings.use_reranker = reranker
+            settings.retrieval_k = max(settings.retrieval_k, k)
+            settings.bm25_k = max(settings.bm25_k, k)
+            if reranker:
+                settings.reranker_top_n = max(settings.reranker_top_n, k)
+            db = load_or_create_db(str(vault_path))
+            if db is None:
+                console.print("[red]Could not load the vault index.[/red]")
+                raise typer.Exit(1)
+            retriever = create_retriever_with_reranker(db)
+            result = evaluate_retrieval(retriever.invoke, cases, vault_path, k=k)
+
+    table = Table(title=f"Retrieval Evaluation (k={k})")
+    table.add_column("Question")
+    table.add_column("Recall", justify="right")
+    table.add_column("Reciprocal rank", justify="right")
+    table.add_column("Latency", justify="right")
+    for case in result.cases:
+        table.add_row(
+            case.question,
+            f"{case.recall:.3f}",
+            f"{case.reciprocal_rank:.3f}",
+            f"{case.latency_seconds * 1000:.1f} ms",
+        )
+    console.print(table)
+    metrics = [
+        (f"Precision@{k}", "precision_at_k", result.precision_at_k),
+        (f"Recall@{k}", "recall_at_k", result.recall_at_k),
+        (f"Hit rate@{k}", "hit_rate_at_k", result.hit_rate_at_k),
+        ("MRR", "mean_reciprocal_rank", result.mean_reciprocal_rank),
+        (f"MAP@{k}", "mean_average_precision_at_k", result.mean_average_precision_at_k),
+        (f"nDCG@{k}", "ndcg_at_k", result.ndcg_at_k),
+    ]
+    if result.evidence_recall_at_k is not None:
+        metrics.append(
+            (
+                f"Evidence recall@{k}",
+                "evidence_recall_at_k",
+                result.evidence_recall_at_k,
+            )
+        )
+    for label, key, value in metrics:
+        low, high = result.confidence_intervals_95[key]
+        console.print(f"{label}: [bold]{value:.3f}[/bold] (95% CI {low:.3f}–{high:.3f})")
+    console.print(f"Mean latency: [bold]{result.mean_latency_seconds * 1000:.1f} ms[/bold]")
+    console.print(f"p50 latency: [bold]{result.p50_latency_seconds * 1000:.1f} ms[/bold]")
+    console.print(f"p95 latency: [bold]{result.p95_latency_seconds * 1000:.1f} ms[/bold]")
+
+    if output:
+        import json
+
+        embedding_model = (
+            settings.ollama_embedding_model
+            if settings.embedding_provider == "ollama"
+            else settings.embedding_model
+        )
+        signature = (
+            "none:sqlite-fts5"
+            if engine == "v4-fts"
+            else f"{settings.embedding_provider}:{embedding_model}"
+        )
+        payload = {
+            "engine": engine,
+            "embedding_signature": signature,
+            **result.to_dict(),
+        }
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        console.print(f"Results written to {output}")
+
+
+@app.command("evaluate-agent")
+def evaluate_agent(
+    dataset: Path = typer.Argument(..., help="Private ground-truth dataset JSON"),
+    generator_command: str = typer.Option(..., "--generator-command", help="JSON agent command"),
+    judge_command: str = typer.Option(..., "--judge-command", help="JSON judge command"),
+    vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
+    k: int = typer.Option(5, "--k", min=1, help="Unique FTS5 source chunks per question"),
+    batch_size: int = typer.Option(6, "--batch-size", min=1, help="Cases per agent call"),
+    timeout: int = typer.Option(300, "--timeout", min=1, help="Seconds per agent call"),
+    allow_private_data: bool = typer.Option(
+        False,
+        "--allow-private-data",
+        help="Confirm that note chunks may be sent to the external commands",
+    ),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write result JSON"),
+):
+    """Evaluate FTS5-grounded answers with external JSON generator and judge commands."""
+    import json
+
+    from obsidianrag.agent_evaluation import evaluate_with_external_agent
+    from obsidianrag.v4 import ExperimentalLexicalRetriever
+
+    if not allow_private_data:
+        console.print("[red]Pass --allow-private-data to send note chunks externally.[/red]")
+        raise typer.Exit(2)
+    try:
+        raw = json.loads(dataset.read_text(encoding="utf-8"))
+        raw_cases = raw.get("cases") if isinstance(raw, dict) else None
+        if not isinstance(raw_cases, list) or not raw_cases:
+            raise ValueError("Dataset must contain a non-empty cases list")
+        retriever = ExperimentalLexicalRetriever(Path(get_vault_path(vault)).resolve())
+        try:
+            result = evaluate_with_external_agent(
+                raw_cases,
+                retriever,
+                generator_command=generator_command,
+                judge_command=judge_command,
+                k=k,
+                batch_size=batch_size,
+                timeout=timeout,
+            )
+        finally:
+            retriever.close()
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(1) from error
+
+    table = Table(title=f"External Agent Evaluation ({result['case_count']} cases)")
+    table.add_column("Metric")
+    table.add_column("Mean", justify="right")
+    table.add_column("95% CI", justify="right")
+    for name, metric in result["metrics"].items():
+        low, high = metric["confidence_interval_95"]
+        table.add_row(name, f"{metric['mean']:.3f}", f"{low:.3f}–{high:.3f}")
+    console.print(table)
+
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+        console.print(f"Results written to {output}")
+
+
+@app.command("compare-evaluations")
+def compare_evaluations(
+    baseline: Path = typer.Argument(..., help="Baseline evaluation result JSON"),
+    candidate: Path = typer.Argument(..., help="Candidate evaluation result JSON"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write comparison JSON"),
+):
+    """Compare two result files using paired bootstrap confidence intervals."""
+    import json
+
+    from obsidianrag.evaluation import compare_evaluation_results
+
+    try:
+        result = compare_evaluation_results(
+            json.loads(baseline.read_text(encoding="utf-8")),
+            json.loads(candidate.read_text(encoding="utf-8")),
+        )
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(1) from error
+
+    table = Table(
+        title=f"{result['candidate_engine']} − {result['baseline_engine']} "
+        f"({result['case_count']} paired queries)"
+    )
+    table.add_column("Metric")
+    table.add_column("Baseline", justify="right")
+    table.add_column("Candidate", justify="right")
+    table.add_column("Delta", justify="right")
+    table.add_column("95% CI", justify="right")
+    table.add_column("Better / worse", justify="right")
+    for name, metric in result["metrics"].items():
+        low, high = metric["confidence_interval_95"]
+        table.add_row(
+            name,
+            f"{metric['baseline']:.3f}",
+            f"{metric['candidate']:.3f}",
+            f"{metric['delta']:+.3f}",
+            f"{low:+.3f}–{high:+.3f}",
+            f"{metric['improved_queries']} / {metric['regressed_queries']}",
+        )
+    console.print(table)
+
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(result, indent=2), encoding="utf-8")
+        console.print(f"Results written to {output}")
+
+
 @app.command()
 def version():
     """Show version information."""

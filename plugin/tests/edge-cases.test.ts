@@ -5,6 +5,7 @@ import ObsidianRAGPlugin from '../src/main';
 
 // Mock child_process
 jest.mock('child_process', () => ({
+  execFile: jest.fn((_command, _args, callback) => callback(null)),
   spawn: jest.fn()
 }));
 
@@ -48,9 +49,15 @@ describe('Edge Cases', () => {
     plugin.settings = {
       pythonPath: 'python',
       serverPort: 8000,
+      llmProvider: 'custom',
+      llmApiFormat: 'chat-completions',
       llmModel: 'test-model',
+      llmBaseUrl: 'http://localhost:1234/v1',
+      llmApiKey: 'session-secret',
       autoStartServer: true,
-      useReranker: false
+      showSourceLinks: true,
+      useReranker: false,
+      hasCompletedSetup: true
     };
 
     // Mock getSpawnOptionsForPlatform to return simple options
@@ -90,6 +97,113 @@ describe('Edge Cases', () => {
       expect((plugin as any).handleServerCrash).toHaveBeenCalledWith(1);
       // Expect Notice to have been called (we can't easily check the content of Notice
       // unless we spy on the Notice class constructor or mock it differently)
+    });
+  });
+
+  describe('Server Ownership and Secrets', () => {
+    it('should not expose the API key in process arguments', async () => {
+      const mockProcess = {
+        stdout: { on: jest.fn() },
+        stderr: { on: jest.fn() },
+        on: jest.fn(),
+        kill: jest.fn()
+      };
+      mockSpawn.mockReturnValue(mockProcess);
+      plugin.waitForServer.mockResolvedValue(true);
+
+      await plugin.startServer();
+
+      const args = mockSpawn.mock.calls[0][1] as string[];
+      expect(args).not.toContain('--api-key');
+      expect(args).not.toContain('session-secret');
+    });
+
+    it('should stop only the process spawned by the plugin', async () => {
+      const mockProcess = { kill: jest.fn() };
+      (plugin as any).serverProcess = mockProcess;
+
+      await plugin.stopServer();
+
+      expect(mockProcess.kill).toHaveBeenCalledTimes(1);
+      expect((plugin as any).serverProcess).toBeNull();
+    });
+
+    it('should not let an old exit event orphan a replacement process', async () => {
+      const callbacks = new Map<string, Function>();
+      const oldProcess = {
+        stdout: { on: jest.fn() },
+        stderr: { on: jest.fn() },
+        on: jest.fn((event, callback) => callbacks.set(event, callback)),
+        kill: jest.fn()
+      };
+      const replacementProcess = {
+        stdout: { on: jest.fn() },
+        stderr: { on: jest.fn() },
+        on: jest.fn(),
+        kill: jest.fn()
+      };
+      mockSpawn.mockReturnValueOnce(oldProcess).mockReturnValueOnce(replacementProcess);
+      plugin.isServerRunning = jest.fn().mockResolvedValue(false);
+      plugin.waitForServer.mockResolvedValue(true);
+
+      await plugin.startServer();
+      await plugin.stopServer();
+      await plugin.startServer();
+      callbacks.get('exit')?.(0);
+
+      expect((plugin as any).serverProcess).toBe(replacementProcess);
+    });
+
+    it('should terminate only the owned process tree on Windows', async () => {
+      const mockProcess = { pid: 1234, kill: jest.fn() };
+
+      await (plugin as any).terminateManagedProcess(mockProcess, 'win32');
+
+      expect(child_process.execFile).toHaveBeenCalledWith(
+        'taskkill',
+        ['/PID', '1234', '/T', '/F'],
+        expect.any(Function)
+      );
+      expect(mockProcess.kill).not.toHaveBeenCalled();
+    });
+
+    it('should fall back to the owned child when Windows tree termination fails', async () => {
+      const mockProcess = { pid: 1234, kill: jest.fn() };
+      (child_process.execFile as unknown as jest.Mock).mockImplementationOnce(
+        (_command, _args, callback) => callback(new Error('taskkill failed'))
+      );
+
+      await (plugin as any).terminateManagedProcess(mockProcess, 'win32');
+
+      expect(mockProcess.kill).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not persist API keys in plugin data', async () => {
+      plugin.saveData = jest.fn().mockResolvedValue(undefined);
+
+      await plugin.saveSettings();
+
+      expect(plugin.saveData).toHaveBeenCalledWith(
+        expect.not.objectContaining({ llmApiKey: expect.anything() })
+      );
+      expect(plugin.settings.llmApiKey).toBe('session-secret');
+    });
+
+    it('should require the expected backend API contract', async () => {
+      (requestUrl as jest.Mock)
+        .mockResolvedValueOnce({
+          status: 200,
+          json: { api_version: 3, backend_version: '3.0.3' }
+        })
+        .mockResolvedValueOnce({ status: 200, json: { status: 'ok' } });
+
+      await expect(plugin.isServerRunning()).resolves.toBe(true);
+
+      (requestUrl as jest.Mock).mockResolvedValueOnce({
+        status: 200,
+        json: { api_version: 4, backend_version: '4.0.0' }
+      });
+      await expect(plugin.isServerRunning()).resolves.toBe(false);
     });
   });
 

@@ -50,10 +50,10 @@ obsidianrag serve --vault ~/notes --port 9000 --model qwen2.5
 obsidianrag serve --vault ~/notes --provider lmstudio --model my-model
 
 # Custom OpenAI-compatible server
-obsidianrag serve --vault ~/notes --provider custom \
+OBSIDIANRAG_COMPATIBLE_API_KEY=my-key \
+  obsidianrag serve --vault ~/notes --provider custom \
   --base-url http://my-server:8080/v1 \
-  --api-format chat-completions \
-  --api-key my-key
+  --api-format chat-completions
 ```
 
 #### Index Vault
@@ -71,6 +71,66 @@ obsidianrag index --vault /path/to/vault
 ```bash
 obsidianrag status --vault /path/to/vault
 ```
+
+#### Evaluate Retrieval
+
+Create a dataset with questions and the source notes that retrieval should find:
+
+```json
+{
+  "cases": [
+    {
+      "question": "Where is the deployment procedure?",
+      "expected_sources": ["Operations/Deployment.md"]
+    }
+  ]
+}
+```
+
+Run retrieval without calling an LLM:
+
+```bash
+obsidianrag evaluate evaluation.json --vault /path/to/vault --k 10
+obsidianrag evaluate evaluation.json --vault /path/to/vault --reranker --output results.json
+```
+
+The command reports source Precision@k, Recall@k, hit rate, MRR, MAP@k, nDCG@k, evidence recall, deterministic 95% bootstrap confidence intervals, and mean/p50/p95 retrieval latency. Add optional `relevance_grades` entries (`source` plus a positive numeric `grade`) to dataset cases for graded nDCG; expected sources without an explicit grade default to relevance 1. Cases with `supporting_evidence` also measure whether the retrieved chunk contains the cited ground-truth passage, rather than merely matching the correct note.
+
+Compare two saved runs without loading an embedding model:
+
+```bash
+obsidianrag compare-evaluations v3-results.json v4-results.json --output comparison.json
+```
+
+The comparison pairs cases by question and reports baseline, candidate, delta, paired 95% bootstrap interval, and improved/regressed query counts for every retrieval metric.
+
+Evaluate grounded answers through any external JSON stdin/stdout agent command. This uses SQLite FTS5 for retrieval and does not load an embedding model:
+
+```bash
+uv run obsidianrag evaluate-agent private-ground-truth.json \
+  --vault /path/to/vault \
+  --generator-command "python -m obsidianrag.pi_agent_adapter" \
+  --judge-command "python -m obsidianrag.pi_agent_adapter" \
+  --allow-private-data \
+  --output agent-results.json
+```
+
+`--allow-private-data` is mandatory because retrieved note chunks are passed to the external commands, which may call a remote provider. The bundled Pi adapter defaults to `openai-codex/gpt-5.6-luna`; override it with `OBSIDIANRAG_PI_MODEL`.
+
+#### Experimental v4 Retrieval
+
+Install the optional embedded LanceDB backend, build an isolated index revision, and compare it with v3:
+
+```bash
+pip install 'obsidianrag[v4]'
+obsidianrag v4-index --vault /path/to/vault
+obsidianrag v4-search "deployment rollback" --vault /path/to/vault
+obsidianrag v4-search "deployment rollback" --vault /path/to/vault --lexical-only
+obsidianrag evaluate evaluation.json --vault /path/to/vault --engine v4 --k 10
+obsidianrag evaluate evaluation.json --vault /path/to/vault --engine v4-fts --k 10
+```
+
+Experimental indexes live under `.obsidianrag/v4`, do not modify the v3 Chroma index, and can be removed safely. Each full build creates a validated revision before atomically switching the active manifest. Hybrid retrieval ranks unique sources with vector/lexical fusion and then selects each source's strongest lexical chunk, avoiding a correct note paired with an irrelevant chunk. The `v4-fts` engine and `--lexical-only` search use the SQLite catalog without loading an embedding model; building or refreshing the index still requires embeddings.
 
 #### Ask Question (CLI)
 
