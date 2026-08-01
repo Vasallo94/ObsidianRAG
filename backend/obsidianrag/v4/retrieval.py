@@ -125,7 +125,9 @@ class ExperimentalRetriever:
 
         documents = []
         for source in source_candidates:
-            row = self._best_lexical_chunk(query, source) or fallback_rows[source]
+            lexical_row = self._best_lexical_chunk(query, source)
+            row = lexical_row or fallback_rows[source]
+            lexical_score = max(0.0, -float(lexical_row[4])) if lexical_row else 0.0
             documents.append(
                 Document(
                     page_content=row[3],
@@ -134,6 +136,7 @@ class ExperimentalRetriever:
                         "source": row[1],
                         "ordinal": row[2],
                         "score": source_scores[source],
+                        "lexical_score": lexical_score,
                         "retrieval_type": "hybrid-source+lexical-chunk",
                     },
                 )
@@ -158,7 +161,7 @@ class ExperimentalRetriever:
             return None
         expression = " OR ".join(f'"{term}"' for term in terms)
         return self.connection.execute(
-            "SELECT c.chunk_id, c.note_path, c.ordinal, c.text "
+            "SELECT c.chunk_id, c.note_path, c.ordinal, c.text, bm25(chunks_fts) "
             "FROM chunks_fts JOIN chunks c ON c.chunk_id = chunks_fts.chunk_id "
             "WHERE chunks_fts MATCH ? AND c.note_path = ? "
             "ORDER BY bm25(chunks_fts) LIMIT 1",

@@ -91,6 +91,88 @@ def test_sync_and_stream_share_prompt_history_and_source_semantics(tmp_path):
     ]
 
 
+def test_context_selection_drops_low_relative_lexical_source(tmp_path):
+    retriever = MagicMock()
+    retriever.invoke.return_value = [
+        Document(
+            page_content="Primary",
+            metadata={"source": "Primary.md", "score": 10.0, "retrieval_type": "lexical"},
+        ),
+        Document(
+            page_content="Noise",
+            metadata={"source": "Noise.md", "score": 6.9, "retrieval_type": "lexical"},
+        ),
+        Document(
+            page_content="Vector fallback",
+            metadata={"source": "Fallback.md", "score": 0.5, "lexical_score": 0.0},
+        ),
+    ]
+    model = MagicMock()
+    model.invoke.return_value = AIMessage(content="Primary [1].")
+
+    result = QueryPipeline(retriever, model, vault_path=tmp_path).ask("Question")
+
+    assert [document.metadata["source"] for document in result.documents] == [
+        "Primary.md",
+        "Fallback.md",
+    ]
+
+
+def test_context_selection_keeps_close_lexical_sources(tmp_path):
+    retriever = MagicMock()
+    retriever.invoke.return_value = [
+        Document(
+            page_content="Primary",
+            metadata={"source": "Primary.md", "score": 10.0, "retrieval_type": "lexical"},
+        ),
+        Document(
+            page_content="Related",
+            metadata={"source": "Related.md", "score": 7.0, "retrieval_type": "lexical"},
+        ),
+    ]
+    model = MagicMock()
+    model.invoke.return_value = AIMessage(content="Primary [1], related [2].")
+
+    result = QueryPipeline(retriever, model, vault_path=tmp_path).ask("Question")
+
+    assert [document.metadata["source"] for document in result.documents] == [
+        "Primary.md",
+        "Related.md",
+    ]
+
+
+def test_context_selection_always_keeps_top_source(tmp_path):
+    retriever = MagicMock()
+    retriever.invoke.return_value = [
+        Document(
+            page_content="Only candidate",
+            metadata={"source": "Only.md", "score": 1.0, "retrieval_type": "lexical"},
+        )
+    ]
+    model = MagicMock()
+    model.invoke.return_value = AIMessage(content="Only [1].")
+
+    result = QueryPipeline(retriever, model, vault_path=tmp_path).ask("Question")
+
+    assert len(result.documents) == 1
+
+
+def test_context_selection_preserves_top_k_without_lexical_scores(tmp_path):
+    retriever = MagicMock()
+    retriever.invoke.return_value = [
+        Document(
+            page_content=str(index), metadata={"source": f"{index}.md", "score": 1 - index / 10}
+        )
+        for index in range(3)
+    ]
+    model = MagicMock()
+    model.invoke.return_value = AIMessage(content="Answer [1].")
+
+    result = QueryPipeline(retriever, model, vault_path=tmp_path, k=2).ask("Question")
+
+    assert [document.metadata["source"] for document in result.documents] == ["0.md", "1.md"]
+
+
 def test_pipeline_retrieves_once_and_filters_invalid_citations(tmp_path):
     retriever = MagicMock()
     retriever.invoke.return_value = _documents(tmp_path)

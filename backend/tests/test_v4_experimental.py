@@ -59,6 +59,7 @@ def test_build_and_search_experimental_index(tmp_path):
 
     assert documents[0].metadata["source"] == "Reference/Error Codes.md"
     assert documents[0].metadata["retrieval_type"] == "hybrid-source+lexical-chunk"
+    assert documents[0].metadata["lexical_score"] > 0
     assert len({document.metadata["source"] for document in documents}) == len(documents)
     assert lexical_documents[0].metadata["source"] == "Reference/Error Codes.md"
     assert lexical_documents[0].metadata["retrieval_type"] == "lexical"

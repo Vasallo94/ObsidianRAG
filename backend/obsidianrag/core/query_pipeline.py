@@ -17,6 +17,8 @@ from obsidianrag.config import Settings, get_settings
 from obsidianrag.core.llm_provider import create_chat_model, stream_chat_model_tokens
 
 MAX_QUESTION_LENGTH = 5000
+# ponytail: heuristic ceiling; replace with learned/reranked selection when benchmarks justify it.
+CONTEXT_LEXICAL_SCORE_RATIO = 0.70
 
 _SYSTEM_PROMPT = """You answer questions using only the supplied Obsidian note context.
 
@@ -123,7 +125,7 @@ class QueryPipeline:
         question = _validate_question(question)
         with self._retrieval_lock:
             retrieved = self.retriever.invoke(question, k=self.retrieval_k)
-        documents = self._unique_source_documents(retrieved)
+        documents = self._select_context(self._unique_source_documents(retrieved))
         source_paths = tuple(self._source_path(document) for document in documents)
         context = "\n\n".join(
             f"[SOURCE {index}]\nPath: {source}\n{document.page_content}\n[/SOURCE {index}]"
@@ -164,6 +166,28 @@ class QueryPipeline:
             if len(unique) == self.k:
                 break
         return tuple(unique)
+
+    def _select_context(self, documents: tuple[Document, ...]) -> tuple[Document, ...]:
+        if not documents:
+            return documents
+        top_score = self._lexical_score(documents[0])
+        if top_score <= 0:
+            return documents
+        threshold = top_score * CONTEXT_LEXICAL_SCORE_RATIO
+        return (documents[0],) + tuple(
+            document
+            for document in documents[1:]
+            if (score := self._lexical_score(document)) <= 0 or score >= threshold
+        )
+
+    @staticmethod
+    def _lexical_score(document: Document) -> float:
+        metadata = document.metadata
+        if "lexical_score" in metadata:
+            return max(0.0, float(metadata["lexical_score"]))
+        if metadata.get("retrieval_type") == "lexical":
+            return max(0.0, float(metadata.get("score", 0.0)))
+        return 0.0
 
     def _source_path(self, document: Document) -> str:
         source = str(document.metadata.get("source", "")).strip()

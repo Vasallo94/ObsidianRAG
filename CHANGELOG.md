@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simplified duplicated development and CI configuration
 - Plugin API keys are now session-only and passed to the backend through its environment
 - Hybrid v4 ranks unique sources with vector/lexical fusion, then selects each source's best lexical chunk for stronger evidence coverage
+- v4 generation adaptively removes sources below 70% of the leading lexical relevance while preserving conservative top-k behavior without lexical scores
 
 ### Fixed
 - Incremental updates verify new chunks before deleting the previous valid revision
