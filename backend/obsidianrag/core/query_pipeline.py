@@ -83,7 +83,8 @@ class QueryPipeline:
         """Close the owned retriever when it exposes a close method."""
         close = getattr(self.retriever, "close", None)
         if close:
-            close()
+            with self._retrieval_lock:
+                close()
 
     def ask(self, question: str, history: list[tuple[str, str]] | None = None) -> QueryResult:
         """Retrieve context and generate one complete answer."""
@@ -208,12 +209,11 @@ class QueryPipeline:
     def _select_context(self, documents: tuple[Document, ...]) -> tuple[Document, ...]:
         if not documents:
             return documents
-        top_scores = {}
+        top_scores: dict[int, float] = {}
         for document in documents:
             segment = int(document.metadata.get("context_segment", 0))
             score = self._lexical_score(document)
-            if segment not in top_scores:
-                top_scores[segment] = score
+            top_scores[segment] = max(top_scores.get(segment, 0.0), score)
 
         selected = []
         for document in documents:

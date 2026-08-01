@@ -1,5 +1,6 @@
 """Tests for the shared v4 query pipeline."""
 
+from threading import Event, Thread
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -115,6 +116,35 @@ def test_context_selection_drops_low_relative_lexical_source(tmp_path):
     assert [document.metadata["source"] for document in result.documents] == [
         "Primary.md",
         "Fallback.md",
+    ]
+
+
+def test_context_selection_uses_best_lexical_score_when_hybrid_leader_is_vector_only(
+    tmp_path,
+):
+    retriever = MagicMock()
+    retriever.invoke.return_value = [
+        Document(
+            page_content="Vector leader",
+            metadata={"source": "Vector.md", "score": 1.0, "lexical_score": 0.0},
+        ),
+        Document(
+            page_content="Lexical leader",
+            metadata={"source": "Lexical.md", "score": 0.9, "lexical_score": 10.0},
+        ),
+        Document(
+            page_content="Noise",
+            metadata={"source": "Noise.md", "score": 0.8, "lexical_score": 6.0},
+        ),
+    ]
+    model = MagicMock()
+    model.invoke.return_value = AIMessage(content="Answer [1] [2].")
+
+    result = QueryPipeline(retriever, model, vault_path=tmp_path).ask("Question")
+
+    assert [document.metadata["source"] for document in result.documents] == [
+        "Vector.md",
+        "Lexical.md",
     ]
 
 
@@ -344,6 +374,34 @@ def test_factory_rejects_invalid_k_before_opening_retriever(tmp_path):
         create_v4_query_pipeline(tmp_path, engine="v4-fts", k=0)
 
     lexical.assert_not_called()
+
+
+def test_close_waits_for_active_retrieval(tmp_path):
+    started = Event()
+    release = Event()
+    closed = Event()
+
+    class BlockingRetriever:
+        def invoke(self, _query, k):
+            started.set()
+            release.wait(timeout=2)
+            return []
+
+        def close(self):
+            closed.set()
+
+    pipeline = QueryPipeline(BlockingRetriever(), MagicMock(), vault_path=tmp_path)
+    retrieval_thread = Thread(target=pipeline._retrieve, args=("Question",))
+    close_thread = Thread(target=pipeline.close)
+    retrieval_thread.start()
+    assert started.wait(timeout=1)
+    close_thread.start()
+
+    assert not closed.wait(timeout=0.05)
+    release.set()
+    retrieval_thread.join(timeout=1)
+    close_thread.join(timeout=1)
+    assert closed.is_set()
 
 
 def test_factory_closes_retriever_when_model_creation_fails(tmp_path):

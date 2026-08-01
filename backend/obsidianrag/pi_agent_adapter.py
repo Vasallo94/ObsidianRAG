@@ -24,9 +24,10 @@ def main() -> None:
         )
     else:
         instruction = (
-            "You are a strict RAG evaluator. Compare each candidate with the private ground "
-            "truth and evidence. Return one 0/1 fact score per required fact. Score correctness, "
-            "faithfulness, and answer relevance from 0.0 to 1.0. Penalize fluent unsupported "
+            "You are a strict RAG evaluator. Compare correctness with the private ground truth "
+            "and score faithfulness only against the retrieved contexts. Return one 0/1 fact "
+            "score per required fact. Score correctness, faithfulness, and answer relevance from "
+            "0.0 to 1.0. Penalize fluent unsupported "
             'claims. Return strict JSON only as {"judgments":[{"id":str,'
             '"fact_scores":[0],"correctness":number,"faithfulness":number,'
             '"answer_relevance":number,"reason":str}]}.'

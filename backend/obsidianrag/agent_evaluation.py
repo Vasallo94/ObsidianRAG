@@ -52,6 +52,8 @@ def evaluate_with_external_agent(
     if k < 1 or batch_size < 1:
         raise ValueError("k and batch_size must be at least 1")
     cases = [_validate_case(case) for case in raw_cases]
+    if len({case["id"] for case in cases}) != len(cases):
+        raise ValueError("Agent evaluation case IDs must be unique")
     generation_cases = []
     contexts_by_id = {}
     for case in cases:
@@ -92,6 +94,7 @@ def evaluate_with_external_agent(
                 "supporting_evidence": case["supporting_evidence"],
                 "candidate_answer": answer["answer"],
                 "candidate_citations": answer["citations"],
+                "contexts": contexts_by_id[case["id"]],
             }
         )
     for batch in _batches(judge_cases, batch_size):
@@ -113,6 +116,7 @@ def evaluate_with_external_agent(
         expected = set(case["expected_sources"])
         retrieved = {context["source"] for context in contexts}
         cited = set(answer["citations"])
+        valid_cited = cited & retrieved
         evidence_hits = sum(
             any(
                 context["source"] == evidence["source"] and evidence["quote"] in context["text"]
@@ -126,14 +130,15 @@ def evaluate_with_external_agent(
                 "question": case["question"],
                 "answer": answer["answer"],
                 "citations": answer["citations"],
+                "invalid_citations": sorted(cited - retrieved),
                 "retrieved_sources": [context["source"] for context in contexts],
                 "judgment": judgment,
                 "source_recall": len(retrieved & expected) / len(expected),
                 "evidence_recall": evidence_hits / len(case["supporting_evidence"]),
                 "required_fact_coverage": sum(judgment["fact_scores"])
                 / len(case["required_facts"]),
-                "citation_precision": len(cited & expected) / len(cited) if cited else 0.0,
-                "citation_recall": len(cited & expected) / len(expected),
+                "citation_precision": (len(valid_cited & expected) / len(cited) if cited else 0.0),
+                "citation_recall": len(valid_cited & expected) / len(expected),
             }
         )
 
@@ -168,6 +173,25 @@ def _validate_case(case: dict) -> dict:
     )
     if not isinstance(case, dict) or any(not case.get(field) for field in required):
         raise ValueError("Every agent evaluation case needs complete private ground truth")
+    if (
+        not isinstance(case["id"], str)
+        or not isinstance(case["question"], str)
+        or not isinstance(case["ground_truth_answer"], str)
+        or not isinstance(case["required_facts"], list)
+        or not all(isinstance(fact, str) and fact for fact in case["required_facts"])
+        or not isinstance(case["expected_sources"], list)
+        or not all(isinstance(source, str) and source for source in case["expected_sources"])
+        or not isinstance(case["supporting_evidence"], list)
+        or not all(
+            isinstance(item, dict)
+            and isinstance(item.get("source"), str)
+            and isinstance(item.get("quote"), str)
+            and item["source"]
+            and item["quote"]
+            for item in case["supporting_evidence"]
+        )
+    ):
+        raise ValueError("Agent evaluation ground truth has an invalid schema")
     normalized = dict(case)
     normalized["expected_sources"] = [
         _normalize_relative(source) for source in case["expected_sources"]
@@ -176,6 +200,9 @@ def _validate_case(case: dict) -> dict:
         {"source": _normalize_relative(item["source"]), "quote": item["quote"]}
         for item in case["supporting_evidence"]
     ]
+    expected = set(normalized["expected_sources"])
+    if any(item["source"] not in expected for item in normalized["supporting_evidence"]):
+        raise ValueError("Supporting evidence must belong to an expected source")
     return normalized
 
 
@@ -188,7 +215,10 @@ def _validate_answer(item: dict) -> dict:
         or not all(isinstance(citation, str) for citation in item["citations"])
     ):
         raise RuntimeError("Generator returned an invalid answer")
-    return item
+    return {
+        **item,
+        "citations": [_normalize_relative(citation) for citation in item["citations"]],
+    }
 
 
 def _validate_judgment(item: dict) -> dict:

@@ -19,7 +19,7 @@ class ExperimentalLexicalRetriever:
     def __init__(self, vault_path: Path):
         self.revision_path = active_revision(vault_path.resolve())
         self.connection = sqlite3.connect(
-            f"file:{self.revision_path / 'catalog.sqlite3'}?mode=ro",
+            f"{(self.revision_path / 'catalog.sqlite3').as_uri()}?mode=ro",
             uri=True,
             check_same_thread=False,
         )
@@ -63,7 +63,7 @@ class ExperimentalRetriever:
         self.embeddings = embeddings
         self.revision_path = active_revision(self.vault_path)
         self.connection = sqlite3.connect(
-            f"file:{self.revision_path / 'catalog.sqlite3'}?mode=ro",
+            f"{(self.revision_path / 'catalog.sqlite3').as_uri()}?mode=ro",
             uri=True,
             check_same_thread=False,
         )

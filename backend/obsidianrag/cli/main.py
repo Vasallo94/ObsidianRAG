@@ -459,7 +459,10 @@ def evaluate_agent(
     allow_private_data: bool = typer.Option(
         False,
         "--allow-private-data",
-        help="Confirm that note chunks may be sent to the external commands",
+        help=(
+            "Confirm that questions, note chunks, answers, required facts, and evidence "
+            "may be sent to the external commands"
+        ),
     ),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write result JSON"),
 ):
@@ -470,7 +473,10 @@ def evaluate_agent(
     from obsidianrag.v4 import ExperimentalLexicalRetriever
 
     if not allow_private_data:
-        console.print("[red]Pass --allow-private-data to send note chunks externally.[/red]")
+        console.print(
+            "[red]Pass --allow-private-data to send questions, note chunks, answers, "
+            "required facts, and evidence externally.[/red]"
+        )
         raise typer.Exit(2)
     try:
         raw = json.loads(dataset.read_text(encoding="utf-8"))

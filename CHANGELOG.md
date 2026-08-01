@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hybrid v4 ranks unique sources with vector/lexical fusion, then selects each source's best lexical chunk for stronger evidence coverage
 - v4 generation adaptively removes sources below 70% of the leading lexical relevance while preserving conservative top-k behavior without lexical scores
 - Semicolon-separated multipart questions retrieve and preserve relevant context independently for each part
-- Provider-neutral generation now defaults to deterministic temperature zero with a validated configuration override
+- Provider-neutral generation now defaults to low-variance temperature zero with a validated configuration override
 
 ### Fixed
 - Incremental updates verify new chunks before deleting the previous valid revision
@@ -38,6 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Disabling incremental indexing now loads an existing database instead of rebuilding it
 - Full Chroma rebuilds embed bounded batches with retries instead of sending the entire vault to Ollama
 - BM25 retrieval now normalizes case and punctuation for multilingual queries
+- External evaluation now rejects citations outside retrieved context and gives that context to the judge
+- Evaluation comparisons now reject incompatible retrieval depths and ground-truth annotations
+- Adaptive hybrid context uses the strongest lexical score even when a vector-only result ranks first
+- Query pipeline shutdown waits for active SQLite retrieval before closing the connection
+- Read-only SQLite index URIs now safely encode cross-platform paths
 - Indexing now excludes Obsidian internals, trash, Git data, and dependency directories
 
 ### Security
