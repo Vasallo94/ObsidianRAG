@@ -19,7 +19,9 @@ class ExperimentalLexicalRetriever:
     def __init__(self, vault_path: Path):
         self.revision_path = active_revision(vault_path.resolve())
         self.connection = sqlite3.connect(
-            f"file:{self.revision_path / 'catalog.sqlite3'}?mode=ro", uri=True
+            f"file:{self.revision_path / 'catalog.sqlite3'}?mode=ro",
+            uri=True,
+            check_same_thread=False,
         )
 
     def close(self) -> None:
@@ -61,14 +63,22 @@ class ExperimentalRetriever:
         self.embeddings = embeddings
         self.revision_path = active_revision(self.vault_path)
         self.connection = sqlite3.connect(
-            f"file:{self.revision_path / 'catalog.sqlite3'}?mode=ro", uri=True
+            f"file:{self.revision_path / 'catalog.sqlite3'}?mode=ro",
+            uri=True,
+            check_same_thread=False,
         )
-        metadata = dict(self.connection.execute("SELECT key, value FROM metadata"))
-        if metadata.get("embedding_signature") != embedding_signature():
-            raise RuntimeError(
-                "The active v4 index uses a different embedding configuration. Rebuild it."
+        try:
+            metadata = dict(self.connection.execute("SELECT key, value FROM metadata"))
+            if metadata.get("embedding_signature") != embedding_signature():
+                raise RuntimeError(
+                    "The active v4 index uses a different embedding configuration. Rebuild it."
+                )
+            self.table = (
+                require_lancedb().connect(self.revision_path / "vectors").open_table("chunks")
             )
-        self.table = require_lancedb().connect(self.revision_path / "vectors").open_table("chunks")
+        except Exception:
+            self.connection.close()
+            raise
 
     def close(self) -> None:
         self.connection.close()

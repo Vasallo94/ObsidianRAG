@@ -126,11 +126,13 @@ pip install 'obsidianrag[v4]'
 obsidianrag v4-index --vault /path/to/vault
 obsidianrag v4-search "deployment rollback" --vault /path/to/vault
 obsidianrag v4-search "deployment rollback" --vault /path/to/vault --lexical-only
+obsidianrag ask "How do I roll back a deployment?" --vault /path/to/vault --engine v4
+obsidianrag ask "How do I roll back a deployment?" --vault /path/to/vault --engine v4-fts
 obsidianrag evaluate evaluation.json --vault /path/to/vault --engine v4 --k 10
 obsidianrag evaluate evaluation.json --vault /path/to/vault --engine v4-fts --k 10
 ```
 
-Experimental indexes live under `.obsidianrag/v4`, do not modify the v3 Chroma index, and can be removed safely. Each full build creates a validated revision before atomically switching the active manifest. Hybrid retrieval ranks unique sources with vector/lexical fusion and then selects each source's strongest lexical chunk, avoiding a correct note paired with an irrelevant chunk. The `v4-fts` engine and `--lexical-only` search use the SQLite catalog without loading an embedding model; building or refreshing the index still requires embeddings.
+Experimental indexes live under `.obsidianrag/v4`, do not modify the v3 Chroma index, and can be removed safely. Each full build creates a validated revision before atomically switching the active manifest. Hybrid retrieval ranks unique sources with vector/lexical fusion and then selects each source's strongest lexical chunk, avoiding a correct note paired with an irrelevant chunk. The v4 query pipeline uses one provider-neutral prompt and history path for complete and streaming generation, treats note text as untrusted data, asks the model to abstain when evidence is insufficient, and accepts only valid numeric citations from the retrieved context. The `v4-fts` engine and `--lexical-only` search use the SQLite catalog without loading an embedding model; building or refreshing the index still requires embeddings.
 
 #### Ask Question (CLI)
 
