@@ -2,53 +2,63 @@
 
 ## Installation
 
-### Prerequisites
-- **Obsidian**: v1.5.0 or higher
-- **Python**: v3.11 or higher
-- **Ollama**: Installed and running (get it from [ollama.ai](https://ollama.ai))
+Requirements:
 
-### Installing the Plugin
-1. Open Obsidian Settings > Community Plugins
-2. Turn off "Safe Mode"
-3. Click "Browse" and search for "ObsidianRAG"
-4. Click "Install" and then "Enable"
+- Obsidian 1.5 or newer
+- Python 3.11 or newer
+- ObsidianRAG backend 4.0.0
+- Vault RAG plugin 4.0.0
+- An Ollama, LM Studio, or compatible generation server
 
-### Installing the Backend
-The plugin requires a companion Python backend.
-1. Open your terminal
-2. Run: `pip install obsidianrag`
-3. Verify installation: `obsidianrag --version`
+Install the backend:
+
+```bash
+uv tool install obsidianrag==4.0.0
+```
+
+Install `main.js`, `manifest.json`, and `styles.css` from the plugin GitHub release into `<vault>/.obsidian/plugins/vault-rag/`, then enable the plugin.
 
 ## Configuration
 
-### Initial Setup
-When you first enable the plugin, a Setup Wizard will guide you through:
-1. Verifying Python installation
-2. Connecting to Ollama
-3. Selecting your LLM model (e.g., `gemma3`)
+In Vault RAG settings configure:
 
-### Settings
-Go to Settings > ObsidianRAG to configure:
-- **Backend Command**: Path to the `obsidianrag` executable (usually auto-detected)
-- **Server Port**: Default is 8000
-- **LLM Model**: Select from available Ollama models
-- **Auto-start**: Automatically start the backend when Obsidian opens
+- **Backend executable**: `obsidianrag`, or `obsidianrag.exe` on Windows
+- **Server port**: `8000` by default
+- **Model provider** and endpoint
+- **Model**
+- **Auto-start server**
+- **Show source links**
 
-## Usage
+The executable field is a path or command name, not a compound shell command.
 
-### Chat Interface
-1. Click the 🤖 icon in the ribbon (left sidebar)
-2. Type your question in the chat box
-3. The AI will search your notes and provide an answer with citations
+## Index lifecycle
 
-### Commands
-Press `Cmd/Ctrl + P` and search for "ObsidianRAG":
-- **Open Chat**: Opens the sidebar chat
-- **Ask a Question**: Opens a quick question modal
-- **Reindex Vault**: Forces a re-scan of your notes
-- **Start/Stop Server**: Manually control the backend
+The server does not index automatically.
 
-## Tips
-- **First Run**: The first time you ask a question, the system needs to index your vault. This may take a few minutes depending on the size of your vault.
-- **Citations**: Click on any citation [Note Name] to open that note.
-- **Streaming**: You'll see the answer being generated in real-time.
+- **Build index** creates the first revision.
+- **Refresh index** incrementally applies added, modified, and deleted notes.
+- **Full rebuild** appears after incompatible embedding or chunk settings.
+- **Prune** removes inactive revisions after their readers close.
+
+## Chat
+
+1. Start the server.
+2. Build or refresh the index when prompted.
+3. Open the chat from the ribbon or command palette.
+4. Ask a question.
+5. Follow the source links shown with the grounded answer.
+
+A stale index can remain query-ready while a previous revision is serving. Refresh it to make the latest validated revision active for new questions.
+
+## Commands
+
+The command palette includes:
+
+- Open chat
+- Ask a question
+- Start server
+- Stop server
+- Check status
+- Refresh index
+
+API 3 backends are intentionally rejected by plugin 4.0.0.

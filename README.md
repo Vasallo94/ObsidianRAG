@@ -1,407 +1,174 @@
 # ObsidianRAG
 
-**Ask questions about your Obsidian notes using local AI**
+**Ask questions about your Obsidian notes with a local-first hybrid RAG index.**
 
-[![GitHub stars](https://img.shields.io/github/stars/Vasallo94/ObsidianRAG)](https://github.com/Vasallo94/ObsidianRAG/stargazers)
 [![PyPI](https://img.shields.io/pypi/v/obsidianrag)](https://pypi.org/project/obsidianrag/)
-[![Tests](https://img.shields.io/github/actions/workflow/status/Vasallo94/ObsidianRAG/test-backend.yml?label=tests)](https://github.com/Vasallo94/ObsidianRAG/actions/workflows/test-backend.yml)
+[![Tests](https://github.com/Vasallo94/ObsidianRAG/actions/workflows/test-backend.yml/badge.svg)](https://github.com/Vasallo94/ObsidianRAG/actions/workflows/test-backend.yml)
 [![License](https://img.shields.io/github/license/Vasallo94/ObsidianRAG)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org/)
-[![Obsidian Plugin](https://img.shields.io/badge/obsidian-plugin-purple)](https://obsidian.md)
-[![Docker](https://img.shields.io/badge/docker-ghcr.io-blue)](https://ghcr.io/vasallo94/obsidianrag-backend)
 
-A RAG (Retrieval-Augmented Generation) system for querying your Obsidian vault using **LangGraph** and **local LLMs**. Supports **Ollama**, **LM Studio**, and any **OpenAI-compatible** server. All processing runs on your machine — fully private, fully offline.
+ObsidianRAG 4 uses SQLite FTS5 and embedded LanceDB as its only retrieval engine. The Obsidian plugin manages the backend, index lifecycle, chat, and source links. Generation supports Ollama, LM Studio, and OpenAI-compatible servers.
 
----
+## Highlights
 
-## Features
+- Incremental copy-on-write index revisions
+- Hybrid lexical and vector retrieval
+- Grounded answers with numeric source citations
+- Explicit Build, Refresh, Full rebuild, and Prune controls
+- Reader leases that protect in-flight queries during refreshes
+- Safe regular-Markdown scanning without following links
+- API 4 compatibility checks between plugin and backend
+- No shell invocation when the plugin starts the backend
 
-- **Native Obsidian Plugin** — Install and use directly inside Obsidian, no terminal required
-- **100% Local and Private** — All AI runs on your machine, zero cloud dependencies
-- **Multi-Provider Support** — Works with Ollama, LM Studio, or any OpenAI-compatible API
-- **Advanced RAG Pipeline** — Hybrid search (Vector + BM25) with CrossEncoder reranking
-- **GraphRAG** — Follows `[[wikilinks]]` to expand context from linked notes
-- **Multilingual** — Responds in the same language as your question
-- **Real-time Streaming** — Token-by-token answer generation
-- **Source Attribution** — Every answer includes relevance scores and links to source notes
-- **Docker Support** — One-command deployment with docker-compose
-- **Incremental Indexing** — Only re-indexes changed files, not the entire vault
+## Install
 
----
-
-## Quick Start
-
-### Option A: Obsidian Plugin (Recommended)
-
-1. **Install the plugin**
-
-   Open Obsidian > Settings > Community Plugins > Browse > search "Vault RAG" > Install > Enable
-
-   > The plugin is pending Community Plugins approval. For now, install manually from [GitHub Releases](https://github.com/Vasallo94/ObsidianRAG/releases).
-
-2. **Install the backend**
-
-   ```bash
-   uv tool install obsidianrag
-   ```
-
-3. **Install Ollama** and pull a model
-
-   Download from [ollama.ai](https://ollama.ai/), then:
-
-   ```bash
-   ollama pull gemma3
-   ```
-
-4. **Open the chat** from the ribbon icon or command palette: `ObsidianRAG: Open Chat`
-
-### Option B: Docker
+Install the backend:
 
 ```bash
-OBSIDIAN_VAULT_PATH=/path/to/your/vault docker compose up
+uv tool install obsidianrag==4.0.0
 ```
 
-Requires Ollama running on the host. See the [Docker section](#docker-deployment) for details.
+Install the plugin assets from the `plugin-v4.0.0` GitHub release:
 
-### Option C: Development Setup
+- `main.js`
+- `manifest.json`
+- `styles.css`
+
+Place them in `<vault>/.obsidian/plugins/vault-rag/`, then enable **Vault RAG** in Obsidian.
+
+## First run
+
+1. Start your generation provider and make the configured model available.
+2. Open **Vault RAG settings** and confirm the backend executable, usually `obsidianrag` (`obsidianrag.exe` on Windows).
+3. Start the backend.
+4. Select **Build index**.
+5. Open the chat view.
+
+The backend never indexes automatically at startup.
+
+## CLI
+
+```bash
+# Start API 4
+obsidianrag serve --vault /path/to/vault
+
+# Build or incrementally refresh
+obsidianrag index --vault /path/to/vault
+
+# Rebuild after incompatible embedding or chunk settings
+obsidianrag index --vault /path/to/vault --full-rebuild
+
+# Inspect and clean revisions
+obsidianrag status --vault /path/to/vault
+obsidianrag prune --vault /path/to/vault
+
+# Retrieve without generation
+obsidianrag search "deployment rollback" --vault /path/to/vault
+obsidianrag search "deployment rollback" --vault /path/to/vault --lexical-only
+
+# Ask through the v4 hybrid pipeline
+obsidianrag ask "How do I roll back a deployment?" --vault /path/to/vault
+```
+
+## Providers
+
+| Provider | Flag | Default URL | API format |
+|---|---|---|---|
+| Ollama | `--provider ollama` | `http://localhost:11434` | Ollama |
+| LM Studio | `--provider lmstudio` | `http://localhost:1234/v1` | Chat completions |
+| Custom | `--provider custom` | configured by user | Ollama or chat completions |
+
+Examples:
+
+```bash
+obsidianrag serve --vault /path/to/vault --provider ollama --model gemma3
+
+obsidianrag serve --vault /path/to/vault \
+  --provider lmstudio --model local-model \
+  --base-url http://localhost:1234/v1
+```
+
+API keys configured in the plugin are session-only and are passed through the backend process environment, not command arguments.
+
+## Index architecture
+
+```mermaid
+flowchart LR
+    Plugin[Obsidian plugin] --> API[FastAPI v4]
+    API --> Pipeline[Query pipeline]
+    Pipeline --> FTS[SQLite FTS5]
+    Pipeline --> Vector[LanceDB]
+    Pipeline --> LLM[Configured generation provider]
+    Vault[Markdown vault] --> Builder[Copy-on-write index builder]
+    Builder --> FTS
+    Builder --> Vector
+```
+
+Revisions live under:
+
+```text
+.obsidianrag/v4/
+├── active.json
+├── build.lock
+├── indexes/<revision>/
+└── leases/<revision>/
+```
+
+A refresh scans regular Markdown files, hashes note content, reuses unchanged vectors in bounded batches, and embeds only changed notes. A candidate revision activates only after SQLite, FTS5, deterministic IDs, paths, vector dimensions, and finite vector values validate successfully.
+
+Readers lease their current revision. A new revision may activate while old requests finish; inactive leased revisions cannot be pruned.
+
+## API 4
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /capabilities` | Exact plugin/backend protocol contract |
+| `GET /health` | Process liveness and query readiness |
+| `GET /models` | Models exposed by the configured provider |
+| `POST /ask` | Complete grounded answer |
+| `POST /ask/stream` | SSE answer stream |
+| `GET /index/status` | Missing/current/stale/rebuild-required state |
+| `POST /index/build` | Incremental build or explicit full rebuild |
+| `POST /index/prune` | Remove unleased inactive revisions |
+
+API 3 clients and backends are intentionally incompatible with 4.0.0.
+
+## Migration from 3.x
+
+- Install backend and plugin 4.0.0 together.
+- Existing `.obsidianrag/v4` revisions are reused when compatible.
+- Legacy `.obsidianrag/db` Chroma data is ignored and never deleted automatically.
+- Replace compound backend commands such as `uv run obsidianrag` with an executable path or name.
+- Build the v4 index explicitly if no compatible revision exists.
+- Remove legacy index data manually only after validating 4.0.0.
+
+## Development
 
 ```bash
 git clone https://github.com/Vasallo94/ObsidianRAG.git
 cd ObsidianRAG
 
-# Backend
 cd backend
-uv sync
+uv sync --locked --dev
 uv run pytest
+uv run ruff check .
+uv run mypy .
 
-# Plugin
 cd ../plugin
-pnpm install
-pnpm run dev
-```
-
-Backend maintainers: see
-[LangChain Classic Migration Plan](docs/developer-guide/langchain-classic-migration.md)
-before changing retrieval or reranking internals.
-
----
-
-## LLM Providers
-
-ObsidianRAG supports multiple local LLM runtimes:
-
-| Provider | CLI Flag | Default URL | API Format |
-|----------|----------|-------------|------------|
-| **Ollama** | `--provider ollama` | `http://localhost:11434` | Ollama native |
-| **LM Studio** | `--provider lmstudio` | `http://localhost:1234/v1` | Chat Completions |
-| **Custom** | `--provider custom` | (must specify) | Ollama or Chat Completions |
-
-Examples:
-
-```bash
-# Ollama (default)
-obsidianrag serve --vault /path/to/vault
-
-# LM Studio
-obsidianrag serve --vault /path/to/vault --provider lmstudio --model my-model
-
-# Custom OpenAI-compatible server
-obsidianrag serve --vault /path/to/vault --provider custom \
-  --base-url http://my-server:8080/v1 \
-  --api-format chat-completions \
-  --api-key my-key
-```
-
----
-
-## Configuration
-
-### Plugin Settings
-
-Access via Settings > ObsidianRAG:
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| **Backend command** | `obsidianrag` | Command to start the backend |
-| **Server port** | `8000` | Backend API port |
-| **LLM provider** | `Ollama` | Runtime: Ollama, LM Studio, or Custom |
-| **LLM base URL** | `http://localhost:11434` | Provider endpoint |
-| **LLM model** | `gemma3` | Model for answer generation |
-| **API key** | — | Required only for some custom providers |
-| **Use reranker** | `true` | CrossEncoder reranking for better relevance |
-| **Auto-start server** | `true` | Start backend when Obsidian opens |
-| **Show source links** | `true` | Display note links in answers |
-
-### CLI Reference
-
-```
-obsidianrag serve [OPTIONS]
-
-Options:
-  --vault, -v       Path to Obsidian vault (required)
-  --host, -h        Host to bind to (default: 127.0.0.1)
-  --port, -p        Server port (default: 8000)
-  --provider        LLM provider: ollama, lmstudio, custom
-  --model, -m       LLM model name (default: gemma3)
-  --base-url        Base URL for the selected provider
-  --api-format      API format: ollama or chat-completions
-  --api-key         API key for providers that require one
-  --reranker        Enable reranker (default)
-  --no-reranker     Disable reranker
-  --reload, -r      Enable auto-reload for development
-```
-
-### Environment Variables
-
-All backend settings can be set via environment variables with the `OBSIDIANRAG_` prefix. See [`.env.example`](.env.example) for the full list.
-
-Key variables:
-
-```bash
-OBSIDIANRAG_OBSIDIAN_PATH=/path/to/vault
-OBSIDIANRAG_LLM_PROVIDER=ollama
-OBSIDIANRAG_LLM_MODEL=gemma3
-OBSIDIANRAG_OLLAMA_BASE_URL=http://localhost:11434
-```
-
----
-
-## Architecture
-
-### System Overview
-
-```
-+-------------------------------------------+
-|             Obsidian                       |
-|  +-------------------------------------+  |
-|  |   ObsidianRAG Plugin (TypeScript)   |  |
-|  |                                     |  |
-|  |  - Chat UI                          |  |
-|  |  - Server Manager                   |  |
-|  |  - Provider Settings                |  |
-|  +----------------+--------------------+  |
-+-------------------|------------------------+
-                    | HTTP (localhost:8000)
-                    v
-+-------------------------------------------+
-|   Backend (Python / FastAPI)              |
-|                                           |
-|   LLM Provider Layer                      |
-|   (Ollama | LM Studio | Custom)          |
-|        |                                  |
-|   LangGraph Agent                         |
-|   Retrieve -> Rerank -> Generate          |
-|        |                                  |
-|   ChromaDB (v3 Vector Store)              |
-|   SQLite FTS5 + LanceDB (optional v4)     |
-+-------------------------------------------+
-```
-
-### RAG Pipeline
-
-```mermaid
-flowchart LR
-    Q[Question] --> R[Retrieve]
-    R --> H[Hybrid Search<br/>Vector + BM25]
-    H --> RR[Reranker<br/>CrossEncoder]
-    RR --> G[GraphRAG<br/>Link Expansion]
-    G --> C[Context]
-    C --> L[LLM Generate]
-    L --> A[Answer]
-```
-
-**Retrieve Node:**
-1. Hybrid search (60% vector similarity, 40% BM25 keyword matching)
-2. Reranking with BAAI/bge-reranker-v2-m3
-3. GraphRAG expansion via `[[wikilinks]]`
-4. Score filtering (removes documents below 0.3 relevance)
-
-### Experimental v4 index
-
-The optional v4 engine stores each revision in
-`.obsidianrag/v4/indexes/<revision>/` with a SQLite catalog and FTS5 table
-alongside a LanceDB vector table. Every build scans the vault Markdown files,
-hashes note content and index settings, and uses copy-on-write revisions:
-unchanged notes reuse their existing chunks and vectors, while added or
-modified notes are split and embedded again and deleted notes are omitted.
-
-`active.json` is replaced only after SQLite integrity, semantic catalog/FTS
-agreement, and exact validated LanceDB vectors have passed. Embedding
-fingerprints prevent reuse across different vector spaces. A cross-platform
-exclusive lock serializes builders; failed builds remove only their
-unactivated revision, while filesystem leases keep revisions used by readers
-available. Empty vaults activate an empty revision instead of retaining deleted
-content.
-
-```bash
-# Incremental by default
-obsidianrag v4-index --vault /path/to/vault
-
-# Explicitly rebuild after an embedding/schema/chunk-settings change
-obsidianrag v4-index --vault /path/to/vault --full-rebuild
-
-# Delete inactive revisions after their readers close
-obsidianrag v4-prune --vault /path/to/vault
-```
-
-**Generate Node:**
-1. Build prompt with retrieved context
-2. Stream tokens from the configured LLM
-3. Return answer with source documents and scores
-
----
-
-## Supported Models
-
-### LLMs
-
-Any model available in your configured provider. Recommended options for Ollama:
-
-| Model | Size | Best For | Install |
-|-------|------|----------|---------|
-| `gemma3` | 5 GB | General use, balanced | `ollama pull gemma3` |
-| `qwen2.5` | 4.4 GB | Spanish, multilingual | `ollama pull qwen2.5` |
-| `qwen3` | 5 GB | Better reasoning | `ollama pull qwen3` |
-| `llama3.2` | 2 GB | Smaller, faster | `ollama pull llama3.2` |
-
-### Embeddings
-
-| Provider | Model | Notes |
-|----------|-------|-------|
-| **Ollama** (default) | `qwen3-embedding` | Recommended. Auto-downloaded on first run. |
-| **HuggingFace** | `paraphrase-multilingual-mpnet-base-v2` | Alternative. Set `OBSIDIANRAG_EMBEDDING_PROVIDER=huggingface`. |
-
----
-
-## Docker Deployment
-
-### Basic Usage
-
-```bash
-# Pull the pre-built image and start
-OBSIDIAN_VAULT_PATH=/path/to/your/vault docker compose up
-
-# Or build locally
-OBSIDIAN_VAULT_PATH=/path/to/your/vault docker compose up --build
-```
-
-The pre-built image is published to `ghcr.io/vasallo94/obsidianrag-backend:latest` on every push to main.
-
-### Requirements
-
-- Docker or Podman with compose support
-- Ollama running on the host machine
-
-### Configuration
-
-Set these in your environment or in a `.env` file:
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `OBSIDIAN_VAULT_PATH` | Yes | Host path to your Obsidian vault |
-| `LLM_MODEL` | No | Model name (default: `gemma3`) |
-
-The container connects to the host's Ollama instance via `host.docker.internal`. The HuggingFace model cache is persisted in a named volume to avoid re-downloading on container restarts.
-
-### Security
-
-The Docker setup includes:
-- `no-new-privileges` security option
-- 4 GB memory limit
-- Health check on `/health` endpoint
-- Non-root user (`appuser`)
-
----
-
-## Troubleshooting
-
-**Server shows "Offline"**
-```bash
-uv tool install obsidianrag
-obsidianrag serve --vault /path/to/vault
-```
-
-**"Ollama not running"**
-```bash
-ollama serve
-curl http://localhost:11434/api/tags
-```
-
-**Model not found**
-```bash
-ollama pull gemma3
-```
-
-See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for more solutions.
-
----
-
-## Project Structure
-
-```
-ObsidianRAG/
-|-- backend/                  Python backend (PyPI package)
-|   |-- obsidianrag/
-|   |   |-- api/              FastAPI server
-|   |   |-- cli/              CLI commands
-|   |   |-- core/             RAG logic
-|   |   |   |-- qa_agent.py       LangGraph agent
-|   |   |   |-- qa_service.py     Retrieval and reranking
-|   |   |   |-- db_service.py     ChromaDB management
-|   |   |   |-- llm_provider.py   Multi-provider LLM support
-|   |   |   `-- metadata_tracker.py  Incremental indexing
-|   |   `-- config.py         Pydantic settings
-|   |-- tests/
-|   |-- Dockerfile            Multi-stage build
-|   `-- pyproject.toml
-|
-|-- plugin/                   Obsidian plugin (TypeScript)
-|   |-- src/main.ts           Plugin entry point
-|   |-- tests/                Unit tests
-|   `-- styles.css            UI styles
-|
-|-- docker-compose.yml        Container orchestration
-|-- .env.example              Configuration template
-`-- docs/                     Documentation
-```
-
----
-
-## Testing
-
-```bash
-# Backend
-cd backend
-uv run pytest
-
-# Plugin
-cd plugin
+pnpm install --frozen-lockfile
 pnpm test
+pnpm run lint
+pnpm run build
 ```
 
----
+Tests use temporary fixture vaults. Integration tests requiring a real provider are excluded from normal CI.
 
-## Contributing
+## Release
 
-Contributions are welcome. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
+Backend and plugin share version `4.0.0` but publish independently:
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature`
-3. Commit changes: `git commit -m 'feat: add your feature'`
-4. Push: `git push origin feature/your-feature`
-5. Open a Pull Request
-
----
+1. Tag `backend-v4.0.0` and verify PyPI.
+2. Tag `plugin-v4.0.0` and verify GitHub release assets.
 
 ## License
 
-MIT License. See [LICENSE](LICENSE).
-
----
-
-## Acknowledgments
-
-- [LangChain](https://github.com/langchain-ai/langchain) and [LangGraph](https://github.com/langchain-ai/langgraph) — RAG framework
-- [Ollama](https://ollama.ai/) — Local LLM runtime
-- [Obsidian](https://obsidian.md/) — Note-taking application
-- [ChromaDB](https://www.trychroma.com/) — Vector database
+MIT. See [LICENSE](LICENSE).

@@ -65,7 +65,6 @@ describe('Edge Cases', () => {
       llmApiKey: 'session-secret',
       autoStartServer: true,
       showSourceLinks: true,
-      useReranker: false,
       hasCompletedSetup: true
     };
 

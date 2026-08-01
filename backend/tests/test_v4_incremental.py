@@ -27,7 +27,7 @@ from obsidianrag.v4 import (
     prune_revisions,
 )
 from obsidianrag.v4.index import SCHEMA_VERSION, _build_lock
-from tests.test_v4_experimental import KeywordEmbeddings, copy_sample_vault
+from tests.test_v4_retrieval import KeywordEmbeddings, copy_sample_vault
 
 
 class TrackingEmbeddings(KeywordEmbeddings):

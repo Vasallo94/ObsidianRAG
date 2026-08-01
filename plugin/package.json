@@ -1,6 +1,6 @@
 {
   "name": "obsidian-rag",
-  "version": "1.0.3",
+  "version": "4.0.0",
   "description": "Ask questions about your Obsidian notes using local AI (RAG)",
   "main": "main.js",
   "scripts": {
@@ -17,7 +17,7 @@
     "rag",
     "ai",
     "llm",
-    "ollama"
+    "lancedb"
   ],
   "author": "Enrique Vasallo",
   "license": "MIT",

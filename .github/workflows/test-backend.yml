@@ -2,12 +2,12 @@ name: Backend Tests
 
 on:
   push:
-    branches: [main, v3-plugin]
+    branches: [main]
     paths:
       - 'backend/**'
       - '.github/workflows/test-backend.yml'
   pull_request:
-    branches: [main, v3-plugin]
+    branches: [main]
     paths:
       - 'backend/**'
       - '.github/workflows/test-backend.yml'
@@ -39,7 +39,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --dev --extra v4
+        run: uv sync --locked --dev
 
       - name: Run linting
         run: |
@@ -91,7 +91,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --dev --extra v4
+          uv sync --locked --dev
 
       - name: Run type checking
         run: uv run mypy .

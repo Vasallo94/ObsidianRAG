@@ -45,7 +45,6 @@ interface ObsidianRAGSettings {
   llmApiKey: string;
   autoStartServer: boolean;
   showSourceLinks: boolean;
-  useReranker: boolean;
   hasCompletedSetup: boolean;
 }
 
@@ -191,7 +190,6 @@ const DEFAULT_SETTINGS: ObsidianRAGSettings = {
   llmApiKey: "lm-studio",
   autoStartServer: true,
   showSourceLinks: true,
-  useReranker: true,
   hasCompletedSetup: false,
 };
 
@@ -324,15 +322,24 @@ export default class ObsidianRAGPlugin extends Plugin {
     const saved = (await this.loadData()) as Partial<ObsidianRAGSettings> | null;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
 
-    // API keys are session-only. Remove keys persisted by older plugin versions.
-    if (saved && Object.prototype.hasOwnProperty.call(saved, "llmApiKey")) {
+    // Remove session-only and retired settings persisted by older plugin versions.
+    const legacy = this.settings as ObsidianRAGSettings & { useReranker?: boolean };
+    delete legacy.useReranker;
+    if (
+      saved &&
+      (Object.prototype.hasOwnProperty.call(saved, "llmApiKey") ||
+        Object.prototype.hasOwnProperty.call(saved, "useReranker"))
+    ) {
       await this.saveSettings();
     }
   }
 
   async saveSettings() {
-    const persistedSettings: Partial<ObsidianRAGSettings> = { ...this.settings };
+    const persistedSettings: Partial<ObsidianRAGSettings> & { useReranker?: boolean } = {
+      ...this.settings,
+    };
     delete persistedSettings.llmApiKey;
+    delete persistedSettings.useReranker;
     await this.saveData(persistedSettings);
     this.apiBaseUrl = `http://127.0.0.1:${this.settings.serverPort}`;
   }
@@ -428,7 +435,6 @@ export default class ObsidianRAGPlugin extends Plugin {
         this.settings.llmBaseUrl,
         "--api-format",
         this.settings.llmApiFormat,
-        this.settings.useReranker ? "--reranker" : "--no-reranker",
       ];
 
       const childProcess = spawn(command, args, spawnOptions);
@@ -861,7 +867,6 @@ export default class ObsidianRAGPlugin extends Plugin {
       OBSIDIANRAG_LLM_MODEL: this.settings.llmModel,
       OBSIDIANRAG_COMPATIBLE_BASE_URL: this.settings.llmBaseUrl,
       OBSIDIANRAG_COMPATIBLE_API_KEY: this.settings.llmApiKey,
-      OBSIDIANRAG_USE_RERANKER: this.settings.useReranker ? "true" : "false",
     };
 
     return {
@@ -943,18 +948,15 @@ class SetupModal extends Modal {
     const li2 = requirements.createEl("li");
     li2.createEl("strong", { text: "obsidianrag" });
     li2.appendText(" package - ");
-    li2.createEl("code", { text: "uv add obsidianrag" });
+    li2.createEl("code", { text: "uv tool install obsidianrag==4.0.0" });
 
     const li3 = requirements.createEl("li");
 
-    li3.createEl("strong", { text: "Ollama" });
-    li3.appendText(" - Local model server from ");
-    li3.createEl("a", { text: "ollama.ai", href: "https://ollama.ai" });
+    li3.createEl("strong", { text: "Generation provider" });
+    li3.appendText(" - Ollama, LM Studio, or a compatible local server");
 
     const li4 = requirements.createEl("li");
-
-    li4.appendText("At least one model installed - ");
-    li4.createEl("code", { text: "ollama pull gemma3" });
+    li4.appendText("At least one model available from the selected provider");
 
     el.createEl("p", {
       text: "Make sure you have all requirements installed before proceeding.",
@@ -1096,7 +1098,7 @@ class SetupModal extends Modal {
     const tips = el.createEl("ul");
     tips.createEl("li", { text: "Click the chat icon in the ribbon to open the chat" });
     tips.createEl("li", { text: "Use Cmd/Ctrl+P and search 'ObsidianRAG' for all commands" });
-    tips.createEl("li", { text: "First question may take a moment while the vault is indexed" });
+    tips.createEl("li", { text: "Build the index before asking the first question" });
 
     const buttons = el.createDiv("modal-button-container");
 
@@ -1912,23 +1914,9 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
         );
     }
 
-    // RAG Settings Section
+    // Plugin behavior
 
-    new Setting(containerEl).setName("Retrieval").setHeading();
-
-    // Use Reranker
-    new Setting(containerEl)
-
-      .setName("Use reranker")
-      .setDesc("Enable cross-encoder reranking for better relevance (slower but more accurate)")
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.useReranker)
-          .onChange(async (value) => {
-            this.plugin.settings.useReranker = value;
-            await this.plugin.saveSettings();
-          })
-      );
+    new Setting(containerEl).setName("Behavior").setHeading();
 
     // Auto-start
     new Setting(containerEl)
@@ -2037,14 +2025,11 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
     const hLi2 = ul.createEl("li");
     hLi2.createEl("strong", { text: "obsidianrag" });
     hLi2.appendText(" package: ");
-    hLi2.createEl("code", { text: "uv add obsidianrag" });
+    hLi2.createEl("code", { text: "uv tool install obsidianrag==4.0.0" });
 
     const hLi3 = ul.createEl("li");
-    hLi3.createEl("strong", { text: "Ollama" });
-    hLi3.appendText(" running locally with at least one model");
-
-    const pLink = helpEl.createEl("p", { text: "Install Ollama from " });
-    pLink.createEl("a", { text: "ollama.ai", href: "https://ollama.ai" });
+    hLi3.createEl("strong", { text: "Generation provider" });
+    hLi3.appendText(" with at least one available model");
 
     // Reset Setup
 

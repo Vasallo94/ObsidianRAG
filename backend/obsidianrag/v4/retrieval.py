@@ -72,7 +72,7 @@ class LexicalRetriever:
 
 
 class Retriever:
-    """Retrieve chunks from the active experimental index revision."""
+    """Retrieve chunks from a validated v4 index revision."""
 
     def __init__(
         self,

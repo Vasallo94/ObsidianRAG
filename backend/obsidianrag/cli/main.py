@@ -68,9 +68,6 @@ def serve(
         "--api-key",
         help="API key for custom compatible providers when required",
     ),
-    reranker: Optional[bool] = typer.Option(
-        None, "--reranker/--no-reranker", help="Enable/disable reranker"
-    ),
     reload: bool = typer.Option(False, "--reload", "-r", help="Enable auto-reload"),
 ):
     """Start the ObsidianRAG API server."""
@@ -78,17 +75,11 @@ def serve(
 
     provider_info = f"\nProvider: [yellow]{provider}[/yellow]" if provider else ""
     model_info = f"\nModel: [yellow]{model}[/yellow]" if model else ""
-    reranker_info = (
-        f"\nReranker: [yellow]{'Enabled' if reranker else 'Disabled'}[/yellow]"
-        if reranker is not None
-        else ""
-    )
-
     console.print(
         Panel.fit(
             f"[bold cyan]ObsidianRAG Server[/bold cyan]\n\n"
             f"Vault: [green]{vault_path}[/green]\n"
-            f"URL: [blue]http://{host}:{port}[/blue]{provider_info}{model_info}{reranker_info}",
+            f"URL: [blue]http://{host}:{port}[/blue]{provider_info}{model_info}",
             title="Starting Server",
         )
     )
@@ -116,9 +107,6 @@ def serve(
             settings.compatible_base_url = base_url
     if api_key:
         settings.compatible_api_key = api_key
-    if reranker is not None:
-        settings.use_reranker = reranker
-
     # Start server
     import uvicorn
 

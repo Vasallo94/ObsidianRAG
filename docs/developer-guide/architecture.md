@@ -1,129 +1,89 @@
-# ObsidianRAG Architecture
+# ObsidianRAG 4 Architecture
 
-This document describes the high-level architecture of ObsidianRAG v3, which consists of a TypeScript plugin for Obsidian and a Python backend for RAG capabilities.
+ObsidianRAG 4 consists of a desktop-only Obsidian plugin and a local FastAPI backend. API 4 has one production retrieval engine: a revisioned SQLite FTS5 catalog plus embedded LanceDB vectors.
 
-## High-Level Overview
-
-```mermaid
-graph TD
-    User[User] -->|Interacts with| Plugin[Obsidian Plugin]
-    Plugin -->|Spawns/Manages| Backend[Python Backend]
-    Plugin -->|HTTP Requests| Backend
-    Backend -->|Queries| VectorDB[(ChromaDB)]
-    Backend -->|Inference| Ollama[Ollama LLM]
-    Backend -->|Reads| Vault[Obsidian Vault]
-```
-
-## Component Interaction
-
-### 1. Startup Flow
-
-```mermaid
-sequenceDiagram
-    participant Obsidian
-    participant Plugin
-    participant Backend
-    participant Ollama
-
-    Obsidian->>Plugin: onload()
-    Plugin->>Plugin: Load Settings
-    Plugin->>Backend: Spawn Process (obsidianrag serve)
-    loop Health Check
-        Plugin->>Backend: GET /health
-        Backend-->>Plugin: 200 OK
-    end
-    Plugin->>Ollama: GET /api/tags (Check Models)
-    Ollama-->>Plugin: List of Models
-    Plugin->>User: Ready (Status: Online)
-```
-
-### 2. RAG Query Flow (Streaming)
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Plugin
-    participant Backend
-    participant VectorDB
-    participant Ollama
-
-    User->>Plugin: Ask Question
-    Plugin->>Backend: POST /ask/stream
-
-    rect rgb(240, 248, 255)
-        note right of Backend: Retrieval Phase
-        Backend->>VectorDB: Query Embeddings
-        VectorDB-->>Backend: Top K Chunks
-        Backend->>Backend: Rerank Results
-        Backend-->>Plugin: SSE: phase="rerank"
-    end
-
-    rect rgb(255, 250, 240)
-        note right of Backend: Generation Phase
-        Backend->>Ollama: Generate(Prompt + Context)
-        loop Stream Tokens
-            Ollama-->>Backend: Token
-            Backend-->>Plugin: SSE: token="word"
-        end
-    end
-
-    Backend-->>Plugin: SSE: done
-    Plugin->>User: Display Full Answer
-```
-
-## Data Flow
+## Components
 
 ```mermaid
 flowchart LR
-    subgraph "Obsidian Vault"
-        MD[Markdown Files]
-    end
-
-    subgraph "Python Backend"
-        Watcher[File Watcher]
-        Chunker[Text Chunker]
-        Embedder[Embedding Model]
-        DB[(ChromaDB)]
-    end
-
-    MD --> Watcher
-    Watcher -->|New/Modified| Chunker
-    Chunker -->|Chunks| Embedder
-    Embedder -->|Vectors| DB
+    User --> Plugin[Obsidian plugin]
+    Plugin -->|API 4| Server[FastAPI backend]
+    Server --> Runtime[Refcounted query runtime]
+    Runtime --> Pipeline[Grounded query pipeline]
+    Pipeline --> SQLite[(SQLite catalog + FTS5)]
+    Pipeline --> Lance[(LanceDB vectors)]
+    Pipeline --> Provider[Ollama / LM Studio / custom]
+    Vault[Markdown vault] --> Builder[Copy-on-write builder]
+    Builder --> SQLite
+    Builder --> Lance
 ```
 
-## Retrieval Modernization
+## Startup
 
-Hybrid retrieval currently keeps a small compatibility dependency on
-`langchain_classic` for retriever composition and reranking adapters. New
-retrieval work should follow the migration plan in
-[LangChain Classic Migration Plan](langchain-classic-migration.md) and avoid
-adding more `langchain_classic` surface area.
+1. The plugin starts one configured backend executable with `shell:false`.
+2. The plugin checks `/capabilities` and accepts only `api_version: 4`.
+3. The backend inspects index status but never builds automatically.
+4. If a compatible active revision exists, the backend opens a query pipeline and acquires its reader lease.
+5. `/health` remains available even when `query_ready` is false.
 
-## Experimental v4 Vertical
-
-The optional v4 vertical validates a framework-independent storage boundary without changing the production v3 API:
+## Index lifecycle
 
 ```mermaid
-flowchart LR
-    Vault[Markdown vault] --> Chunker[Existing v3 chunker]
-    Chunker --> Catalog[(SQLite catalog + FTS5)]
-    Chunker --> Vectors[(Embedded LanceDB)]
-    Query[Query] --> FTS[Lexical search]
-    Query --> Vector[Vector search]
-    FTS --> RRF[Reciprocal rank fusion]
-    Vector --> RRF
-    RRF --> Results[Ranked chunks]
+stateDiagram-v2
+    [*] --> Missing
+    Missing --> Current: Build
+    Current --> Stale: Vault changes
+    Stale --> Current: Incremental refresh
+    Current --> RebuildRequired: Configuration incompatibility
+    RebuildRequired --> Current: Full rebuild
 ```
 
-- SQLite is authoritative for chunk text, source paths, lexical search, note hashes, and index metadata.
-- LanceDB is a rebuildable vector index keyed by deterministic chunk IDs.
-- Builds scan regular vault Markdown without following links and create an isolated copy-on-write revision. Unchanged vectors are copied in bounded batches; changed notes are split and embedded again; deleted notes are omitted. A zero-note vault produces a valid empty revision.
-- Synthetic probe fingerprints bind revisions to the configured embedding implementation and its actual vector space.
-- A build lock serializes writers. `active.json` changes only after SQLite integrity, foreign keys, deterministic IDs, catalog/FTS semantics, and LanceDB vector metadata have passed, followed by a final authoritative vault scan.
-- Schema, embedding, or chunk-setting changes require `v4-index --full-rebuild`.
-- Readers hold filesystem leases on their revision. `v4-prune` deletes inactive revisions only after all readers close, preserving live readers without retaining deleted text indefinitely.
-- The experiment reuses the current chunker and embedding providers so retrieval storage can be compared without changing every variable at once.
-- `obsidianrag evaluate --engine v3|v4` runs both implementations against the same expected-source dataset.
+The plugin maps these states to Build index, Refresh index, or Full rebuild. Pruning is always a separate explicit action.
 
-The v4 vertical remains optional and does not change the production v3 index or plugin routing.
+### Revision build
+
+- SQLite is authoritative for chunk text, note paths, content hashes, lexical search, and metadata.
+- LanceDB is keyed by deterministic chunk IDs and can be rebuilt from the catalog plus embeddings.
+- Builds scan regular Markdown without following links.
+- Unchanged vectors are copied in bounded batches; changed notes are split and embedded again; deleted notes are omitted.
+- Empty vaults produce valid empty revisions.
+- Synthetic document/query probes bind metadata to the actual embedding vector space.
+- Validation covers SQLite integrity and foreign keys, deterministic IDs, FTS semantics, path normalization, vector dimensions, and finite vector values.
+- `active.json` changes only after the candidate is validated and synchronized.
+
+### Reader lifecycle
+
+Each retriever owns a filesystem lease for its revision. Query requests check out a refcounted pipeline slot. During refresh:
+
+1. The old slot continues serving.
+2. The builder activates a validated disk revision.
+3. The server constructs a candidate pipeline bound to that exact revision.
+4. The runtime atomically swaps slots.
+5. The old pipeline closes only after all normal and streaming requests release it.
+
+Cancellation-safe thread waits prevent a retriever from closing while blocking retrieval still runs. `prune` refuses to delete leased inactive revisions.
+
+If disk activation succeeds but candidate construction fails, the old slot remains available. `/index/status` reports the active/serving mismatch as stale, and the next refresh reconciles it.
+
+## API boundary
+
+The stable v4 routes are:
+
+- `/capabilities`
+- `/health`
+- `/models`
+- `/ask`
+- `/ask/stream`
+- `/index/status`
+- `/index/build`
+- `/index/prune`
+
+Operational errors use structured codes and do not expose internal paths.
+
+## Configuration isolation
+
+Each FastAPI application owns a copied `Settings` instance. A `ContextVar` override propagates it through request tasks and `asyncio.to_thread`, while CLI/library callers retain the process-global default. Creating an app does not create legacy database directories.
+
+## Migration boundary
+
+API 3 and the Chroma/LangGraph runtime were removed. Existing `.obsidianrag/db` data is ignored rather than imported or deleted. Compatible `.obsidianrag/v4` revisions remain reusable.

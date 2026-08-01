@@ -1,4 +1,4 @@
-"""Integration tests for the experimental v4 index vertical."""
+"""Integration tests for the production v4 retrieval index."""
 
 import asyncio
 import shutil
@@ -42,7 +42,7 @@ def copy_sample_vault(tmp_path: Path) -> Path:
     return vault
 
 
-def test_build_and_search_experimental_index(tmp_path):
+def test_build_and_search_index(tmp_path):
     vault = copy_sample_vault(tmp_path)
     configure_from_vault(str(vault))
     embeddings = KeywordEmbeddings()

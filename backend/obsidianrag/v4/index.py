@@ -596,7 +596,7 @@ def active_revision(vault_path: Path) -> Path:
     root = _v4_root(vault_path)
     active = _read_manifest(root / "active.json")
     if active is None:
-        raise IndexCorruptionError("No v4 index found. Run: obsidianrag v4-index --vault ...")
+        raise IndexCorruptionError("No v4 index found. Run: obsidianrag index --vault ...")
     revision = _manifest_revision(active)
     if active.get("schema_version") != SCHEMA_VERSION:
         raise IndexCorruptionError("Unsupported v4 index manifest; run --full-rebuild")
@@ -621,10 +621,12 @@ def _read_manifest(path: Path) -> dict[str, object] | None:
         value = json.loads(_read_regular_bytes(path).decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError, OSError) as error:
         raise IndexCorruptionError(
-            "The active v4 manifest is malformed; run v4-index --full-rebuild"
+            "The active v4 manifest is malformed; run obsidianrag index --full-rebuild"
         ) from error
     if not isinstance(value, dict):
-        raise IndexCorruptionError("The active v4 manifest is invalid; run v4-index --full-rebuild")
+        raise IndexCorruptionError(
+            "The active v4 manifest is invalid; run obsidianrag index --full-rebuild"
+        )
     return value
 
 

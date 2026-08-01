@@ -284,7 +284,7 @@ def create_app(vault_path: Optional[str] = None) -> FastAPI:
     runtime_settings = get_settings().model_copy(deep=True)
     configured_vault = vault_path or runtime_settings.obsidian_path
     if configured_vault:
-        runtime_settings.configure_paths(configured_vault, create_directories=False)
+        runtime_settings.configure_paths(configured_vault)
     runtime = _Runtime(
         Path(configured_vault) if configured_vault else None,
         settings=runtime_settings,

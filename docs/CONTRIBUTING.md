@@ -95,19 +95,17 @@ ln -s $(pwd) /path/to/vault/.obsidian/plugins/obsidianrag
 
 ### Branching Strategy
 
-- `main` - Stable releases
-- `v3-plugin` - Development branch for v3
+- `main` - Stable releases and branch point
 - `feature/*` - New features
 - `fix/*` - Bug fixes
 
 ### Creating a Branch
 
 ```bash
-# Start from development branch
-git checkout v3-plugin
-git pull origin v3-plugin
+# Start from main
+git checkout main
+git pull --ff-only origin main
 
-# Create feature branch
 git checkout -b feature/my-awesome-feature
 ```
 

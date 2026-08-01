@@ -2,7 +2,7 @@
 
 Monorepo with two independent components:
 
-- **`backend/`** -- Python package (PyPI: `obsidianrag`). FastAPI server, LangGraph RAG agent, ChromaDB vector store.
+- **`backend/`** -- Python package (PyPI: `obsidianrag`). FastAPI API 4 server, SQLite FTS5 catalog, LanceDB vectors, and grounded query pipeline.
 - **`plugin/`** -- Obsidian plugin (TypeScript). Chat UI that talks to the backend over HTTP.
 
 ## Commands
@@ -12,7 +12,7 @@ Monorepo with two independent components:
 ```bash
 cd backend
 uv sync                    # install deps
-uv run pytest              # run tests (89 tests)
+uv run pytest              # run backend tests
 uv run pytest --cov        # with coverage
 uv run ruff check .        # lint
 uv run ruff format .       # format
@@ -40,12 +40,12 @@ OBSIDIAN_VAULT_PATH=/path/to/vault docker compose up
 ## Architecture
 
 ```
-Plugin (TypeScript) --HTTP:8000--> Backend (FastAPI)
+Plugin (TypeScript) --HTTP:8000--> Backend (FastAPI API 4)
                                      |
-                              LangGraph Agent
-                           Retrieve -> Rerank -> Generate
+                              Query Pipeline
+                           Retrieve -> Generate
                                      |
-                              ChromaDB + BM25
+                           SQLite FTS5 + LanceDB
                                      |
                            Ollama / LM Studio / Custom
 ```
@@ -62,8 +62,9 @@ Plugin (TypeScript) --HTTP:8000--> Backend (FastAPI)
 ## Key files
 
 - `backend/obsidianrag/api/server.py` -- FastAPI app and endpoints
-- `backend/obsidianrag/core/qa_agent.py` -- LangGraph RAG agent
-- `backend/obsidianrag/core/qa_service.py` -- Retrieval, reranking, GraphRAG
+- `backend/obsidianrag/core/query_pipeline.py` -- Grounded retrieval and generation pipeline
+- `backend/obsidianrag/v4/index.py` -- Revisioned index lifecycle and validation
+- `backend/obsidianrag/v4/retrieval.py` -- Hybrid and lexical retrieval
 - `backend/obsidianrag/core/llm_provider.py` -- Multi-provider LLM abstraction
 - `backend/obsidianrag/config.py` -- Pydantic settings (env vars with `OBSIDIANRAG_` prefix)
 - `plugin/src/main.ts` -- Entire plugin in one file (classes: Plugin, ChatView, SetupModal, SettingsTab)
