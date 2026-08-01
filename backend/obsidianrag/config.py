@@ -36,6 +36,12 @@ class Settings(BaseSettings):
         description="LLM API format used by the provider adapter",
     )
     llm_model: str = Field(default="gemma4:31b", description="LLM model name")
+    llm_temperature: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=2.0,
+        description="Generation temperature; zero is deterministic and recommended for RAG",
+    )
     ollama_base_url: str = Field(default="http://localhost:11434", description="Ollama API URL")
     compatible_base_url: str = Field(
         default="http://localhost:1234/v1",

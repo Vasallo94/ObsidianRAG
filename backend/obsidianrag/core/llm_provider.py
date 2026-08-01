@@ -56,6 +56,7 @@ def create_chat_model(settings: Settings | None = None) -> tuple[BaseChatModel, 
         return ChatOllama(
             model=model_name,
             base_url=settings.ollama_base_url,
+            temperature=settings.llm_temperature,
             client_kwargs={"timeout": settings.request_timeout},
         ), model_name
 
@@ -70,6 +71,7 @@ def create_chat_model(settings: Settings | None = None) -> tuple[BaseChatModel, 
         return ChatOllama(
             model=model_name,
             base_url=settings.ollama_base_url,
+            temperature=settings.llm_temperature,
             client_kwargs={"timeout": settings.request_timeout},
         ), model_name
 
@@ -87,6 +89,7 @@ def create_chat_model(settings: Settings | None = None) -> tuple[BaseChatModel, 
                 model=model_name,
                 base_url=settings.compatible_base_url.rstrip("/"),
                 api_key=SecretStr(settings.compatible_api_key),
+                temperature=settings.llm_temperature,
                 timeout=settings.request_timeout,
             ),
             model_name,
