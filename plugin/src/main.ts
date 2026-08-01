@@ -29,7 +29,7 @@ const VIEW_TYPE_CHAT = "obsidianrag-chat-view";
 const DEFAULT_PORT = 8000;
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 1000;
-const SUPPORTED_API_VERSION = 3;
+const SUPPORTED_API_VERSION = 4;
 
 // ============================================================================
 // Interfaces
@@ -45,7 +45,6 @@ interface ObsidianRAGSettings {
   llmApiKey: string;
   autoStartServer: boolean;
   showSourceLinks: boolean;
-  useReranker: boolean;
   hasCompletedSetup: boolean;
 }
 
@@ -68,9 +67,39 @@ interface CapabilitiesResponse {
 interface HealthResponse {
   status: string;
   version: string;
+  api_version: number;
+  query_ready: boolean;
+  active_revision: string | null;
+  serving_revision: string | null;
   llm_provider?: string;
   llm_api_format?: string;
   model: string;
+}
+
+interface IndexStatusResponse {
+  state: "missing" | "current" | "stale" | "rebuild_required";
+  active_revision: string | null;
+  serving_revision: string | null;
+  query_ready: boolean;
+  indexed_notes: number;
+  indexed_chunks: number;
+  changed_notes: number;
+  deleted_notes: number;
+  reason: string | null;
+}
+
+interface IndexBuildResponse {
+  revision: string;
+  notes: number;
+  chunks: number;
+  reused_chunks: number;
+  reindexed_notes: number;
+  deleted_notes: number;
+}
+
+interface IndexPruneResponse {
+  active_revision: string;
+  deleted_revisions: string[];
 }
 
 interface SourceInfo {
@@ -161,25 +190,8 @@ const DEFAULT_SETTINGS: ObsidianRAGSettings = {
   llmApiKey: "lm-studio",
   autoStartServer: true,
   showSourceLinks: true,
-  useReranker: true,
   hasCompletedSetup: false,
 };
-
-// ============================================================================
-// Stats Response Interface
-// ============================================================================
-
-interface StatsResponse {
-  total_notes: number;
-  total_chunks: number;
-  total_words: number;
-  total_chars: number;
-  avg_words_per_chunk: number;
-  folders: number;
-  internal_links: number;
-  vault_path: string;
-  error?: string;
-}
 
 // ============================================================================
 // Ollama Models Interface
@@ -209,6 +221,8 @@ export default class ObsidianRAGPlugin extends Plugin {
   private maxRestartAttempts: number = 3;
   private isRestarting: boolean = false;
   private manuallyStoppedProcesses = new WeakSet<ReturnType<typeof spawn>>();
+  private latestIndexStatus: IndexStatusResponse | null = null;
+  private indexOperationInFlight = false;
   statusBarItem: HTMLElement | null = null;
 
   async onload() {
@@ -273,10 +287,10 @@ export default class ObsidianRAGPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "reindex-vault",
+      id: "refresh-index",
 
-      name: "Reindex vault",
-      callback: () => { void this.reindexVault(); },
+      name: "Refresh index",
+      callback: () => { void this.refreshIndex(); },
     });
 
     // Add settings tab
@@ -308,15 +322,24 @@ export default class ObsidianRAGPlugin extends Plugin {
     const saved = (await this.loadData()) as Partial<ObsidianRAGSettings> | null;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
 
-    // API keys are session-only. Remove keys persisted by older plugin versions.
-    if (saved && Object.prototype.hasOwnProperty.call(saved, "llmApiKey")) {
+    // Remove session-only and retired settings persisted by older plugin versions.
+    const legacy = this.settings as ObsidianRAGSettings & { useReranker?: boolean };
+    delete legacy.useReranker;
+    if (
+      saved &&
+      (Object.prototype.hasOwnProperty.call(saved, "llmApiKey") ||
+        Object.prototype.hasOwnProperty.call(saved, "useReranker"))
+    ) {
       await this.saveSettings();
     }
   }
 
   async saveSettings() {
-    const persistedSettings: Partial<ObsidianRAGSettings> = { ...this.settings };
+    const persistedSettings: Partial<ObsidianRAGSettings> & { useReranker?: boolean } = {
+      ...this.settings,
+    };
     delete persistedSettings.llmApiKey;
+    delete persistedSettings.useReranker;
     await this.saveData(persistedSettings);
     this.apiBaseUrl = `http://127.0.0.1:${this.settings.serverPort}`;
   }
@@ -394,49 +417,25 @@ export default class ObsidianRAGPlugin extends Plugin {
       // Get platform-specific spawn options
       const spawnOptions = this.getSpawnOptionsForPlatform(platform);
 
-      // Prepare the command based on platform
-      let command: string;
-      let args: string[];
-
-      if (platform === 'win32') {
-        // On Windows, we need to use shell and handle paths differently
-        command = this.settings.pythonPath;
-        args = [
-          "serve",
-          "--vault",
-          `"${vaultPath}"`, // Quote path for Windows
-          "--port",
-          String(this.settings.serverPort),
-          "--provider",
-          this.settings.llmProvider,
-          "--model",
-          this.settings.llmModel,
-          "--base-url",
-          this.settings.llmBaseUrl,
-          "--api-format",
-          this.settings.llmApiFormat,
-          this.settings.useReranker ? "--reranker" : "--no-reranker",
-        ];
-      } else {
-        // macOS and Linux
-        command = this.settings.pythonPath;
-        args = [
-          "serve",
-          "--vault",
-          vaultPath,
-          "--port",
-          String(this.settings.serverPort),
-          "--provider",
-          this.settings.llmProvider,
-          "--model",
-          this.settings.llmModel,
-          "--base-url",
-          this.settings.llmBaseUrl,
-          "--api-format",
-          this.settings.llmApiFormat,
-          this.settings.useReranker ? "--reranker" : "--no-reranker",
-        ];
+      const command = this.settings.pythonPath.trim();
+      if (!command) {
+        throw new Error("Set the backend executable path in plugin settings");
       }
+      const args = [
+        "serve",
+        "--vault",
+        vaultPath,
+        "--port",
+        String(this.settings.serverPort),
+        "--provider",
+        this.settings.llmProvider,
+        "--model",
+        this.settings.llmModel,
+        "--base-url",
+        this.settings.llmBaseUrl,
+        "--api-format",
+        this.settings.llmApiFormat,
+      ];
 
       const childProcess = spawn(command, args, spawnOptions);
       this.serverProcess = childProcess;
@@ -475,6 +474,7 @@ export default class ObsidianRAGPlugin extends Plugin {
       if (ready) {
         this.restartAttempts = 0; // Reset on successful start
         new Notice("Vault RAG server started successfully!");
+        await this.getIndexStatus();
         void this.updateStatusBar();
         return true;
       } else {
@@ -727,41 +727,93 @@ export default class ObsidianRAGPlugin extends Plugin {
     }
   }
 
-  /**
-   * Get vault statistics from the server
-   */
-  async getStats(): Promise<StatsResponse | null> {
-    return await this.fetchWithRetry<StatsResponse>(`${this.apiBaseUrl}/stats`);
+  async getIndexStatus(): Promise<IndexStatusResponse | null> {
+    const status = await this.fetchWithRetry<IndexStatusResponse>(
+      `${this.apiBaseUrl}/index/status`, {}, 1
+    );
+    this.latestIndexStatus = status;
+    return status;
   }
 
-  /**
-   * Trigger vault reindexing
-   */
-  async reindexVault(): Promise<boolean> {
+  getIndexActionLabel(status: IndexStatusResponse | null = this.latestIndexStatus): string {
+    if (status?.state === "missing") return "Build index";
+    if (status?.state === "rebuild_required") return "Full rebuild";
+    return "Refresh index";
+  }
+
+  isIndexBusy(): boolean {
+    return this.indexOperationInFlight;
+  }
+
+  async refreshIndex(): Promise<boolean> {
     if (!(await this.isServerRunning())) {
       new Notice("Server is not running. Start it first.");
       return false;
     }
+    const status = await this.getIndexStatus();
+    if (!status) {
+      new Notice("Could not read index status.");
+      return false;
+    }
+    return this.buildIndex(status.state === "rebuild_required");
+  }
 
-    new Notice("Reindexing vault... This may take a while.");
-
+  async buildIndex(fullRebuild: boolean = false): Promise<boolean> {
+    if (this.indexOperationInFlight) {
+      new Notice("An index operation is already running.");
+      return false;
+    }
+    this.indexOperationInFlight = true;
+    new Notice(fullRebuild ? "Rebuilding index..." : "Refreshing index...");
     try {
       const response = await requestUrl({
-        url: `${this.apiBaseUrl}/rebuild_db`,
+        url: `${this.apiBaseUrl}/index/build`,
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ full_rebuild: fullRebuild }),
       });
-
-      if (response.status >= 200 && response.status < 300) {
-        const data = response.json as { total_chunks: number };
-        new Notice(`Reindexing complete! Indexed ${data.total_chunks || 'unknown'} chunks.`);
-        return true;
-      } else {
-        new Notice(`Reindexing failed: ${response.status}`);
+      if (response.status < 200 || response.status >= 300) {
+        const payload = response.json as { detail?: { message?: string } };
+        new Notice(payload.detail?.message || `Index operation failed: ${response.status}`);
         return false;
       }
+      const result = response.json as IndexBuildResponse;
+      await this.getIndexStatus();
+      new Notice(`Index ready with ${result.chunks} chunks.`);
+      return true;
     } catch (error) {
-      new Notice(`Reindexing failed: ${error}`);
+      new Notice(`Index operation failed: ${error}`);
       return false;
+    } finally {
+      this.indexOperationInFlight = false;
+    }
+  }
+
+  async pruneIndex(): Promise<boolean> {
+    if (this.indexOperationInFlight) {
+      new Notice("An index operation is already running.");
+      return false;
+    }
+    this.indexOperationInFlight = true;
+    try {
+      const response = await requestUrl({
+        url: `${this.apiBaseUrl}/index/prune`,
+        method: "POST",
+      });
+      if (response.status < 200 || response.status >= 300) {
+        const payload = response.json as { detail?: { message?: string } };
+        new Notice(payload.detail?.message || `Index cleanup failed: ${response.status}`);
+        return false;
+      }
+      const result = response.json as IndexPruneResponse;
+      await this.getIndexStatus();
+      new Notice(`Removed ${result.deleted_revisions.length} inactive revisions.`);
+      return true;
+    } catch (error) {
+      new Notice(`Index cleanup failed: ${error}`);
+      return false;
+    } finally {
+      this.indexOperationInFlight = false;
     }
   }
 
@@ -815,29 +867,13 @@ export default class ObsidianRAGPlugin extends Plugin {
       OBSIDIANRAG_LLM_MODEL: this.settings.llmModel,
       OBSIDIANRAG_COMPATIBLE_BASE_URL: this.settings.llmBaseUrl,
       OBSIDIANRAG_COMPATIBLE_API_KEY: this.settings.llmApiKey,
-      OBSIDIANRAG_USE_RERANKER: this.settings.useReranker ? "true" : "false",
     };
 
-    if (platform === 'win32') {
-      // Windows: use shell for proper command resolution, hide console window
-      return {
-        shell: true,
-        env,
-        windowsHide: true,
-      };
-    } else if (platform === 'linux') {
-      // Linux: similar to macOS but may need different shell handling
-      return {
-        shell: false,
-        env,
-      };
-    } else {
-      // macOS and others
-      return {
-        shell: false,
-        env,
-      };
-    }
+    return {
+      shell: false,
+      env,
+      ...(platform === "win32" ? { windowsHide: true } : {}),
+    };
   }
 
   /**
@@ -846,15 +882,7 @@ export default class ObsidianRAGPlugin extends Plugin {
   getDefaultPythonCommand(): string {
     const platform = process.platform;
 
-    if (platform === 'win32') {
-      // Windows: try py launcher first, then python
-      return 'py -m obsidianrag';
-    } else if (platform === 'linux') {
-      // Linux: usually python3
-      return 'python3 -m obsidianrag';
-    } else {
-      return 'obsidianrag';
-    }
+    return platform === "win32" ? "obsidianrag.exe" : "obsidianrag";
   }
 }
 
@@ -920,18 +948,15 @@ class SetupModal extends Modal {
     const li2 = requirements.createEl("li");
     li2.createEl("strong", { text: "obsidianrag" });
     li2.appendText(" package - ");
-    li2.createEl("code", { text: "uv add obsidianrag" });
+    li2.createEl("code", { text: "uv tool install obsidianrag==4.0.0" });
 
     const li3 = requirements.createEl("li");
 
-    li3.createEl("strong", { text: "Ollama" });
-    li3.appendText(" - Local model server from ");
-    li3.createEl("a", { text: "ollama.ai", href: "https://ollama.ai" });
+    li3.createEl("strong", { text: "Generation provider" });
+    li3.appendText(" - Ollama, LM Studio, or a compatible local server");
 
     const li4 = requirements.createEl("li");
-
-    li4.appendText("At least one model installed - ");
-    li4.createEl("code", { text: "ollama pull gemma3" });
+    li4.appendText("At least one model available from the selected provider");
 
     el.createEl("p", {
       text: "Make sure you have all requirements installed before proceeding.",
@@ -955,8 +980,8 @@ class SetupModal extends Modal {
 
     // Server command
     new Setting(el)
-      .setName("Backend command")
-      .setDesc("Command to start the backend, usually 'obsidianrag'")
+      .setName("Backend executable")
+      .setDesc("Executable name or path, usually 'obsidianrag' or 'obsidianrag.exe' on Windows")
       .addText(text => text
         .setValue(this.plugin.settings.pythonPath)
         .onChange(async (value) => {
@@ -1073,7 +1098,7 @@ class SetupModal extends Modal {
     const tips = el.createEl("ul");
     tips.createEl("li", { text: "Click the chat icon in the ribbon to open the chat" });
     tips.createEl("li", { text: "Use Cmd/Ctrl+P and search 'ObsidianRAG' for all commands" });
-    tips.createEl("li", { text: "First question may take a moment while the vault is indexed" });
+    tips.createEl("li", { text: "Build the index before asking the first question" });
 
     const buttons = el.createDiv("modal-button-container");
 
@@ -1243,15 +1268,23 @@ class ChatView extends ItemView {
     // Header controls
     const headerControls = header.createDiv("obsidianrag-header-controls");
 
-    // Reindex button
-    const reindexBtn = headerControls.createEl("button", {
+    const indexBtn = headerControls.createEl("button", {
       cls: "obsidianrag-header-btn",
-
-      attr: { "aria-label": "Reindex vault" }
+      attr: { "aria-label": "Refresh index" }
     });
-    reindexBtn.setText("Reindex");
-    reindexBtn.addEventListener("click", async () => {
-      await this.plugin.reindexVault();
+    const indexStatus = (await this.plugin.isServerRunning())
+      ? await this.plugin.getIndexStatus()
+      : null;
+    indexBtn.setText(this.plugin.getIndexActionLabel(indexStatus));
+    indexBtn.disabled = this.plugin.isIndexBusy();
+    indexBtn.addEventListener("click", async () => {
+      indexBtn.disabled = true;
+      try {
+        await this.plugin.refreshIndex();
+        indexBtn.setText(this.plugin.getIndexActionLabel(await this.plugin.getIndexStatus()));
+      } finally {
+        indexBtn.disabled = false;
+      }
     });
 
     // Clear history button
@@ -1349,6 +1382,15 @@ class ChatView extends ItemView {
         role: "assistant",
         content:
           "Server is not running. Use the command palette to start it, or enable auto-start in settings.",
+        timestamp: new Date(),
+      });
+      return;
+    }
+    const indexStatus = await this.plugin.getIndexStatus();
+    if (!indexStatus?.query_ready) {
+      this.addMessage({
+        role: "assistant",
+        content: `The index is not ready. Use ${this.plugin.getIndexActionLabel(indexStatus).toLowerCase()} first.`,
         timestamp: new Date(),
       });
       return;
@@ -1732,10 +1774,10 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName("Configuration").setHeading();
 
-    // Python Path
+    // Backend executable
     new Setting(containerEl)
-      .setName("Backend command")
-      .setDesc("Command to start the backend, usually 'obsidianrag'")
+      .setName("Backend executable")
+      .setDesc("Executable name or path, usually 'obsidianrag' or 'obsidianrag.exe' on Windows")
       .addText((text) =>
         text
           .setPlaceholder("obsidianrag")
@@ -1872,23 +1914,9 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
         );
     }
 
-    // RAG Settings Section
+    // Plugin behavior
 
-    new Setting(containerEl).setName("Retrieval").setHeading();
-
-    // Use Reranker
-    new Setting(containerEl)
-
-      .setName("Use reranker")
-      .setDesc("Enable cross-encoder reranking for better relevance (slower but more accurate)")
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.useReranker)
-          .onChange(async (value) => {
-            this.plugin.settings.useReranker = value;
-            await this.plugin.saveSettings();
-          })
-      );
+    new Setting(containerEl).setName("Behavior").setHeading();
 
     // Auto-start
     new Setting(containerEl)
@@ -1941,21 +1969,46 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Refresh index")
+      .setDesc("Build or incrementally refresh the v4 index")
+      .addButton((button) => {
+        button
+          .setButtonText(this.plugin.getIndexActionLabel())
+          .setDisabled(this.plugin.isIndexBusy())
+          .onClick(async () => {
+            button.setDisabled(true);
+            try {
+              await this.plugin.refreshIndex();
+            } finally {
+              button.setDisabled(false);
+              this.display();
+            }
+          });
+        void this.plugin.getIndexStatus().then((status) => {
+          button.setButtonText(this.plugin.getIndexActionLabel(status));
+          if (status?.state === "rebuild_required") button.setWarning();
+        });
+      });
 
-      .setName("Reindex vault")
-      .setDesc("Force reindex all notes in the vault")
+    new Setting(containerEl)
+      .setName("Prune inactive revisions")
+      .setDesc("Remove old index revisions that are not in use")
       .addButton((button) =>
         button
-
-          .setButtonText("Reindex")
-          .setWarning()
+          .setButtonText("Prune")
+          .setDisabled(this.plugin.isIndexBusy())
           .onClick(async () => {
-            await this.plugin.reindexVault();
+            button.setDisabled(true);
+            try {
+              await this.plugin.pruneIndex();
+            } finally {
+              button.setDisabled(false);
+              this.display();
+            }
           })
       );
 
-    // Vault Statistics Section
-    void this.renderVaultStats(containerEl);
+    void this.renderIndexStatus(containerEl);
 
     // Help section
 
@@ -1972,14 +2025,11 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
     const hLi2 = ul.createEl("li");
     hLi2.createEl("strong", { text: "obsidianrag" });
     hLi2.appendText(" package: ");
-    hLi2.createEl("code", { text: "uv add obsidianrag" });
+    hLi2.createEl("code", { text: "uv tool install obsidianrag==4.0.0" });
 
     const hLi3 = ul.createEl("li");
-    hLi3.createEl("strong", { text: "Ollama" });
-    hLi3.appendText(" running locally with at least one model");
-
-    const pLink = helpEl.createEl("p", { text: "Install Ollama from " });
-    pLink.createEl("a", { text: "ollama.ai", href: "https://ollama.ai" });
+    hLi3.createEl("strong", { text: "Generation provider" });
+    hLi3.appendText(" with at least one available model");
 
     // Reset Setup
 
@@ -2072,45 +2122,35 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
     }
   }
 
-  private async renderVaultStats(containerEl: HTMLElement) {
+  private async renderIndexStatus(containerEl: HTMLElement) {
+    new Setting(containerEl).setName("Index status").setHeading();
+    const statusContainer = containerEl.createDiv("obsidianrag-vault-stats");
 
-    new Setting(containerEl).setName("Vault statistics").setHeading();
-
-    const statsContainer = containerEl.createDiv("obsidianrag-vault-stats");
-
-    const running = await this.plugin.isServerRunning();
-
-    if (!running) {
-      statsContainer.setText("Start the server to view vault statistics.");
+    if (!(await this.plugin.isServerRunning())) {
+      statusContainer.setText("Start the server to view index status.");
       return;
     }
 
-    statsContainer.setText("Loading statistics...");
-
-    const stats = await this.plugin.getStats();
-
-    if (stats && !stats.error) {
-      statsContainer.empty();
-      const table = statsContainer.createEl("table", { cls: "stats-table" });
-
-      const rows = [
-        ["Total notes", String(stats.total_notes)],
-        ["Total chunks", String(stats.total_chunks)],
-        ["Total words", String(stats.total_words).replace(/\B(?=(\d{3})+(?!\d))/g, ",")],
-        ["Avg words/chunk", String(stats.avg_words_per_chunk)],
-        ["Folders", String(stats.folders)],
-        ["Internal links", String(stats.internal_links)],
-        ["Vault", stats.vault_path],
-      ];
-
-      rows.forEach(([label, value]) => {
-        const row = table.createEl("tr");
-        row.createEl("td", { text: label, cls: "stats-label" });
-        row.createEl("td", { text: value, cls: "stats-value" });
-      });
-    } else {
-      statsContainer.setText(stats?.error || "Could not load statistics.");
+    const status = await this.plugin.getIndexStatus();
+    if (!status) {
+      statusContainer.setText("Could not load index status.");
+      return;
     }
+
+    const table = statusContainer.createEl("table", { cls: "stats-table" });
+    const rows = [
+      ["State", status.state.replace("_", " ")],
+      ["Indexed notes", String(status.indexed_notes)],
+      ["Indexed chunks", String(status.indexed_chunks)],
+      ["Changed notes", String(status.changed_notes)],
+      ["Deleted notes", String(status.deleted_notes)],
+      ["Query ready", status.query_ready ? "Yes" : "No"],
+    ];
+    rows.forEach(([label, value]) => {
+      const row = table.createEl("tr");
+      row.createEl("td", { text: label, cls: "stats-label" });
+      row.createEl("td", { text: value, cls: "stats-value" });
+    });
   }
 
   hide(): void {

@@ -1,191 +1,488 @@
-"""Tests for ObsidianRAG FastAPI server."""
+"""Focused tests for the v4 FastAPI runtime."""
+
+from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
+from threading import Event
+from unittest.mock import MagicMock
 
 import pytest
+from fastapi.routing import APIRoute
+from fastapi.testclient import TestClient
+from langchain_core.documents import Document
+
+import obsidianrag.api.server as server
+from obsidianrag.config import get_settings
+from obsidianrag.core.query_pipeline import QueryResult, await_thread
+from obsidianrag.v4 import (
+    FullRebuildRequired,
+    IndexBuildLocked,
+    IndexBuildResult,
+    IndexCorruptionError,
+    IndexPathError,
+    IndexStatus,
+    PruneResult,
+    RevisionInUse,
+)
 
 
-class TestCapabilitiesEndpoint:
-    def test_capabilities_exposes_versioned_contract(self):
-        from obsidianrag.api.server import create_app
-
-        app = create_app()
-        route = next(route for route in app.routes if route.path == "/capabilities")
-        data = asyncio.run(route.endpoint())
-
-        assert data["api_version"] == 3
-        assert data["backend_version"]
-        assert "sse" in data["features"]
-        assert "ollama" in data["providers"]
+def _status(state: str = "missing", revision: str | None = None) -> IndexStatus:
+    return IndexStatus(state=state, active_revision=revision)  # type: ignore[arg-type]
 
 
-class TestHealthEndpoint:
-    """Tests for the /health endpoint."""
+def _pipeline(answer: str = "Answer [1]") -> MagicMock:
+    pipeline = MagicMock()
+    document = Document(
+        page_content="Evidence",
+        metadata={"source": "Notes/Test.md", "score": 0.9, "retrieval_type": "hybrid"},
+    )
+    pipeline.ask.return_value = QueryResult(
+        question="Question", answer=answer, documents=(document,), citations=("Notes/Test.md",)
+    )
 
-    def test_health_returns_ok(self, fast_test_client):
-        """Test that health endpoint returns healthy status."""
-        response = fast_test_client.get("/health")
-        assert response.status_code == 200
-        data = response.json()
-        assert "status" in data
-        assert data["status"] in ["healthy", "ok"]
+    async def stream(_question, _history):
+        yield {"type": "status", "message": "Searching your notes..."}
+        yield {
+            "type": "answer",
+            "question": "Question",
+            "answer": answer,
+            "sources": [{"source": "Notes/Test.md", "score": 0.9}],
+            "citations": ["Notes/Test.md"],
+        }
 
-    def test_health_includes_version(self, fast_test_client):
-        """Test that health endpoint includes version info."""
-        response = fast_test_client.get("/health")
-        assert response.status_code == 200
-        data = response.json()
-        # Version info might be in various fields
-        assert "version" in data or "model" in data or len(data) > 1
-
-
-class TestAskEndpoint:
-    """Tests for the /ask endpoint."""
-
-    def test_ask_valid_question(self, fast_test_client):
-        """Test asking a valid question."""
-        response = fast_test_client.post("/ask", json={"text": "What is machine learning?"})
-
-        assert response.status_code == 200
-        data = response.json()
-        # API uses "result" field for the answer
-        assert "result" in data or "answer" in data
-
-    def test_ask_empty_question(self, fast_test_client):
-        """Test asking with empty question."""
-        response = fast_test_client.post("/ask", json={"text": ""})
-
-        # Should return error or validation failure
-        assert response.status_code in [400, 422]
-
-    def test_ask_missing_question_field(self, fast_test_client):
-        """Test asking without question field."""
-        response = fast_test_client.post("/ask", json={})
-
-        # Should return validation error
-        assert response.status_code == 422
-
-    def test_ask_with_context(self, fast_test_client):
-        """Test asking with conversation context."""
-        response = fast_test_client.post(
-            "/ask",
-            json={
-                "text": "Tell me more about that",
-                "conversation_id": "test-123",
-            },
-        )
-
-        assert response.status_code == 200
-
-    def test_ask_returns_sources(self, fast_test_client):
-        """Test that ask endpoint returns sources."""
-        response = fast_test_client.post("/ask", json={"text": "What is deep learning?"})
-
-        assert response.status_code == 200
-        data = response.json()
-        # Sources might be in different formats
-        assert "sources" in data or "documents" in data or "context" in data
+    pipeline.stream = stream
+    return pipeline
 
 
-class TestStatsEndpoint:
-    """Tests for the /stats endpoint."""
+def _configure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    statuses,
+    pipelines=(),
+) -> tuple[server.FastAPI, MagicMock, MagicMock]:
+    if isinstance(statuses, list):
+        status_values = iter(statuses)
+        current_status = None
 
-    def test_stats_returns_data(self, fast_test_client):
-        """Test that stats endpoint returns vault statistics."""
-        response = fast_test_client.get("/stats")
+        def next_status(_vault, embeddings=None):
+            nonlocal current_status
+            if embeddings is None:
+                current_status = next(status_values)
+            return current_status
 
-        # Stats might not be available in test mode
-        if response.status_code == 200:
-            data = response.json()
-            assert isinstance(data, dict)
+        status_mock = MagicMock(side_effect=next_status)
+    else:
+        status_mock = MagicMock(return_value=statuses)
+    pipeline_mock = MagicMock(side_effect=list(pipelines))
+    monkeypatch.setattr(server, "get_embeddings", MagicMock(return_value=MagicMock()))
+    monkeypatch.setattr(server, "index_status", status_mock)
+    monkeypatch.setattr(server, "create_v4_query_pipeline", pipeline_mock)
+    monkeypatch.setattr(
+        server,
+        "active_revision",
+        MagicMock(side_effect=IndexCorruptionError("missing")),
+    )
+    return server.create_app(str(tmp_path)), status_mock, pipeline_mock
 
-    def test_stats_includes_document_count(self, fast_test_client):
-        """Test that stats includes document count."""
-        response = fast_test_client.get("/stats")
 
-        if response.status_code == 200:
-            data = response.json()
-            # Look for any count-related field
-            has_count = any(
-                "count" in k.lower() or "total" in k.lower() or "num" in k.lower()
-                for k in data.keys()
+def _events(response) -> list[dict]:
+    return [json.loads(line.removeprefix("data: ")) for line in response.text.splitlines() if line]
+
+
+def test_startup_missing_never_builds_and_exposes_api4_health(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    app, _, pipeline_factory = _configure(monkeypatch, tmp_path, statuses=_status())
+    build = MagicMock()
+    monkeypatch.setattr(server, "build_index", build)
+
+    with TestClient(app) as client:
+        capabilities = client.get("/capabilities").json()
+        health = client.get("/health")
+
+    assert health.status_code == 200
+    assert health.json()["status"] == "ok"
+    assert health.json()["api_version"] == 4
+    assert health.json()["query_ready"] is False
+    assert capabilities["api_version"] == 4
+    assert capabilities["features"] == [
+        "hybrid-retrieval",
+        "incremental-indexing",
+        "index-lifecycle",
+        "sse",
+    ]
+    assert "ollama" in capabilities["providers"]
+    build.assert_not_called()
+    pipeline_factory.assert_not_called()
+
+
+def test_apps_isolate_settings_without_creating_v3_directories(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    vault_one = tmp_path / "one"
+    vault_two = tmp_path / "two"
+    vault_one.mkdir()
+    vault_two.mkdir()
+    seen: list[tuple[Path, str]] = []
+
+    def inspect_status(vault: Path, _embeddings=None) -> IndexStatus:
+        seen.append((vault, get_settings().obsidian_path))
+        return _status()
+
+    monkeypatch.setattr(server, "get_embeddings", MagicMock(return_value=MagicMock()))
+    monkeypatch.setattr(server, "index_status", inspect_status)
+    app_one = server.create_app(str(vault_one))
+    app_two = server.create_app(str(vault_two))
+
+    with TestClient(app_one) as client:
+        assert client.get("/index/status").status_code == 200
+    with TestClient(app_two) as client:
+        assert client.get("/index/status").status_code == 200
+
+    assert app_one.state.runtime.settings is not app_two.state.runtime.settings
+    assert app_one.state.runtime.settings.obsidian_path == str(vault_one)
+    assert app_two.state.runtime.settings.obsidian_path == str(vault_two)
+    assert {(vault, configured) for vault, configured in seen} == {
+        (vault_one, str(vault_one)),
+        (vault_two, str(vault_two)),
+    }
+    assert not (vault_one / ".obsidianrag").exists()
+    assert not (vault_two / ".obsidianrag").exists()
+
+
+def test_missing_pipeline_queries_return_structured_503(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    app, _, _ = _configure(monkeypatch, tmp_path, statuses=_status())
+
+    with TestClient(app) as client:
+        answer = client.post("/ask", json={"text": "Question"})
+        stream = client.post("/ask/stream", json={"text": "Question"})
+
+    for response in (answer, stream):
+        assert response.status_code == 503
+        assert response.json()["detail"] == {
+            "code": "index_not_ready",
+            "message": "Build or load the v4 index first",
+        }
+
+
+def test_ask_uses_v4_pipeline_and_preserves_response_shape(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    pipeline = _pipeline()
+    app, _, _ = _configure(
+        monkeypatch, tmp_path, statuses=_status("current", "revision-1"), pipelines=[pipeline]
+    )
+
+    with TestClient(app) as client:
+        response = client.post("/ask", json={"text": "Question", "session_id": "session"})
+
+    assert response.status_code == 200
+    assert response.json()["result"] == "Answer [1]"
+    assert response.json()["sources"][0]["source"] == "Notes/Test.md"
+    assert response.json()["text_blocks"] == ["Evidence"]
+    pipeline.ask.assert_called_once()
+    pipeline.close.assert_called_once_with()
+
+
+def test_successful_build_swaps_and_closes_unused_old_slot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    old = _pipeline("old")
+    new = _pipeline("new")
+    app, _, pipeline_factory = _configure(
+        monkeypatch,
+        tmp_path,
+        statuses=_status("current", "revision-1"),
+        pipelines=[old, new],
+    )
+    monkeypatch.setattr(
+        server,
+        "build_index",
+        MagicMock(
+            return_value=IndexBuildResult(
+                revision="revision-2", notes=2, chunks=3, path=tmp_path / "revision-2"
             )
-            assert has_count or len(data) > 0
+        ),
+    )
+
+    with TestClient(app) as client:
+        response = client.post("/index/build", json={})
+        health = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["revision"] == "revision-2"
+    assert health.json()["serving_revision"] == "revision-2"
+    candidate_call = pipeline_factory.call_args_list[1]
+    assert candidate_call.kwargs["revision_path"] == tmp_path / "revision-2"
+    assert candidate_call.kwargs["settings"] is app.state.runtime.settings
+    old.close.assert_called_once_with()
+    new.close.assert_called_once_with()
 
 
-class TestRebuildEndpoint:
-    """Tests for the /rebuild_db endpoint."""
+@pytest.mark.asyncio
+async def test_old_checked_out_slot_closes_only_after_release(tmp_path: Path):
+    runtime = server._Runtime(tmp_path)
+    old = _pipeline("old")
+    new = _pipeline("new")
+    await runtime._swap(server._PipelineSlot(old, "revision-1"))
+    checked_out = await runtime.acquire()
 
-    def test_rebuild_requires_post(self, fast_test_client):
-        """Test that rebuild requires POST method."""
-        response = fast_test_client.get("/rebuild_db")
+    await runtime._swap(server._PipelineSlot(new, "revision-2"))
+    old.close.assert_not_called()
+    assert await runtime.serving_revision() == "revision-2"
 
-        # GET should not be allowed
-        assert response.status_code == 405
-
-    def test_rebuild_initiates_reindex(self, fast_test_client):
-        """Test that rebuild endpoint initiates reindexing."""
-        response = fast_test_client.post("/rebuild_db")
-
-        # Should accept the request
-        assert response.status_code in [200, 202, 204]
-
-        # Should return total_chunks in response
-        if response.status_code == 200:
-            data = response.json()
-            assert "total_chunks" in data or "status" in data
+    await runtime.release(checked_out)
+    old.close.assert_called_once_with()
+    await runtime.shutdown()
 
 
-class TestErrorHandling:
-    """Tests for error handling."""
+@pytest.mark.asyncio
+async def test_cancelled_thread_query_keeps_old_slot_until_worker_finishes(tmp_path: Path):
+    runtime = server._Runtime(tmp_path)
+    old = _pipeline("old")
+    new = _pipeline("new")
+    started = Event()
+    release_worker = Event()
 
-    def test_not_found_endpoint(self, fast_test_client):
-        """Test accessing non-existent endpoint."""
-        response = fast_test_client.get("/nonexistent")
-        assert response.status_code == 404
+    def blocking_ask(_question, _history):
+        started.set()
+        release_worker.wait(2)
+        return old.ask.return_value
 
-    def test_invalid_json_body(self, fast_test_client):
-        """Test sending invalid JSON."""
-        response = fast_test_client.post(
-            "/ask", data="not json", headers={"Content-Type": "application/json"}
+    old.ask.side_effect = blocking_ask
+    await runtime._swap(server._PipelineSlot(old, "revision-1"))
+
+    async def query() -> None:
+        slot = await runtime.acquire()
+        try:
+            await await_thread(slot.pipeline.ask, "Question", [])
+        finally:
+            await runtime.release(slot)
+
+    task = asyncio.create_task(query())
+    assert await asyncio.to_thread(started.wait, 1)
+    task.cancel()
+    await runtime._swap(server._PipelineSlot(new, "revision-2"))
+    await asyncio.sleep(0)
+    old.close.assert_not_called()
+
+    release_worker.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    old.close.assert_called_once_with()
+    await runtime.shutdown()
+
+
+@pytest.mark.parametrize("failure_stage", ["build", "candidate"])
+def test_build_or_candidate_failure_preserves_old_serving_slot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure_stage: str
+):
+    old = _pipeline("old")
+    pipeline_effects: list[MagicMock | Exception] = [old]
+    if failure_stage == "candidate":
+        pipeline_effects.append(RuntimeError("candidate failed"))
+    app, _, _ = _configure(
+        monkeypatch,
+        tmp_path,
+        statuses=_status("current", "revision-1"),
+        pipelines=pipeline_effects,
+    )
+    if failure_stage == "build":
+        build_effect: object = RuntimeError("build failed")
+    else:
+        build_effect = IndexBuildResult(
+            revision="revision-2", notes=2, chunks=3, path=tmp_path / "revision-2"
         )
-        # Should fail to parse
-        assert response.status_code in [400, 422]
+    monkeypatch.setattr(server, "build_index", MagicMock(side_effect=[build_effect]))
 
-    def test_wrong_content_type(self, fast_test_client):
-        """Test sending wrong content type."""
-        response = fast_test_client.post(
-            "/ask", data="text", headers={"Content-Type": "text/plain"}
-        )
-        assert response.status_code in [400, 422, 415]
+    with TestClient(app) as client:
+        response = client.post("/index/build", json={})
+        health = client.get("/health")
+
+    assert response.status_code == 500
+    assert health.json()["serving_revision"] == "revision-1"
+    old.close.assert_called_once_with()  # shutdown, not failed build
 
 
-class TestCORS:
-    """Tests for CORS configuration (requires real server)."""
+def test_candidate_failure_reports_split_then_noop_build_reconciles(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    old = _pipeline("old")
+    replacement = _pipeline("new")
+    revision = IndexBuildResult(
+        revision="revision-2", notes=2, chunks=3, path=tmp_path / "revision-2"
+    )
+    app, _, pipeline_factory = _configure(
+        monkeypatch,
+        tmp_path,
+        statuses=[
+            _status("current", "revision-1"),
+            _status("current", "revision-2"),
+        ],
+        pipelines=[old, RuntimeError("candidate failed"), replacement],
+    )
+    monkeypatch.setattr(server, "build_index", MagicMock(side_effect=[revision, revision]))
 
-    @pytest.mark.integration
-    def test_cors_headers_present(self, test_client):
-        """Test that CORS headers are present."""
-        response = test_client.options(
-            "/ask",
-            headers={
-                "Origin": "http://localhost:3000",
-                "Access-Control-Request-Method": "POST",
-            },
-        )
+    with TestClient(app) as client:
+        failed = client.post("/index/build", json={})
+        status = client.get("/index/status")
+        reconciled = client.post("/index/build", json={})
+        health = client.get("/health")
 
-        # CORS preflight should be handled
-        # Note: Actual CORS behavior depends on configuration
-        assert response.status_code in [200, 204, 405]
+    assert failed.status_code == 500
+    assert status.json()["state"] == "stale"
+    assert status.json()["active_revision"] == "revision-2"
+    assert status.json()["serving_revision"] == "revision-1"
+    assert reconciled.status_code == 200
+    assert health.json()["serving_revision"] == "revision-2"
+    assert pipeline_factory.call_args_list[1].kwargs["revision_path"] == revision.path
+    assert pipeline_factory.call_args_list[2].kwargs["revision_path"] == revision.path
+    old.close.assert_called_once_with()
 
-    @pytest.mark.integration
-    def test_cors_allows_localhost(self, test_client):
-        """Test that CORS allows localhost origins."""
-        response = test_client.post(
-            "/ask",
-            json={"text": "test"},
-            headers={"Origin": "http://localhost:3000"},
-        )
 
-        # Request should not be blocked by CORS
-        assert response.status_code != 403
+@pytest.mark.parametrize("stream_fails", [False, True])
+def test_sse_releases_pipeline_on_completion_and_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, stream_fails: bool
+):
+    pipeline = _pipeline()
+    if stream_fails:
+
+        async def failing_stream(_question, _history):
+            yield {"type": "status", "message": "Searching"}
+            raise RuntimeError("stream failed")
+
+        pipeline.stream = failing_stream
+    app, _, _ = _configure(
+        monkeypatch, tmp_path, statuses=_status("current", "revision-1"), pipelines=[pipeline]
+    )
+
+    with TestClient(app) as client:
+        response = client.post("/ask/stream", json={"text": "Question"})
+        events = _events(response)
+        assert app.state.runtime._serving.users == 0
+
+    assert response.status_code == 200
+    assert events[0]["type"] == "start"
+    assert events[-1]["type"] == "done"
+    assert any(event["type"] == ("error" if stream_fails else "answer") for event in events)
+
+
+@pytest.mark.asyncio
+async def test_sse_background_releases_slot_when_body_never_starts(tmp_path: Path):
+    app = server.create_app(str(tmp_path))
+    runtime = app.state.runtime
+    pipeline = _pipeline()
+    await runtime._swap(server._PipelineSlot(pipeline, "revision-1"))
+    route = next(
+        route for route in app.routes if isinstance(route, APIRoute) and route.path == "/ask/stream"
+    )
+
+    response = await route.endpoint(server.Question(text="Question", session_id=None))
+    assert runtime._serving.users == 1
+    assert response.background is not None
+    await response.background()
+    assert runtime._serving.users == 0
+
+    await runtime.shutdown()
+
+
+def test_status_surfaces_active_serving_mismatch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    pipeline = _pipeline()
+    app, _, _ = _configure(
+        monkeypatch,
+        tmp_path,
+        statuses=[
+            _status("current", "revision-1"),
+            _status("current", "revision-2"),
+        ],
+        pipelines=[pipeline],
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/index/status")
+
+    assert response.status_code == 200
+    assert response.json()["state"] == "stale"
+    assert response.json()["active_revision"] == "revision-2"
+    assert response.json()["serving_revision"] == "revision-1"
+    assert response.json()["query_ready"] is True
+
+
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        (RevisionInUse("busy"), "revision_in_use"),
+        (IndexCorruptionError("missing"), "index_not_ready"),
+    ],
+)
+def test_prune_conflicts_are_structured(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, error: Exception, code: str
+):
+    app, _, _ = _configure(monkeypatch, tmp_path, statuses=_status())
+    monkeypatch.setattr(server, "prune_revisions", MagicMock(side_effect=error))
+
+    with TestClient(app) as client:
+        response = client.post("/index/prune")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == code
+    assert "busy" not in response.text
+
+
+def test_prune_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    app, _, _ = _configure(monkeypatch, tmp_path, statuses=_status())
+    monkeypatch.setattr(
+        server,
+        "prune_revisions",
+        MagicMock(return_value=PruneResult(("old",), "active")),
+    )
+
+    with TestClient(app) as client:
+        response = client.post("/index/prune")
+
+    assert response.json() == {
+        "status": "success",
+        "active_revision": "active",
+        "deleted_revisions": ["old"],
+    }
+
+
+@pytest.mark.parametrize(
+    ("error", "status_code", "code"),
+    [
+        (FullRebuildRequired("details"), 409, "full_rebuild_required"),
+        (IndexBuildLocked("details"), 409, "index_build_locked"),
+        (IndexPathError("/private/path"), 400, "unsafe_index_path"),
+    ],
+)
+def test_build_errors_are_safe_and_structured(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    error: Exception,
+    status_code: int,
+    code: str,
+):
+    app, _, _ = _configure(monkeypatch, tmp_path, statuses=_status())
+    monkeypatch.setattr(server, "build_index", MagicMock(side_effect=error))
+
+    with TestClient(app) as client:
+        response = client.post("/index/build", json={})
+
+    assert response.status_code == status_code
+    assert response.json()["detail"]["code"] == code
+    assert "/private/path" not in response.text
+
+
+def test_removed_v3_lifecycle_routes_are_not_registered(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    app, _, _ = _configure(monkeypatch, tmp_path, statuses=_status())
+
+    with TestClient(app) as client:
+        assert client.get("/stats").status_code == 404
+        assert client.post("/rebuild_db").status_code == 404

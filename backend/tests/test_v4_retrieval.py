@@ -1,4 +1,4 @@
-"""Integration tests for the experimental v4 index vertical."""
+"""Integration tests for the production v4 retrieval index."""
 
 import asyncio
 import shutil
@@ -14,8 +14,8 @@ pytest.importorskip("lancedb")
 from obsidianrag.config import configure_from_vault
 from obsidianrag.core.query_pipeline import QueryPipeline
 from obsidianrag.v4 import (
-    ExperimentalLexicalRetriever,
-    ExperimentalRetriever,
+    LexicalRetriever,
+    Retriever,
     active_revision,
     build_index,
 )
@@ -42,13 +42,13 @@ def copy_sample_vault(tmp_path: Path) -> Path:
     return vault
 
 
-def test_build_and_search_experimental_index(tmp_path):
+def test_build_and_search_index(tmp_path):
     vault = copy_sample_vault(tmp_path)
     configure_from_vault(str(vault))
     embeddings = KeywordEmbeddings()
 
     result = build_index(vault, embeddings)
-    retriever = ExperimentalRetriever(vault, embeddings)
+    retriever = Retriever(vault, embeddings)
     try:
         documents = retriever.invoke("What does ORG-429 mean?", k=3)
     finally:
@@ -56,7 +56,7 @@ def test_build_and_search_experimental_index(tmp_path):
 
     assert result.notes == 6
     assert result.chunks >= result.notes
-    lexical = ExperimentalLexicalRetriever(vault)
+    lexical = LexicalRetriever(vault)
     try:
         lexical_documents = lexical.invoke("What does ORG-429 mean?", k=3)
     finally:
@@ -71,7 +71,7 @@ def test_build_and_search_experimental_index(tmp_path):
 
 
 def test_hybrid_rrf_fuses_different_chunks_from_the_same_source():
-    retriever = ExperimentalRetriever.__new__(ExperimentalRetriever)
+    retriever = Retriever.__new__(Retriever)
     retriever.connection = sqlite3.connect(":memory:")
     retriever.connection.execute(
         "CREATE TABLE chunks (chunk_id TEXT, note_path TEXT, ordinal INTEGER, text TEXT)"
@@ -111,7 +111,7 @@ def test_hybrid_rrf_fuses_different_chunks_from_the_same_source():
 
 
 def test_best_lexical_chunk_ignores_title_only_matches():
-    retriever = ExperimentalRetriever.__new__(ExperimentalRetriever)
+    retriever = Retriever.__new__(Retriever)
     retriever.connection = sqlite3.connect(":memory:")
     retriever.connection.executescript(
         """
@@ -154,7 +154,7 @@ def test_lexical_retriever_streams_from_pipeline_worker_thread(tmp_path):
     configure_from_vault(str(vault))
     build_index(vault, KeywordEmbeddings())
     pipeline = QueryPipeline(
-        ExperimentalLexicalRetriever(vault),
+        LexicalRetriever(vault),
         MagicMock(),
         vault_path=vault,
         k=1,
@@ -185,7 +185,7 @@ def test_multipart_pipeline_keeps_sources_from_each_query_part(tmp_path):
     model = MagicMock()
     model.invoke.return_value.content = "Rollback [1], rotate credentials [2]."
     pipeline = QueryPipeline(
-        ExperimentalLexicalRetriever(vault),
+        LexicalRetriever(vault),
         model,
         vault_path=vault,
         k=5,
@@ -220,7 +220,7 @@ def test_hybrid_retriever_closes_sqlite_when_initialization_fails(tmp_path):
         patch("obsidianrag.v4.retrieval.embedding_fingerprint", return_value=("new", 6)),
         pytest.raises(RuntimeError, match="different embedding configuration"),
     ):
-        ExperimentalRetriever(tmp_path, KeywordEmbeddings())
+        Retriever(tmp_path, KeywordEmbeddings())
 
     connection.close.assert_called_once_with()
     lease.close.assert_called_once_with()

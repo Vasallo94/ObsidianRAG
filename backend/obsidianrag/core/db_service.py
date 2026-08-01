@@ -1,103 +1,47 @@
-"""Database service for vector storage and document management"""
+"""Embedding and text-splitting factories for the v4 index."""
 
-import gc
-import hashlib
 import logging
-import os
-import re
-import shutil
-import time
-import uuid
-from pathlib import Path
-from typing import List, Optional, Set
 
-from langchain_chroma import Chroma
-from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_ollama import OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from obsidianrag.config import get_settings
-from obsidianrag.core.metadata_tracker import EXCLUDED_DIRECTORIES, FileMetadataTracker
 from obsidianrag.utils.ollama import pull_ollama_model
 
 logger = logging.getLogger(__name__)
 
 
-def extract_obsidian_links(content: str) -> List[str]:
-    """Extract Obsidian wikilinks [[Note]] or [[Note|Alias]] from content"""
-    links = re.findall(r"\[\[(.*?)\]\]", content)
-    cleaned_links = [link.split("|")[0].strip() for link in links]
-    seen = set()
-    unique_links = []
-    for link in cleaned_links:
-        if link and link not in seen:
-            seen.add(link)
-            unique_links.append(link)
-    return unique_links
-
-
 def get_embeddings() -> Embeddings:
-    """Get configured embeddings model based on provider setting."""
+    """Create the configured embedding model."""
     settings = get_settings()
-    provider = settings.embedding_provider.lower()
-
-    if provider == "ollama":
+    if settings.embedding_provider.lower() == "ollama":
         model = settings.ollama_embedding_model
-        logger.info("Trying to load Ollama embeddings: %s", model)
-
         try:
             import httpx
 
             response = httpx.get(f"{settings.ollama_base_url}/api/tags", timeout=5.0)
-            if response.status_code == 200:
-                available_models = [
-                    m["name"].split(":")[0] for m in response.json().get("models", [])
-                ]
-                if model not in available_models:
-                    logger.warning(
-                        "Model '%s' not found in Ollama. Attempting to download...", model
-                    )
-                    if pull_ollama_model(model, timeout=600):
-                        embeddings: Embeddings = OllamaEmbeddings(
-                            model=model, base_url=settings.ollama_base_url
-                        )
-                        logger.info("Ollama embeddings (%s) loaded successfully", model)
-                        return embeddings
-                    else:
-                        raise RuntimeError(
-                            f"Failed to download Ollama embedding model '{model}'. "
-                            f"Run: ollama pull {model}"
-                        )
-                else:
-                    embeddings = OllamaEmbeddings(model=model, base_url=settings.ollama_base_url)
-                    logger.info("Ollama embeddings (%s) loaded successfully", model)
-                    return embeddings
-            else:
+            response.raise_for_status()
+            available = [item["name"].split(":")[0] for item in response.json().get("models", [])]
+            if model not in available and not pull_ollama_model(model, timeout=600):
                 raise RuntimeError(
-                    f"Could not connect to Ollama at {settings.ollama_base_url}. "
-                    "Is Ollama running? Run: ollama serve"
+                    f"Ollama embedding model '{model}' is unavailable. Run: ollama pull {model}"
                 )
         except RuntimeError:
             raise
-        except Exception as e:
+        except Exception as error:
             raise RuntimeError(
-                f"Error connecting to Ollama for embeddings: {e}. "
-                "Is Ollama running? Run: ollama serve"
-            ) from e
+                f"Could not connect to Ollama at {settings.ollama_base_url}"
+            ) from error
+        return OllamaEmbeddings(model=model, base_url=settings.ollama_base_url)
 
-    # HuggingFace provider
-    model = settings.embedding_model
-    logger.info("Initializing HuggingFace embeddings: %s", model)
-    embeddings = HuggingFaceEmbeddings(model_name=model)
-    logger.info("HuggingFace embeddings (%s) loaded successfully", model)
-
-    return embeddings
+    logger.info("Initializing HuggingFace embeddings: %s", settings.embedding_model)
+    return HuggingFaceEmbeddings(model_name=settings.embedding_model)
 
 
 def get_text_splitter() -> RecursiveCharacterTextSplitter:
-    """Get configured text splitter"""
+    """Create the configured Markdown-aware text splitter."""
     settings = get_settings()
     return RecursiveCharacterTextSplitter(
         chunk_size=settings.chunk_size,
@@ -105,348 +49,3 @@ def get_text_splitter() -> RecursiveCharacterTextSplitter:
         length_function=len,
         separators=["#", "##", "###", "####", "\n\n", "\n", " ", ""],
     )
-
-
-def _is_safe_path(filepath: str, vault_path: str) -> bool:
-    """Check that a filepath resolves within the vault boundary."""
-    try:
-        resolved = Path(filepath).resolve()
-        vault_resolved = Path(vault_path).resolve()
-        return resolved.is_relative_to(vault_resolved)
-    except (ValueError, OSError):
-        return False
-
-
-def load_documents_from_paths(
-    filepaths: Set[str], *, raise_on_error: bool = False
-) -> List[Document]:
-    """Load documents from specific paths within the configured vault."""
-    documents = []
-    vault_path = get_settings().obsidian_path
-
-    for filepath in filepaths:
-        try:
-            if not vault_path or not _is_safe_path(filepath, vault_path):
-                raise ValueError(f"Path is outside the configured vault: {filepath}")
-
-            with open(filepath, "r", encoding="utf-8") as f:
-                content = f.read()
-
-            links = extract_obsidian_links(content)
-
-            doc = Document(
-                page_content=content,
-                metadata={"source": filepath, "links": ",".join(links) if links else ""},
-            )
-            documents.append(doc)
-
-            if links:
-                logger.debug("Extracted %d links from %s", len(links), filepath)
-
-        except Exception as e:
-            logger.warning("Could not load %s: %s", filepath, e)
-            if raise_on_error:
-                raise
-
-    logger.info("Loaded %d documents from specified paths", len(documents))
-    return documents
-
-
-def _chunk_ids(filepath: str, content: str, chunks: List[Document]) -> List[str]:
-    """Create stable IDs so interrupted updates can be retried safely."""
-    content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
-    return [
-        hashlib.sha256(
-            f"{filepath}\0{content_hash}\0{index}\0{chunk.page_content}".encode()
-        ).hexdigest()
-        for index, chunk in enumerate(chunks)
-    ]
-
-
-def _replace_file_chunks(db: Chroma, filepath: str) -> None:
-    """Add and verify a file's new chunks before removing its previous chunks."""
-    documents = load_documents_from_paths({filepath}, raise_on_error=True)
-    chunks = get_text_splitter().split_documents(documents)
-    new_ids = _chunk_ids(filepath, documents[0].page_content, chunks)
-    new_id_set = set(new_ids)
-    old_ids = set(db.get(where={"source": filepath}).get("ids", []))
-
-    if old_ids == new_id_set:
-        return
-
-    # Recover from a crash after the new revision was inserted.
-    if new_id_set and new_id_set.issubset(old_ids):
-        stale_ids = old_ids - new_id_set
-        if stale_ids:
-            db.delete(ids=list(stale_ids))
-        return
-
-    # Remove a partial insert from an interrupted prior attempt, preserving old chunks.
-    partial_ids = old_ids & new_id_set
-    if partial_ids:
-        db.delete(ids=list(partial_ids))
-        old_ids -= partial_ids
-
-    if not chunks:
-        if old_ids:
-            db.delete(ids=list(old_ids))
-        return
-
-    try:
-        db.add_documents(chunks, ids=new_ids)
-        stored_ids = set(db.get(ids=new_ids).get("ids", []))
-        if stored_ids != new_id_set:
-            raise RuntimeError(f"Only {len(stored_ids)} of {len(new_ids)} chunks were stored")
-    except Exception:
-        # Best-effort cleanup; the previous revision remains available.
-        try:
-            db.delete(ids=new_ids)
-        except Exception as cleanup_error:
-            logger.error("Could not clean partial chunks for %s: %s", filepath, cleanup_error)
-        raise
-
-    if old_ids:
-        db.delete(ids=list(old_ids))
-
-
-def _create_chroma_in_batches(
-    texts: List[Document], embeddings: Embeddings, persist_directory: str, batch_size: int = 64
-) -> Chroma:
-    """Create a Chroma collection without sending the full vault to the embedder at once."""
-    db = Chroma(
-        persist_directory=persist_directory,
-        embedding_function=embeddings,
-        collection_metadata={"hnsw:space": "cosine"},
-    )
-    for start in range(0, len(texts), batch_size):
-        batch = texts[start : start + batch_size]
-        ids = [
-            hashlib.sha256(
-                f"{chunk.metadata.get('source', '')}\0{start + offset}\0{chunk.page_content}".encode()
-            ).hexdigest()
-            for offset, chunk in enumerate(batch)
-        ]
-        expected_ids = set(ids)
-        for attempt in range(3):
-            try:
-                stored_ids = set(db.get(ids=ids).get("ids", []))
-                if stored_ids != expected_ids:
-                    if stored_ids:
-                        db.delete(ids=list(stored_ids))
-                    db.add_documents(batch, ids=ids)
-                    stored_ids = set(db.get(ids=ids).get("ids", []))
-                if stored_ids != expected_ids:
-                    raise RuntimeError(
-                        f"Only {len(stored_ids)} of {len(expected_ids)} chunks were stored"
-                    )
-                break
-            except Exception:
-                if attempt == 2:
-                    raise
-                time.sleep(attempt + 1)
-        logger.info("Embedded %d/%d chunks", min(start + batch_size, len(texts)), len(texts))
-    return db
-
-
-def load_all_obsidian_documents(obsidian_path: str) -> List[Document]:
-    """Load all documents from Obsidian vault using recursive walk"""
-    logger.info("Loading Obsidian documents (.md) recursively")
-
-    EXCLUDED_PATTERNS = [
-        ".excalidraw.md",
-        ".canvas",
-        "untitled",
-    ]
-    documents = []
-    total_files = 0
-    loaded_files = 0
-    skipped_files = 0
-    error_files = 0
-    total_links_found = 0
-
-    for root, directories, files in os.walk(obsidian_path, followlinks=False):
-        directories[:] = [
-            directory for directory in directories if directory not in EXCLUDED_DIRECTORIES
-        ]
-        for file in files:
-            if file.endswith(".md"):
-                total_files += 1
-                filepath = os.path.join(root, file)
-
-                if not _is_safe_path(filepath, obsidian_path):
-                    logger.warning("Skipping file outside vault boundary: %s", filepath)
-                    skipped_files += 1
-                    continue
-
-                if any(pattern in file.lower() for pattern in EXCLUDED_PATTERNS):
-                    skipped_files += 1
-                    logger.debug("Skipping excluded file: %s", file)
-                    continue
-
-                try:
-                    try:
-                        with open(filepath, "r", encoding="utf-8") as f:
-                            content = f.read()
-                    except UnicodeDecodeError:
-                        logger.warning("UTF-8 decode failed for %s, trying latin-1", filepath)
-                        with open(filepath, "r", encoding="latin-1") as f:
-                            content = f.read()
-
-                    if content.strip():
-                        links = extract_obsidian_links(content)
-                        total_links_found += len(links)
-
-                        doc = Document(
-                            page_content=content,
-                            metadata={
-                                "source": filepath,
-                                "links": ",".join(links) if links else "",
-                            },
-                        )
-                        documents.append(doc)
-                        loaded_files += 1
-
-                        if len(links) > 5:
-                            logger.debug(
-                                "Note '%s' has %d links: %s...", file, len(links), links[:5]
-                            )
-
-                except Exception as e:
-                    error_files += 1
-                    logger.error("Error loading file %s: %s", filepath, e)
-
-    logger.info(
-        "Loaded %d of %d notes (%d excluded, %d errors)",
-        loaded_files,
-        total_files,
-        skipped_files,
-        error_files,
-    )
-    logger.info("Total links extracted: %d", total_links_found)
-    return documents
-
-
-def update_db_incrementally(
-    db: Chroma, new_files: Set[str], modified_files: Set[str], deleted_files: Set[str]
-) -> Chroma:
-    """Update changed files without discarding the last valid revision on failure."""
-    logger.info("Applying incremental update to database")
-    failures = []
-
-    for filepath in sorted(deleted_files):
-        try:
-            db.delete(where={"source": filepath})
-        except Exception as e:
-            logger.error("Could not delete %s: %s", filepath, e)
-            failures.append(filepath)
-
-    files_to_process = new_files | modified_files
-    if files_to_process:
-        logger.info("Processing %d new/modified documents", len(files_to_process))
-
-    for filepath in sorted(files_to_process):
-        try:
-            _replace_file_chunks(db, filepath)
-        except Exception as e:
-            logger.error("Failed to update %s; previous chunks kept: %s", filepath, e)
-            failures.append(filepath)
-
-    if failures:
-        raise RuntimeError(f"Incremental update failed for {len(failures)} file(s)")
-
-    return db
-
-
-def load_or_create_db(
-    obsidian_path: Optional[str] = None, force_rebuild: bool = False
-) -> Optional[Chroma]:
-    """Load or create vector database with incremental indexing support."""
-    settings = get_settings()
-    logger.info("Starting vector database load or creation")
-
-    if not obsidian_path:
-        obsidian_path = settings.obsidian_path
-
-    if not obsidian_path:
-        raise ValueError("OBSIDIAN_PATH must be set in environment or settings")
-
-    embeddings = get_embeddings()
-    persist_directory = settings.db_path
-
-    if os.path.exists(persist_directory) and not force_rebuild:
-        if not settings.enable_incremental_indexing:
-            logger.info("Incremental indexing disabled; loading existing database")
-            return Chroma(persist_directory=persist_directory, embedding_function=embeddings)
-
-        logger.info("Checking for changes for incremental update")
-        tracker = FileMetadataTracker(settings.metadata_file)
-
-        should_rebuild, changes = tracker.should_rebuild_with_changes(obsidian_path)
-        if should_rebuild:
-            logger.warning("Too many changes detected, doing full rebuild")
-            force_rebuild = True
-        else:
-            new_files, modified_files, deleted_files = changes
-
-            if not new_files and not modified_files and not deleted_files:
-                logger.info("No changes, loading existing database")
-                db = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
-                return db
-
-            logger.info("Performing incremental update")
-            db = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
-            db = update_db_incrementally(db, new_files, modified_files, deleted_files)
-
-            tracker.update_metadata(obsidian_path)
-
-            return db
-
-    if force_rebuild:
-        logger.info("Forcing full database rebuild")
-
-    documents = load_all_obsidian_documents(obsidian_path)
-
-    if not documents:
-        logger.warning("No documents loaded. Check the path and files")
-        return None
-
-    logger.info("Splitting documents into chunks")
-    text_splitter = get_text_splitter()
-    texts = text_splitter.split_documents(documents)
-    logger.info("Created %d text chunks", len(texts))
-
-    if force_rebuild and os.path.exists(persist_directory):
-        temp_dir = f"{persist_directory}_{uuid.uuid4().hex}"
-        logger.info("Creating new database in temporary directory: %s", temp_dir)
-
-        try:
-            temp_db = _create_chroma_in_batches(texts, embeddings, temp_dir)
-
-            del temp_db
-            gc.collect()
-
-            logger.info("Removing old directory: %s", persist_directory)
-            shutil.rmtree(persist_directory)
-
-            logger.info("Moving %s to %s", temp_dir, persist_directory)
-            os.rename(temp_dir, persist_directory)
-
-            db = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
-            logger.info("Database rebuilt and loaded successfully")
-
-        except Exception as e:
-            logger.error("Error during atomic rebuild: %s", e)
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-            raise e
-    else:
-        logger.info("Creating new vector database")
-        db = _create_chroma_in_batches(texts, embeddings, persist_directory)
-        logger.info("Vector database created successfully")
-
-    if settings.enable_incremental_indexing:
-        tracker = FileMetadataTracker(settings.metadata_file)
-        tracker.update_metadata(obsidian_path)
-        logger.info("Metadata tracker updated")
-
-    return db

@@ -68,9 +68,6 @@ def serve(
         "--api-key",
         help="API key for custom compatible providers when required",
     ),
-    reranker: Optional[bool] = typer.Option(
-        None, "--reranker/--no-reranker", help="Enable/disable reranker"
-    ),
     reload: bool = typer.Option(False, "--reload", "-r", help="Enable auto-reload"),
 ):
     """Start the ObsidianRAG API server."""
@@ -78,17 +75,11 @@ def serve(
 
     provider_info = f"\nProvider: [yellow]{provider}[/yellow]" if provider else ""
     model_info = f"\nModel: [yellow]{model}[/yellow]" if model else ""
-    reranker_info = (
-        f"\nReranker: [yellow]{'Enabled' if reranker else 'Disabled'}[/yellow]"
-        if reranker is not None
-        else ""
-    )
-
     console.print(
         Panel.fit(
             f"[bold cyan]ObsidianRAG Server[/bold cyan]\n\n"
             f"Vault: [green]{vault_path}[/green]\n"
-            f"URL: [blue]http://{host}:{port}[/blue]{provider_info}{model_info}{reranker_info}",
+            f"URL: [blue]http://{host}:{port}[/blue]{provider_info}{model_info}",
             title="Starting Server",
         )
     )
@@ -116,9 +107,6 @@ def serve(
             settings.compatible_base_url = base_url
     if api_key:
         settings.compatible_api_key = api_key
-    if reranker is not None:
-        settings.use_reranker = reranker
-
     # Start server
     import uvicorn
 
@@ -131,143 +119,11 @@ def serve(
 @app.command()
 def index(
     vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
-    force: bool = typer.Option(False, "--force", "-f", help="Force full rebuild"),
-):
-    """Index or re-index the Obsidian vault."""
-    vault_path = get_vault_path(vault)
-
-    console.print(f"Indexing vault: [green]{vault_path}[/green]")
-
-    if force:
-        console.print("[yellow]Force rebuild enabled - this may take a while...[/yellow]")
-
-    from obsidianrag.config import configure_from_vault
-    from obsidianrag.core.db_service import load_or_create_db
-
-    configure_from_vault(vault_path)
-
-    with console.status("[bold green]Indexing..."):
-        db = load_or_create_db(vault_path, force_rebuild=force)
-
-    if db:
-        # Get stats
-        db_data = db.get()
-        total_chunks = len(db_data.get("documents", []))
-        sources = set(m.get("source", "") for m in db_data.get("metadatas", []))
-
-        console.print(
-            Panel.fit(
-                f"[bold green]Indexing complete![/bold green]\n\n"
-                f"Notes: {len(sources)}\n"
-                f"Chunks: {total_chunks}",
-                title="Success",
-            )
-        )
-    else:
-        console.print("[red]Indexing failed. Check logs for details.[/red]")
-        raise typer.Exit(1)
-
-
-@app.command()
-def status(
-    vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
-):
-    """Check system status and configuration."""
-    import os
-
-    table = Table(title="ObsidianRAG Status")
-    table.add_column("Component", style="cyan")
-    table.add_column("Status", style="green")
-    table.add_column("Details")
-
-    # Check vault
-    vault_path = get_vault_path(vault) if vault else os.environ.get("OBSIDIAN_PATH", "Not set")
-    vault_exists = Path(vault_path).exists() if vault_path and vault_path != "Not set" else False
-    table.add_row("Vault", "OK" if vault_exists else "ERR", vault_path)
-
-    # Check Ollama
-    try:
-        import httpx
-
-        from obsidianrag.config import get_settings as _get_settings
-
-        _settings = _get_settings()
-        ollama_url = _settings.ollama_base_url
-        response = httpx.get(f"{ollama_url}/api/tags", timeout=2.0)
-        if response.status_code == 200:
-            models = [m["name"] for m in response.json().get("models", [])]
-            table.add_row("Ollama", "OK", f"{len(models)} models available")
-        else:
-            table.add_row("Ollama", "WARN", "Running but error getting models")
-    except Exception as e:
-        table.add_row("Ollama", "ERR", f"Not reachable: {e}")
-
-    # Check database
-    if vault_exists:
-        db_path = Path(vault_path) / ".obsidianrag" / "db"
-        if db_path.exists():
-            table.add_row("Database", "OK", str(db_path))
-        else:
-            table.add_row("Database", "WARN", "Not indexed. Run: obsidianrag index")
-
-    console.print(table)
-
-
-@app.command()
-def ask(
-    question: str = typer.Argument(..., help="Question to ask"),
-    vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
-    engine: Literal["v3", "v4", "v4-fts"] = typer.Option(
-        "v3", "--engine", help="Query engine: v3, v4, or embedding-free v4-fts"
-    ),
-    k: int = typer.Option(5, "--k", min=1, help="Unique source notes for v4 context"),
-):
-    """Ask a question about your notes (without starting server)."""
-    vault_path = get_vault_path(vault)
-
-    console.print(f"[bold]{question}[/bold]\n")
-
-    with console.status("[bold green]Thinking..."):
-        if engine == "v3":
-            from obsidianrag import ObsidianRAG
-
-            rag = ObsidianRAG(vault_path)
-            answer, sources = rag.ask(question)
-        else:
-            from obsidianrag.config import configure_from_vault, get_settings
-            from obsidianrag.core.query_pipeline import create_v4_query_pipeline
-
-            resolved_vault = Path(vault_path).resolve()
-            configure_from_vault(str(resolved_vault))
-            pipeline = create_v4_query_pipeline(
-                resolved_vault, engine=engine, k=k, settings=get_settings()
-            )
-            try:
-                result = pipeline.ask(question)
-            finally:
-                pipeline.close()
-            answer = result.answer
-            sources = list(result.documents)
-
-    console.print(Panel(answer, title="Answer", border_style="green"))
-
-    if sources:
-        console.print("\n[dim]Sources:[/dim]")
-        for i, source in enumerate(sources[:5], 1):
-            source_path = source.metadata.get("source", "Unknown")
-            console.print(f"  {i}. {source_path if engine != 'v3' else Path(source_path).name}")
-
-
-@app.command("v4-index")
-def v4_index(
-    vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
     full_rebuild: bool = typer.Option(
-        False,
-        "--full-rebuild",
-        help="Ignore the active revision and rebuild every note",
+        False, "--full-rebuild", help="Ignore the active revision and rebuild every note"
     ),
 ):
-    """Build and atomically activate an experimental SQLite + LanceDB index."""
+    """Build or incrementally refresh the v4 index."""
     from obsidianrag.config import configure_from_vault
     from obsidianrag.core.db_service import get_embeddings
     from obsidianrag.v4 import build_index
@@ -275,7 +131,7 @@ def v4_index(
     vault_path = Path(get_vault_path(vault)).resolve()
     configure_from_vault(str(vault_path))
     try:
-        with console.status("[bold green]Building experimental v4 index..."):
+        with console.status("[bold green]Building index..."):
             result = build_index(
                 vault_path,
                 get_embeddings(),
@@ -293,16 +149,79 @@ def v4_index(
             f"Reused chunks: {result.reused_chunks}\n"
             f"Reindexed notes: {result.reindexed_notes}\n"
             f"Deleted notes: {result.deleted_notes}",
-            title="v4 index ready",
+            title="Index ready",
         )
     )
 
 
-@app.command("v4-prune")
-def v4_prune(
+@app.command()
+def status(
     vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
 ):
-    """Delete inactive v4 revisions that are not leased by readers."""
+    """Show the v4 index state and counts."""
+    from obsidianrag.config import configure_from_vault
+    from obsidianrag.core.db_service import get_embeddings
+    from obsidianrag.v4 import index_status
+
+    vault_path = Path(get_vault_path(vault)).resolve()
+    configure_from_vault(str(vault_path))
+    try:
+        result = index_status(vault_path)
+        if result.state in {"current", "stale"}:
+            result = index_status(vault_path, get_embeddings())
+    except RuntimeError as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(1) from error
+
+    table = Table(title="ObsidianRAG index status")
+    table.add_column("State", style="cyan")
+    table.add_column("Notes", justify="right")
+    table.add_column("Chunks", justify="right")
+    table.add_column("Changed", justify="right")
+    table.add_column("Deleted", justify="right")
+    table.add_row(
+        result.state,
+        str(result.indexed_notes),
+        str(result.indexed_chunks),
+        str(result.changed_notes),
+        str(result.deleted_notes),
+    )
+    console.print(table)
+
+
+@app.command()
+def ask(
+    question: str = typer.Argument(..., help="Question to ask"),
+    vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
+    k: int = typer.Option(5, "--k", min=1, help="Unique source notes for context"),
+):
+    """Ask a question about your notes using the v4 hybrid index."""
+    from obsidianrag.config import configure_from_vault, get_settings
+    from obsidianrag.core.query_pipeline import create_v4_query_pipeline
+
+    resolved_vault = Path(get_vault_path(vault)).resolve()
+    configure_from_vault(str(resolved_vault))
+    console.print(f"[bold]{question}[/bold]\n")
+
+    with console.status("[bold green]Thinking..."):
+        pipeline = create_v4_query_pipeline(resolved_vault, k=k, settings=get_settings())
+        try:
+            result = pipeline.ask(question)
+        finally:
+            pipeline.close()
+
+    console.print(Panel(result.answer, title="Answer", border_style="green"))
+    if result.documents:
+        console.print("\n[dim]Sources:[/dim]")
+        for rank, source in enumerate(result.documents[:5], 1):
+            console.print(f"  {rank}. {source.metadata.get('source', 'Unknown')}")
+
+
+@app.command()
+def prune(
+    vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
+):
+    """Delete inactive index revisions that are not leased by readers."""
     from obsidianrag.v4 import prune_revisions
 
     vault_path = Path(get_vault_path(vault)).resolve()
@@ -317,29 +236,29 @@ def v4_prune(
     )
 
 
-@app.command("v4-search")
-def v4_search(
-    query: str = typer.Argument(..., help="Query to retrieve from the experimental index"),
+@app.command()
+def search(
+    query: str = typer.Argument(..., help="Query to retrieve from the active index"),
     vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
     k: int = typer.Option(10, "--k", min=1, help="Chunks to return"),
     lexical_only: bool = typer.Option(
         False, "--lexical-only", help="Use SQLite FTS5 without an embedding model"
     ),
 ):
-    """Search the active experimental index without calling an LLM."""
+    """Search the active index without calling an LLM."""
     from obsidianrag.config import configure_from_vault
-    from obsidianrag.v4 import ExperimentalLexicalRetriever, ExperimentalRetriever
+    from obsidianrag.v4 import LexicalRetriever, Retriever
 
     vault_path = Path(get_vault_path(vault)).resolve()
     configure_from_vault(str(vault_path))
     try:
-        retriever: ExperimentalLexicalRetriever | ExperimentalRetriever
+        retriever: LexicalRetriever | Retriever
         if lexical_only:
-            retriever = ExperimentalLexicalRetriever(vault_path)
+            retriever = LexicalRetriever(vault_path)
         else:
             from obsidianrag.core.db_service import get_embeddings
 
-            retriever = ExperimentalRetriever(vault_path, get_embeddings())
+            retriever = Retriever(vault_path, get_embeddings())
         try:
             documents = retriever.invoke(query, k=k)
         finally:
@@ -359,18 +278,14 @@ def evaluate(
     dataset: Path = typer.Argument(..., help="JSON dataset with questions and expected sources"),
     vault: Optional[str] = typer.Option(None, "--vault", "-v", help="Path to Obsidian vault"),
     k: int = typer.Option(10, "--k", min=1, help="Unique source notes to evaluate"),
-    reranker: bool = typer.Option(False, "--reranker", help="Include the v3 reranker"),
-    engine: Literal["v3", "v4", "v4-fts"] = typer.Option(
-        "v3", "--engine", help="Retrieval engine: v3, v4, or embedding-free v4-fts"
+    lexical_only: bool = typer.Option(
+        False, "--lexical-only", help="Evaluate SQLite FTS5 without embeddings"
     ),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write JSON results"),
 ):
-    """Evaluate retrieval against expected source notes without calling an LLM."""
+    """Evaluate v4 retrieval against expected source notes without calling an LLM."""
     from obsidianrag.config import configure_from_vault, get_settings
     from obsidianrag.evaluation import evaluate_retrieval, load_dataset
-
-    if engine != "v3" and reranker:
-        raise typer.BadParameter("the v4 engines do not yet rerank", param_hint="--reranker")
 
     vault_path = Path(get_vault_path(vault)).resolve()
     try:
@@ -382,44 +297,29 @@ def evaluate(
     configure_from_vault(str(vault_path))
     settings = get_settings()
 
+    engine = "v4-fts" if lexical_only else "v4"
     with console.status(f"[bold green]Evaluating {engine} retrieval..."):
-        if engine in {"v4", "v4-fts"}:
-            from functools import partial
+        from functools import partial
 
-            from obsidianrag.v4 import ExperimentalLexicalRetriever, ExperimentalRetriever
+        from obsidianrag.v4 import LexicalRetriever, Retriever
 
+        try:
+            retriever: LexicalRetriever | Retriever
+            if lexical_only:
+                retriever = LexicalRetriever(vault_path)
+            else:
+                from obsidianrag.core.db_service import get_embeddings
+
+                retriever = Retriever(vault_path, get_embeddings())
             try:
-                retriever: ExperimentalLexicalRetriever | ExperimentalRetriever
-                if engine == "v4-fts":
-                    retriever = ExperimentalLexicalRetriever(vault_path)
-                else:
-                    from obsidianrag.core.db_service import get_embeddings
-
-                    retriever = ExperimentalRetriever(vault_path, get_embeddings())
-                try:
-                    retrieve_k = max(k * 5, 25) if engine == "v4-fts" else k
-                    retrieve = partial(retriever.invoke, k=retrieve_k)
-                    result = evaluate_retrieval(retrieve, cases, vault_path, k=k)
-                finally:
-                    retriever.close()
-            except RuntimeError as error:
-                console.print(f"[red]{error}[/red]")
-                raise typer.Exit(1) from error
-        else:
-            from obsidianrag.core.db_service import load_or_create_db
-            from obsidianrag.core.qa_service import create_retriever_with_reranker
-
-            settings.use_reranker = reranker
-            settings.retrieval_k = max(settings.retrieval_k, k)
-            settings.bm25_k = max(settings.bm25_k, k)
-            if reranker:
-                settings.reranker_top_n = max(settings.reranker_top_n, k)
-            db = load_or_create_db(str(vault_path))
-            if db is None:
-                console.print("[red]Could not load the vault index.[/red]")
-                raise typer.Exit(1)
-            retriever = create_retriever_with_reranker(db)
-            result = evaluate_retrieval(retriever.invoke, cases, vault_path, k=k)
+                retrieve_k = max(k * 5, 25) if lexical_only else k
+                retrieve = partial(retriever.invoke, k=retrieve_k)
+                result = evaluate_retrieval(retrieve, cases, vault_path, k=k)
+            finally:
+                retriever.close()
+        except RuntimeError as error:
+            console.print(f"[red]{error}[/red]")
+            raise typer.Exit(1) from error
 
     table = Table(title=f"Retrieval Evaluation (k={k})")
     table.add_column("Question")
@@ -503,7 +403,7 @@ def evaluate_agent(
     import json
 
     from obsidianrag.agent_evaluation import evaluate_with_external_agent
-    from obsidianrag.v4 import ExperimentalLexicalRetriever
+    from obsidianrag.v4 import LexicalRetriever
 
     if not allow_private_data:
         console.print(
@@ -516,7 +416,7 @@ def evaluate_agent(
         raw_cases = raw.get("cases") if isinstance(raw, dict) else None
         if not isinstance(raw_cases, list) or not raw_cases:
             raise ValueError("Dataset must contain a non-empty cases list")
-        retriever = ExperimentalLexicalRetriever(Path(get_vault_path(vault)).resolve())
+        retriever = LexicalRetriever(Path(get_vault_path(vault)).resolve())
         try:
             result = evaluate_with_external_agent(
                 raw_cases,
@@ -604,7 +504,7 @@ def version():
     console.print(
         Panel.fit(
             f"[bold cyan]ObsidianRAG[/bold cyan] v{__version__}\n\n"
-            "RAG system for Obsidian notes using LangGraph and Ollama",
+            "RAG system for Obsidian notes using SQLite FTS5 and LanceDB",
             title="Version",
         )
     )

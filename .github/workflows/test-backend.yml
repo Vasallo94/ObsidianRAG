@@ -2,12 +2,12 @@ name: Backend Tests
 
 on:
   push:
-    branches: [main, v3-plugin]
+    branches: [main]
     paths:
       - 'backend/**'
       - '.github/workflows/test-backend.yml'
   pull_request:
-    branches: [main, v3-plugin]
+    branches: [main]
     paths:
       - 'backend/**'
       - '.github/workflows/test-backend.yml'
@@ -17,11 +17,20 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ['3.11', '3.12']
+        include:
+          - os: ubuntu-latest
+            python-version: '3.11'
+          - os: ubuntu-latest
+            python-version: '3.12'
+          - os: macos-latest
+            python-version: '3.12'
+          - os: windows-latest
+            python-version: '3.12'
+
+    runs-on: ${{ matrix.os }}
 
     defaults:
       run:
@@ -39,7 +48,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --dev --extra v4
+        run: uv sync --locked --dev
 
       - name: Run linting
         run: |
@@ -47,12 +56,7 @@ jobs:
           uv run ruff format --check obsidianrag/ tests/
 
       - name: Run unit tests
-        run: |
-          uv run pytest tests/ -m "not integration and not slow" \
-            --cov=obsidianrag \
-            --cov-report=xml \
-            --cov-report=term-missing \
-            --cov-fail-under=30
+        run: uv run pytest tests/ -m "not integration and not slow" --cov=obsidianrag --cov-report=xml --cov-report=term-missing --cov-fail-under=30
 
       # Integration tests are skipped in CI because they require Ollama
       # Run them locally with: uv run pytest tests/ -m "integration"
@@ -91,7 +95,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --dev --extra v4
+          uv sync --locked --dev
 
       - name: Run type checking
         run: uv run mypy .

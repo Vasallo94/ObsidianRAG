@@ -1,6 +1,7 @@
 """External-agent answer generation and judging for private RAG evaluations."""
 
 import json
+import os
 import shlex
 import subprocess
 from typing import Any
@@ -12,9 +13,9 @@ from obsidianrag.evaluation import _bootstrap_mean_ci, _normalize_relative
 
 def run_agent_command(command: str, payload: dict, timeout: int = 300) -> dict:
     """Run a JSON stdin/stdout agent command without invoking a shell."""
-    arguments = shlex.split(command)
-    if not arguments:
+    if not command.strip():
         raise ValueError("Agent command cannot be empty")
+    arguments: str | list[str] = command if os.name == "nt" else shlex.split(command)
     try:
         result = subprocess.run(
             arguments,

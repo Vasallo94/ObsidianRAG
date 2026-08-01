@@ -7,63 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-08-01
+
 ### Added
-- Versioned `/capabilities` endpoint for plugin/backend compatibility checks
-- Retrieval evaluation CLI with Precision@k, Recall@k, hit rate, MRR, MAP@k, graded nDCG@k, chunk-level evidence recall, deterministic 95% bootstrap confidence intervals, and latency percentiles
-- Public multilingual retrieval fixture for reproducible smoke benchmarks
-- Optional experimental v4 index using SQLite FTS5 and embedded LanceDB
-- `v4-index` and `v4-search` commands plus v3/v4 evaluation selection
-- Embedding-free `v4-fts` evaluation and `v4-search --lexical-only` modes
-- Offline `compare-evaluations` command with paired bootstrap metric deltas
-- External JSON agent evaluation with FTS5 retrieval, grounded answer metrics, and explicit private-data confirmation
-- Optional Pi/Luna adapter for remote generation and judging without local inference
-- Shared provider-neutral v4 query pipeline with grounded generation, abstention guidance, numeric citations, and matching synchronous/streaming prompts
-- `ask --engine v4|v4-fts` for experimental hybrid or embedding-free answer generation
-- Regression tests for incremental index updates, process ownership, and secret handling
-- Copy-on-write v4 incremental revisions with note hashing, embedding fingerprints, cross-store semantic validation, and a full-rebuild CLI escape hatch
-- `v4-prune` with reader leases for safe removal of inactive revisions
+- API 4 index lifecycle endpoints and matching plugin Build, Refresh, Full rebuild, and Prune controls
+- Copy-on-write SQLite FTS5 and LanceDB revisions with reader leases
+- Read-only missing/current/stale/rebuild-required status inspection
+- Provider-neutral grounded query pipeline with numeric citations
+- Retrieval and external-agent evaluation commands
 
 ### Changed
-- Replaced the plugin's `builtin-modules` dependency with Node's native `builtinModules` API
-- Reused the existing HTTPX dependency for Ollama availability checks
-- Simplified duplicated development and CI configuration
-- Plugin API keys are now session-only and passed to the backend through its environment
-- Hybrid v4 ranks unique sources with vector/lexical fusion, then selects each source's best lexical chunk for stronger evidence coverage
-- v4 generation adaptively removes sources below 70% of the leading lexical relevance while preserving conservative top-k behavior without lexical scores
-- Semicolon-separated multipart questions retrieve and preserve relevant context independently for each part
-- Provider-neutral generation now defaults to low-variance temperature zero with a validated configuration override
-- FTS5 generation preserves a second strong lexical passage for each query part's leading source and explicitly checks concrete details
-- v4 builders serialize with an exclusive lock and keep leased revisions readable while a validated revision activates
-- v4 indexing reports reused chunks plus reindexed and deleted note counts
+- Promoted SQLite FTS5 and LanceDB to the only production retrieval engine
+- Made LanceDB a standard backend dependency
+- Made backend and plugin versions `4.0.0` with exact API 4 compatibility
+- Swapped serving pipelines atomically while preserving in-flight readers
+- Made backend and plugin release installs lockfile-reproducible
+- Simplified CLI commands to `index`, `status`, `ask`, `search`, and `prune`
 
 ### Fixed
-- Incremental updates verify new chunks before deleting the previous valid revision
-- Incremental reads now reject paths outside the configured vault
-- Health responses now include the backend version expected by the plugin
-- Disabling incremental indexing now loads an existing database instead of rebuilding it
-- Full Chroma rebuilds embed bounded batches with retries instead of sending the entire vault to Ollama
-- BM25 retrieval now normalizes case and punctuation for multilingual queries
-- External evaluation now rejects citations outside retrieved context and gives that context to the judge
-- Evaluation comparisons now reject incompatible retrieval depths and ground-truth annotations
-- Adaptive hybrid context uses the strongest lexical score even when a vector-only result ranks first
-- Hybrid RRF now fuses lexical and vector rankings by source before selecting the strongest lexical passage
-- Query pipeline shutdown waits for active SQLite retrieval before closing the connection
-- Read-only SQLite index URIs now safely encode cross-platform paths
-- Indexing now excludes Obsidian internals, trash, Git data, and dependency directories
-- v4 empty-vault updates activate an empty index instead of retaining deleted content
-- Full v4 rebuilds recover malformed active manifests without trusting them
+- Empty-vault updates now activate a valid empty revision
+- Malformed active manifests can be recovered with an explicit full rebuild
+- Embedding fingerprints prevent vector reuse across incompatible vector spaces
+- Bounded LanceDB copying and semantic cross-store validation prevent unsafe activation
+- Cancellation no longer closes a retriever while its worker thread is still running
+- Failed runtime swaps preserve the previous serving revision and expose the mismatch as stale
+- Windows durability sync opens managed files with a writable descriptor as required by `_commit`
+- Windows reader-lease liveness checks no longer send a console interrupt to the owning process
+- External-agent commands preserve Windows executable paths without invoking a shell
 
 ### Security
-- v4 managed paths and Markdown scans reject symlinks and junctions
-- v4 incremental reuse validates actual embedding output and bounded LanceDB row semantics
-- The plugin no longer kills arbitrary processes listening on its configured port
-- API keys are no longer exposed in backend process arguments or persisted by the plugin
+- Managed paths and Markdown scans reject symlinks and junctions
+- POSIX reads, activation, and cleanup use descriptor-relative operations
+- Plugin backend startup uses `shell:false` on every platform
+- API keys remain session-only and never appear in process arguments
 
 ### Removed
-- Generated plugin bundle from version control; releases continue to build it automatically
-- Duplicate manifests and backend configuration
-- Unused direct and plugin build dependencies
-- Dead `retrieve_with_links` helper
+- API 3 and plugin/backend compatibility fallback
+- Chroma, LangGraph, classic retriever, reranker, and v3 public library paths
+- `/stats`, `/rebuild_db`, `v4-*` command aliases, and engine selectors
+- Optional `obsidianrag[v4]` installation extra
 
 ## [3.0.3] - 2026-05-11
 

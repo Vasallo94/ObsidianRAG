@@ -1,14 +1,14 @@
 [project]
 name = "obsidianrag"
-version = "3.0.3"
-description = "RAG system for querying Obsidian notes using LangGraph and local LLMs"
+version = "4.0.0"
+description = "RAG system for querying Obsidian notes with SQLite FTS5 and LanceDB"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     {name = "Enrique Vasallo"}
 ]
-keywords = ["obsidian", "rag", "langchain", "langgraph", "ollama", "chromadb", "plugin"]
+keywords = ["obsidian", "rag", "langchain", "lancedb", "sqlite", "ollama", "plugin"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -24,18 +24,13 @@ classifiers = [
 
 dependencies = [
     # Core LangChain ecosystem
-    "langchain-community>=0.3.7",
     "langchain-core>=0.3.15",
     "langchain-ollama>=0.2.0",
     "langchain-openai>=0.3.0",
-    "langchain-chroma>=0.1.4",
     "langchain-huggingface>=0.1.0",
     "langchain-text-splitters>=0.3.0",
-    "langchain-classic>=1.0.7",
-    "langgraph>=0.2.45",
-
     # Vector store and retrieval
-    "rank-bm25>=0.2.2",
+    "lancedb>=0.36.0,<0.37.0",
     "sentence-transformers>=3.0.0",
 
     # API
@@ -61,11 +56,6 @@ Issues = "https://github.com/Vasallo94/ObsidianRAG/issues"
 
 [project.scripts]
 obsidianrag = "obsidianrag.cli.main:main"
-
-[project.optional-dependencies]
-v4 = [
-    "lancedb>=0.36.0,<0.37.0",
-]
 
 [build-system]
 requires = ["hatchling"]

@@ -1,8 +1,9 @@
 """Centralized configuration for ObsidianRAG using Pydantic Settings"""
 
-import os
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
-from typing import List, Literal
+from typing import Iterator, List, Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -21,10 +22,6 @@ class Settings(BaseSettings):
 
     # ========== Paths ==========
     obsidian_path: str = Field(default="", description="Path to Obsidian vault")
-    db_path: str = Field(default="", description="Vector database directory (relative to vault)")
-    log_path: str = Field(default="", description="Logs directory")
-    cache_path: str = Field(default="", description="Embedding cache directory")
-    metadata_file: str = Field(default="", description="File metadata tracker")
 
     # ========== Model Configuration ==========
     llm_provider: Literal["ollama", "lmstudio", "custom"] = Field(
@@ -66,26 +63,9 @@ class Settings(BaseSettings):
         description="Ollama embeddings model",
     )
 
-    # Reranker configuration
-    use_reranker: bool = Field(default=True, description="Enable reranker for better results")
-    reranker_model: str = Field(
-        default="BAAI/bge-reranker-v2-m3",
-        description="Cross-encoder model for reranking (Multilingual)",
-    )
-    reranker_top_n: int = Field(default=6, description="Number of docs after reranking")
-
     # ========== Retrieval Configuration ==========
     chunk_size: int = Field(default=1500, description="Text chunk size")
     chunk_overlap: int = Field(default=300, description="Overlap between chunks")
-    retrieval_k: int = Field(
-        default=12, description="Number of documents to retrieve before reranking"
-    )
-    bm25_k: int = Field(default=5, description="Number of BM25 results")
-
-    # Ensemble weights
-    bm25_weight: float = Field(default=0.4, description="Weight for BM25 retriever")
-    vector_weight: float = Field(default=0.6, description="Weight for vector retriever")
-
     # ========== API Configuration ==========
     api_host: str = Field(default="127.0.0.1", description="FastAPI host")
     api_port: int = Field(default=8000, description="FastAPI port")
@@ -97,53 +77,35 @@ class Settings(BaseSettings):
         description="Allowed CORS origins",
     )
 
-    # ========== Feature Flags ==========
-    enable_incremental_indexing: bool = Field(
-        default=True, description="Enable incremental DB updates"
-    )
-    enable_analytics: bool = Field(default=True, description="Enable analytics logging")
-
     # ========== Performance ==========
     max_workers: int = Field(default=4, description="Thread pool max workers")
     request_timeout: int = Field(default=60, description="Request timeout in seconds")
 
-    def configure_paths(self, vault_path: str):
-        """Configure paths based on vault location.
-
-        Sets up the database, logs, cache, and metadata paths relative to
-        the vault directory in a hidden .obsidianrag folder.
-        """
-        vault = Path(vault_path)
-        data_dir = vault / ".obsidianrag"
-
-        self.obsidian_path = str(vault)
-        self.db_path = str(data_dir / "db")
-        self.log_path = str(data_dir / "logs")
-        self.cache_path = str(data_dir / "cache")
-        self.metadata_file = str(data_dir / "metadata.json")
-
-        # Create directories
-        os.makedirs(self.db_path, exist_ok=True)
-        os.makedirs(self.log_path, exist_ok=True)
-        os.makedirs(self.cache_path, exist_ok=True)
-
-    def ensure_directories(self):
-        """Create required directories if they don't exist."""
-        if self.db_path:
-            os.makedirs(self.db_path, exist_ok=True)
-        if self.log_path:
-            os.makedirs(self.log_path, exist_ok=True)
-        if self.cache_path:
-            os.makedirs(self.cache_path, exist_ok=True)
+    def configure_paths(self, vault_path: str) -> None:
+        """Configure the vault without creating index data."""
+        self.obsidian_path = str(Path(vault_path))
 
 
-# Global settings instance - will be configured at runtime
+# Global settings remain the default for CLI and library callers.
 settings = Settings()
+_settings_override: ContextVar[Settings | None] = ContextVar(
+    "obsidianrag_settings_override", default=None
+)
 
 
 def get_settings() -> Settings:
-    """Get the global settings instance."""
-    return settings
+    """Get the current app-scoped settings, or the legacy global default."""
+    return _settings_override.get() or settings
+
+
+@contextmanager
+def settings_override(value: Settings) -> Iterator[None]:
+    """Use isolated settings for the current async/thread context."""
+    token = _settings_override.set(value)
+    try:
+        yield
+    finally:
+        _settings_override.reset(token)
 
 
 def configure_from_vault(vault_path: str) -> Settings:

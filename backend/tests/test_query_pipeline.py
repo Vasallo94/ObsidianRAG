@@ -567,7 +567,7 @@ def test_lexical_factory_does_not_load_embeddings_and_owns_retriever(tmp_path):
     model = MagicMock()
 
     with (
-        patch("obsidianrag.v4.ExperimentalLexicalRetriever", return_value=lexical),
+        patch("obsidianrag.v4.LexicalRetriever", return_value=lexical),
         patch("obsidianrag.core.query_pipeline.create_chat_model", return_value=(model, "test")),
         patch("obsidianrag.core.db_service.get_embeddings") as get_embeddings,
     ):
@@ -582,9 +582,33 @@ def test_lexical_factory_does_not_load_embeddings_and_owns_retriever(tmp_path):
     lexical.close.assert_called_once_with()
 
 
+def test_hybrid_factory_reuses_explicit_embeddings(tmp_path):
+    embeddings = MagicMock()
+    retriever = MagicMock()
+
+    with (
+        patch("obsidianrag.v4.Retriever", return_value=retriever) as retriever_factory,
+        patch(
+            "obsidianrag.core.query_pipeline.create_chat_model",
+            return_value=(MagicMock(), "test"),
+        ),
+        patch("obsidianrag.core.db_service.get_embeddings") as get_embeddings,
+    ):
+        revision_path = tmp_path / "revision"
+        pipeline = create_v4_query_pipeline(
+            tmp_path, embeddings=embeddings, revision_path=revision_path
+        )
+
+    get_embeddings.assert_not_called()
+    retriever_factory.assert_called_once_with(
+        tmp_path.resolve(), embeddings, revision_path=revision_path
+    )
+    pipeline.close()
+
+
 def test_factory_rejects_invalid_k_before_opening_retriever(tmp_path):
     with (
-        patch("obsidianrag.v4.ExperimentalLexicalRetriever") as lexical,
+        patch("obsidianrag.v4.LexicalRetriever") as lexical,
         pytest.raises(ValueError, match="k must be at least 1"),
     ):
         create_v4_query_pipeline(tmp_path, engine="v4-fts", k=0)
@@ -624,7 +648,7 @@ def test_factory_closes_retriever_when_model_creation_fails(tmp_path):
     lexical = MagicMock()
 
     with (
-        patch("obsidianrag.v4.ExperimentalLexicalRetriever", return_value=lexical),
+        patch("obsidianrag.v4.LexicalRetriever", return_value=lexical),
         patch(
             "obsidianrag.core.query_pipeline.create_chat_model",
             side_effect=RuntimeError("provider unavailable"),

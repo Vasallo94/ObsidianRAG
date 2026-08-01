@@ -89,87 +89,57 @@ class TestServeCommand:
 class TestIndexCommand:
     """Tests for the index command."""
 
-    @patch("obsidianrag.core.db_service.load_or_create_db")
-    @patch("obsidianrag.config.configure_from_vault")
-    def test_index_full_rebuild(self, mock_configure, mock_load_db, runner, mock_vault):
-        """Test index command with full rebuild."""
-        mock_db = MagicMock()
-        mock_db.get.return_value = {
-            "documents": ["doc1", "doc2"],
-            "metadatas": [{"source": "note1.md"}, {"source": "note2.md"}],
-        }
-        mock_load_db.return_value = mock_db
-
-        result = runner.invoke(app, ["index", "--vault", str(mock_vault), "--force"])
-
-        assert result.exit_code == 0
-        mock_load_db.assert_called_once()
-        # Verify force=True was passed
-        call_kwargs = mock_load_db.call_args
-        assert call_kwargs.kwargs.get("force_rebuild") is True
-
-    @patch("obsidianrag.core.db_service.load_or_create_db")
-    @patch("obsidianrag.config.configure_from_vault")
-    def test_index_incremental(self, mock_configure, mock_load_db, runner, mock_vault):
-        """Test index command for incremental update."""
-        mock_db = MagicMock()
-        mock_db.get.return_value = {"documents": ["doc1"], "metadatas": [{"source": "note1.md"}]}
-        mock_load_db.return_value = mock_db
-
-        result = runner.invoke(app, ["index", "--vault", str(mock_vault)])
+    @pytest.mark.parametrize("full_rebuild", [False, True])
+    def test_index_builds_v4_revision(self, runner, mock_vault, full_rebuild):
+        build_result = MagicMock(
+            revision="revision-2",
+            notes=3,
+            chunks=7,
+            reused_chunks=5,
+            reindexed_notes=1,
+            deleted_notes=1,
+        )
+        args = ["index", "--vault", str(mock_vault)]
+        if full_rebuild:
+            args.append("--full-rebuild")
+        with (
+            patch("obsidianrag.v4.build_index", return_value=build_result) as build,
+            patch("obsidianrag.core.db_service.get_embeddings", return_value=MagicMock()),
+        ):
+            result = runner.invoke(app, args)
 
         assert result.exit_code == 0
-        mock_load_db.assert_called_once()
+        assert build.call_args.kwargs["full_rebuild"] is full_rebuild
+        assert "Reused chunks: 5" in unstyle(result.stdout)
 
 
 class TestStatusCommand:
     """Tests for the status command."""
 
-    @patch("httpx.get")
-    def test_status_shows_vault_info(self, mock_httpx, runner, mock_vault):
-        """Test status command displays vault info."""
-        # Mock Ollama check to fail (not running)
-        mock_httpx.side_effect = Exception("Connection refused")
-
-        result = runner.invoke(app, ["status", "--vault", str(mock_vault)])
-
-        assert result.exit_code == 0
-        assert "Vault" in result.stdout or "Status" in result.stdout
-
-    @patch("httpx.get")
-    def test_status_shows_ollama_status(self, mock_httpx, runner, mock_vault):
-        """Test status command checks Ollama."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"models": [{"name": "gemma3"}]}
-        mock_httpx.return_value = mock_response
-
-        result = runner.invoke(app, ["status", "--vault", str(mock_vault)])
+    def test_status_shows_index_state_without_loading_embeddings(self, runner, mock_vault):
+        status = MagicMock(
+            state="missing",
+            indexed_notes=0,
+            indexed_chunks=0,
+            changed_notes=4,
+            deleted_notes=0,
+        )
+        with (
+            patch("obsidianrag.v4.index_status", return_value=status),
+            patch("obsidianrag.core.db_service.get_embeddings") as get_embeddings,
+        ):
+            result = runner.invoke(app, ["status", "--vault", str(mock_vault)])
 
         assert result.exit_code == 0
-        # Should show Ollama status
-        assert "Ollama" in result.stdout or "models" in result.stdout.lower()
+        assert "missing" in result.stdout
+        get_embeddings.assert_not_called()
 
 
 class TestAskCommand:
     """Tests for the ask command."""
 
-    @patch("obsidianrag.ObsidianRAG")
-    def test_ask_simple_question(self, mock_rag_class, runner, mock_vault):
-        """Test ask command with a simple question."""
-        mock_rag = MagicMock()
-        mock_rag.ask.return_value = ("Test answer about ML", [])
-        mock_rag_class.return_value = mock_rag
-
-        result = runner.invoke(
-            app, ["ask", "What is machine learning?", "--vault", str(mock_vault)]
-        )
-
-        assert result.exit_code == 0
-        assert "Test answer" in result.stdout or "Answer" in result.stdout
-
     @patch("obsidianrag.core.query_pipeline.create_v4_query_pipeline")
-    def test_ask_routes_v4_fts_and_closes_pipeline(self, create_pipeline, runner, mock_vault):
+    def test_ask_routes_v4_and_closes_pipeline(self, create_pipeline, runner, mock_vault):
         from langchain_core.documents import Document
 
         pipeline = MagicMock()
@@ -191,8 +161,6 @@ class TestAskCommand:
                 "What is grounded?",
                 "--vault",
                 str(mock_vault),
-                "--engine",
-                "v4-fts",
                 "--k",
                 "3",
             ],
@@ -202,7 +170,6 @@ class TestAskCommand:
         assert "Grounded" in result.stdout
         assert "Notes/Grounding.md" in result.stdout
         create_pipeline.assert_called_once()
-        assert create_pipeline.call_args.kwargs["engine"] == "v4-fts"
         assert create_pipeline.call_args.kwargs["k"] == 3
         pipeline.ask.assert_called_once_with("What is grounded?")
         pipeline.close.assert_called_once_with()
@@ -234,15 +201,15 @@ class TestCLIHelp:
         """Test index command help."""
         result = runner.invoke(app, ["index", "--help"])
         assert result.exit_code == 0
-        assert "--force" in result.stdout or "force" in result.stdout.lower()
+        assert "--full-rebuild" in unstyle(result.stdout)
 
     def test_v4_commands_are_discoverable(self, runner):
         result = runner.invoke(app, ["--help"])
 
         assert result.exit_code == 0
-        assert "v4-index" in result.stdout
-        assert "v4-prune" in result.stdout
-        assert "v4-search" in result.stdout
+        assert "index" in result.stdout
+        assert "prune" in result.stdout
+        assert "search" in result.stdout
         assert "compare-evaluations" in result.stdout
 
     def test_v4_index_reports_incremental_counts(self, runner, tmp_path):
@@ -258,7 +225,7 @@ class TestCLIHelp:
             patch("obsidianrag.v4.build_index", return_value=build_result),
             patch("obsidianrag.core.db_service.get_embeddings", return_value=MagicMock()),
         ):
-            result = runner.invoke(app, ["v4-index", "--vault", str(tmp_path)])
+            result = runner.invoke(app, ["index", "--vault", str(tmp_path)])
 
         assert result.exit_code == 0
         assert "Reused chunks: 5" in unstyle(result.stdout)
@@ -266,7 +233,7 @@ class TestCLIHelp:
         assert "Deleted notes: 1" in unstyle(result.stdout)
 
     def test_v4_search_help_exposes_embedding_free_mode(self, runner):
-        result = runner.invoke(app, ["v4-search", "--help"])
+        result = runner.invoke(app, ["search", "--help"])
 
         assert result.exit_code == 0
         assert "--lexical-only" in unstyle(result.stdout)

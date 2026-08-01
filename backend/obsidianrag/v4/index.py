@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import BinaryIO, Iterator
+from typing import BinaryIO, Iterator, Literal
 
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
@@ -35,7 +35,7 @@ _FINGERPRINT_QUERY = "obsidianrag synthetic query probe"
 
 
 class V4DependencyError(RuntimeError):
-    """Raised when the v4 optional dependencies are unavailable."""
+    """Raised when a required v4 dependency is unavailable."""
 
 
 class FullRebuildRequired(RuntimeError):
@@ -76,6 +76,19 @@ class PruneResult:
 
 
 @dataclass(frozen=True)
+class IndexStatus:
+    """Read-only summary of the active v4 revision and vault drift."""
+
+    state: Literal["missing", "current", "stale", "rebuild_required"]
+    active_revision: str | None = None
+    indexed_notes: int = 0
+    indexed_chunks: int = 0
+    changed_notes: int = 0
+    deleted_notes: int = 0
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
 class _NoteSnapshot:
     path: str
     content: str
@@ -105,7 +118,7 @@ def require_lancedb():
         import lancedb
     except ImportError as error:
         raise V4DependencyError(
-            "v4 support requires the LanceDB dependency: pip install 'obsidianrag[v4]'"
+            "LanceDB is required; reinstall the standard obsidianrag package"
         ) from error
     return lancedb
 
@@ -438,12 +451,152 @@ def build_index(
                 _safe_rmtree(revisions, revision_path, revision_identity)
 
 
+def index_status(vault_path: Path, embeddings: Embeddings | None = None) -> IndexStatus:
+    """Inspect the active index without creating files or loading indexed content."""
+    vault = vault_path.resolve()
+    root = _v4_root(vault)
+    snapshots = _scan_vault(vault)
+    try:
+        active_manifest = _read_manifest(root / "active.json")
+    except IndexPathError:
+        raise
+    except IndexCorruptionError as error:
+        return IndexStatus(
+            state="rebuild_required",
+            changed_notes=len(snapshots),
+            reason=str(error),
+        )
+    if active_manifest is None:
+        return IndexStatus(
+            state="missing",
+            changed_notes=len(snapshots),
+            reason="No active v4 index exists",
+        )
+
+    revision_name: str | None = None
+    indexed_notes = 0
+    indexed_chunks = 0
+    changed = len(snapshots)
+    deleted = 0
+    try:
+        revision_name = _manifest_revision(active_manifest)
+        if active_manifest.get("schema_version") != SCHEMA_VERSION:
+            raise FullRebuildRequired("Active v4 index schema is incompatible")
+        indexes = _indexes_path(root)
+        revision_path = indexes / revision_name
+        if revision_path.parent != indexes:
+            raise IndexPathError("Invalid v4 revision path")
+        metadata, manifest, indexed_notes, indexed_chunks = _read_revision_summary(revision_path)
+        changed = sum(
+            path not in manifest or manifest[path] != snapshot.content_hash
+            for path, snapshot in snapshots.items()
+        )
+        deleted = len(set(manifest) - set(snapshots))
+        if metadata.get("schema_version") != str(SCHEMA_VERSION):
+            raise FullRebuildRequired("Active v4 index schema is incompatible")
+        settings = get_settings()
+        for key, value in {
+            "chunk_size": settings.chunk_size,
+            "chunk_overlap": settings.chunk_overlap,
+        }.items():
+            if metadata.get(key) != str(value):
+                raise FullRebuildRequired(f"Active v4 index {key} is incompatible")
+        if embeddings is not None:
+            fingerprint, dimension = embedding_fingerprint(embeddings)
+            _assert_incremental_compatible(metadata, fingerprint=fingerprint, dimension=dimension)
+    except IndexPathError:
+        raise
+    except (FullRebuildRequired, IndexCorruptionError) as error:
+        return IndexStatus(
+            state="rebuild_required",
+            active_revision=revision_name,
+            indexed_notes=indexed_notes,
+            indexed_chunks=indexed_chunks,
+            changed_notes=changed,
+            deleted_notes=deleted,
+            reason=str(error),
+        )
+
+    if changed or deleted:
+        return IndexStatus(
+            state="stale",
+            active_revision=revision_name,
+            indexed_notes=indexed_notes,
+            indexed_chunks=indexed_chunks,
+            changed_notes=changed,
+            deleted_notes=deleted,
+            reason="Vault contents differ from the active v4 index",
+        )
+    return IndexStatus(
+        state="current",
+        active_revision=revision_name,
+        indexed_notes=indexed_notes,
+        indexed_chunks=indexed_chunks,
+    )
+
+
+def _read_revision_summary(
+    revision_path: Path,
+) -> tuple[dict[str, str], dict[str, str], int, int]:
+    """Read bounded metadata/count summaries without materializing indexed rows."""
+    checked = _checked_directory(revision_path)
+    _assert_tree_no_links(checked)
+    catalog_path = checked / "catalog.sqlite3"
+    _reject_link(catalog_path)
+    _checked_directory(checked / "vectors")
+    try:
+        connection = sqlite3.connect(f"{catalog_path.as_uri()}?mode=ro", uri=True)
+        try:
+            metadata = {
+                str(key): str(value)
+                for key, value in connection.execute("SELECT key, value FROM metadata")
+            }
+            indexed_notes = int(connection.execute("SELECT COUNT(*) FROM notes").fetchone()[0])
+            indexed_chunks = int(connection.execute("SELECT COUNT(*) FROM chunks").fetchone()[0])
+            connection.execute("SELECT 1 FROM chunks_fts LIMIT 1").fetchone()
+        finally:
+            connection.close()
+    except (sqlite3.Error, TypeError, ValueError) as error:
+        raise IndexCorruptionError("The active v4 revision summary is unreadable") from error
+
+    try:
+        manifest_value = json.loads(metadata["note_manifest"])
+        if not isinstance(manifest_value, dict):
+            raise ValueError("note manifest is not an object")
+        manifest = {str(path): str(content_hash) for path, content_hash in manifest_value.items()}
+        for path, content_hash in manifest.items():
+            normalized = Path(path)
+            if (
+                normalized.is_absolute()
+                or ".." in normalized.parts
+                or normalized.as_posix() != path
+                or normalized.suffix != ".md"
+                or len(content_hash) != 64
+            ):
+                raise ValueError("note manifest contains an invalid entry")
+        if int(metadata["notes"]) != indexed_notes or int(metadata["chunks"]) != indexed_chunks:
+            raise ValueError("metadata counts disagree with the catalog")
+        if metadata["schema_version"] != str(SCHEMA_VERSION):
+            raise ValueError("schema version is incompatible")
+        dimension = int(metadata["embedding_dimension"])
+        if dimension <= 0 or len(metadata["embedding_fingerprint"]) != 64:
+            raise ValueError("embedding metadata is invalid")
+        table = require_lancedb().connect(checked / "vectors").open_table("chunks")
+        if table.count_rows() != indexed_chunks:
+            raise ValueError("vector count disagrees with the catalog")
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise IndexCorruptionError("The active v4 revision metadata is invalid") from error
+    except Exception as error:
+        raise IndexCorruptionError("The active v4 vector table is unreadable") from error
+    return metadata, manifest, indexed_notes, indexed_chunks
+
+
 def active_revision(vault_path: Path) -> Path:
     """Return the active validated revision path without following links."""
     root = _v4_root(vault_path)
     active = _read_manifest(root / "active.json")
     if active is None:
-        raise IndexCorruptionError("No v4 index found. Run: obsidianrag v4-index --vault ...")
+        raise IndexCorruptionError("No v4 index found. Run: obsidianrag index --vault ...")
     revision = _manifest_revision(active)
     if active.get("schema_version") != SCHEMA_VERSION:
         raise IndexCorruptionError("Unsupported v4 index manifest; run --full-rebuild")
@@ -468,10 +621,12 @@ def _read_manifest(path: Path) -> dict[str, object] | None:
         value = json.loads(_read_regular_bytes(path).decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError, OSError) as error:
         raise IndexCorruptionError(
-            "The active v4 manifest is malformed; run v4-index --full-rebuild"
+            "The active v4 manifest is malformed; run obsidianrag index --full-rebuild"
         ) from error
     if not isinstance(value, dict):
-        raise IndexCorruptionError("The active v4 manifest is invalid; run v4-index --full-rebuild")
+        raise IndexCorruptionError(
+            "The active v4 manifest is invalid; run obsidianrag index --full-rebuild"
+        )
     return value
 
 
@@ -1041,7 +1196,8 @@ def _validate_revision(revision_path: Path, expected_chunks: int | set[str]) -> 
 
 
 def _fsync_file(path: Path) -> None:
-    descriptor, _ = _open_regular(path, os.O_RDONLY)
+    flags = os.O_RDWR if os.name == "nt" else os.O_RDONLY
+    descriptor, _ = _open_regular(path, flags)
     try:
         os.fsync(descriptor)
     finally:
@@ -1173,15 +1329,41 @@ def acquire_revision_lease(vault_path: Path, revision_path: Path) -> RevisionLea
 def _pid_is_alive(pid: int) -> bool:
     if pid <= 0:
         return False
+    if os.name == "nt":
+        return _windows_pid_is_alive(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
         return True
-    except OSError:
-        return os.name == "nt"
     return True
+
+
+def _windows_pid_is_alive(pid: int) -> bool:
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = getattr(ctypes, "WinDLL")("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.GetLastError.restype = wintypes.DWORD
+
+    handle = kernel32.OpenProcess(0x1000, False, pid)
+    if not handle:
+        return bool(kernel32.GetLastError() != 87)
+    try:
+        exit_code = wintypes.DWORD()
+        return (
+            bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)))
+            and exit_code.value == 259
+        )
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def _live_leases(root: Path, revision: str) -> list[Path]:

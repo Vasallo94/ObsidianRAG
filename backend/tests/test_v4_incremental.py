@@ -14,19 +14,20 @@ pytest.importorskip("lancedb")
 import obsidianrag.v4.index as index_module
 from obsidianrag.config import configure_from_vault
 from obsidianrag.v4 import (
-    ExperimentalLexicalRetriever,
-    ExperimentalRetriever,
     FullRebuildRequired,
     IndexBuildLocked,
     IndexCorruptionError,
     IndexPathError,
+    LexicalRetriever,
+    Retriever,
     RevisionInUse,
     active_revision,
     build_index,
+    index_status,
     prune_revisions,
 )
 from obsidianrag.v4.index import SCHEMA_VERSION, _build_lock
-from tests.test_v4_experimental import KeywordEmbeddings, copy_sample_vault
+from tests.test_v4_retrieval import KeywordEmbeddings, copy_sample_vault
 
 
 class TrackingEmbeddings(KeywordEmbeddings):
@@ -61,6 +62,90 @@ def _hold_build_lock(root: str, ready, release) -> None:
     with _build_lock(Path(root)):
         ready.set()
         release.wait(10)
+
+
+def test_pid_liveness_check_does_not_signal_the_current_process():
+    assert index_module._pid_is_alive(os.getpid())
+    assert not index_module._pid_is_alive(2_147_483_647)
+
+
+def test_index_status_missing_does_not_create_managed_directories(tmp_path: Path):
+    vault = copy_sample_vault(tmp_path)
+    status = index_status(vault, KeywordEmbeddings())
+
+    assert status.state == "missing"
+    assert status.active_revision is None
+    assert status.indexed_notes == 0
+    assert status.indexed_chunks == 0
+    assert status.changed_notes == 6
+    assert status.deleted_notes == 0
+    assert not (vault / ".obsidianrag").exists()
+
+
+def test_index_status_reports_current_and_add_modify_delete_stale(tmp_path: Path):
+    vault = copy_sample_vault(tmp_path)
+    configure_from_vault(str(vault))
+    embeddings = KeywordEmbeddings()
+    result = build_index(vault, embeddings)
+
+    current = index_status(vault, embeddings)
+    assert current.state == "current"
+    assert current.active_revision == result.revision
+    assert current.indexed_notes == result.notes
+    assert current.indexed_chunks == result.chunks
+    assert current.changed_notes == 0
+    assert current.deleted_notes == 0
+
+    (vault / "Projects" / "Art.md").write_text("# Art\n\nrollback checklist")
+    (vault / "Added.md").write_text("# Added\n\ncredenciales")
+    (vault / "Reference" / "Error Codes.md").unlink()
+
+    stale = index_status(vault, embeddings)
+    assert stale.state == "stale"
+    assert stale.active_revision == result.revision
+    assert stale.changed_notes == 2
+    assert stale.deleted_notes == 1
+
+
+def test_index_status_requires_rebuild_for_config_or_embedding_mismatch(tmp_path: Path):
+    vault = copy_sample_vault(tmp_path)
+    settings = configure_from_vault(str(vault))
+    embeddings = KeywordEmbeddings()
+    build_index(vault, embeddings)
+    original_size = settings.chunk_size
+    settings.chunk_size += 1
+    try:
+        status = index_status(vault, embeddings)
+        assert status.state == "rebuild_required"
+        assert "chunk_size" in (status.reason or "")
+    finally:
+        settings.chunk_size = original_size
+
+    status = index_status(vault, ConfigurableSpaceEmbeddings(alternate=True))
+    assert status.state == "rebuild_required"
+    assert "fingerprint" in (status.reason or "")
+
+
+def test_index_status_classifies_malformed_or_missing_revision_as_rebuild_required(
+    tmp_path: Path,
+):
+    vault = copy_sample_vault(tmp_path)
+    configure_from_vault(str(vault))
+    build_index(vault, KeywordEmbeddings())
+    active_path = vault / ".obsidianrag" / "v4" / "active.json"
+    active_path.write_text("{truncated")
+
+    malformed = index_status(vault, KeywordEmbeddings())
+    assert malformed.state == "rebuild_required"
+    assert "malformed" in (malformed.reason or "")
+
+    active_path.write_text(
+        json.dumps({"schema_version": SCHEMA_VERSION, "revision": "missing-revision"})
+    )
+    missing = index_status(vault, KeywordEmbeddings())
+    assert missing.state == "rebuild_required"
+    assert missing.active_revision == "missing-revision"
+    assert "missing" in (missing.reason or "")
 
 
 def test_incremental_add_modify_delete_and_noop_only_embeds_changed_notes(tmp_path: Path):
@@ -156,7 +241,7 @@ def test_failed_incremental_build_keeps_active_revision_and_old_reader(tmp_path:
     configure_from_vault(str(vault))
     embeddings = KeywordEmbeddings()
     first = build_index(vault, embeddings)
-    reader = ExperimentalRetriever(vault, embeddings)
+    reader = Retriever(vault, embeddings)
     active_before = active_revision(vault)
     (vault / "Projects" / "Art.md").write_text("# Art\n\nchanged rollback")
 
@@ -208,7 +293,7 @@ def test_old_reader_survives_successful_activation(tmp_path: Path):
     configure_from_vault(str(vault))
     embeddings = KeywordEmbeddings()
     first = build_index(vault, embeddings)
-    reader = ExperimentalRetriever(vault, embeddings)
+    reader = Retriever(vault, embeddings)
     (vault / "Reference" / "Error Codes.md").unlink()
 
     try:
@@ -313,8 +398,8 @@ def test_deleting_last_note_activates_empty_revision(tmp_path: Path):
     assert empty.chunks == 0
     assert empty.deleted_notes == first.notes
 
-    lexical = ExperimentalLexicalRetriever(vault)
-    hybrid = ExperimentalRetriever(vault, embeddings)
+    lexical = LexicalRetriever(vault)
+    hybrid = Retriever(vault, embeddings)
     try:
         assert lexical.invoke("rollback") == []
         assert hybrid.invoke("rollback") == []
@@ -429,7 +514,7 @@ def test_prune_refuses_leased_revision_then_deletes_it_after_close(tmp_path: Pat
     configure_from_vault(str(vault))
     embeddings = KeywordEmbeddings()
     first = build_index(vault, embeddings)
-    reader = ExperimentalRetriever(vault, embeddings)
+    reader = Retriever(vault, embeddings)
     (vault / "Added.md").write_text("# Added\n\nrollback")
     second = build_index(vault, embeddings)
 

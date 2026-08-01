@@ -10,11 +10,26 @@ from langchain_core.messages import BaseMessage, HumanMessage
 from pydantic import SecretStr
 
 from obsidianrag.config import Settings, get_settings
-from obsidianrag.core.qa_service import ModelNotAvailableError, verify_ollama_available
 from obsidianrag.utils.logger import setup_logger
 from obsidianrag.utils.ollama import get_available_ollama_models, pull_ollama_model
 
 logger = setup_logger(__name__)
+
+
+class ModelNotAvailableError(RuntimeError):
+    """Raised when the configured generation model cannot be used."""
+
+
+def verify_ollama_available(settings: Settings | None = None) -> None:
+    """Verify that the configured Ollama endpoint is reachable."""
+    settings = settings or get_settings()
+    try:
+        response = httpx.get(f"{settings.ollama_base_url}/api/tags", timeout=2)
+        response.raise_for_status()
+    except Exception as error:
+        raise ModelNotAvailableError(
+            f"Ollama is not running at {settings.ollama_base_url}. Run: ollama serve"
+        ) from error
 
 
 def normalize_llm_provider(provider: str) -> str:
@@ -147,7 +162,7 @@ def single_human_message(prompt: str) -> list[BaseMessage]:
 
 
 def _verify_ollama_model(model: str, settings: Settings) -> str:
-    verify_ollama_available()
+    verify_ollama_available(settings)
     available_models = get_available_ollama_models(settings.ollama_base_url)
 
     if not available_models:
