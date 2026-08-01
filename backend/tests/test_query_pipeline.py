@@ -173,11 +173,127 @@ def test_context_selection_preserves_top_k_without_lexical_scores(tmp_path):
     assert [document.metadata["source"] for document in result.documents] == ["0.md", "1.md"]
 
 
+def test_multipart_question_retrieves_each_segment_and_keeps_each_leading_source(tmp_path):
+    retriever = MagicMock()
+    retriever.invoke.side_effect = [
+        [
+            Document(
+                page_content="First answer",
+                metadata={"source": "First.md", "score": 10.0, "retrieval_type": "lexical"},
+            ),
+            Document(
+                page_content="First noise",
+                metadata={"source": "Noise.md", "score": 5.0, "retrieval_type": "lexical"},
+            ),
+        ],
+        [
+            Document(
+                page_content="Second answer",
+                metadata={"source": "Second.md", "score": 3.0, "retrieval_type": "lexical"},
+            )
+        ],
+    ]
+    model = MagicMock()
+    model.invoke.return_value = AIMessage(content="First [1], second [2].")
+
+    result = QueryPipeline(retriever, model, vault_path=tmp_path, k=3).ask(
+        "First question?; Second question?"
+    )
+
+    assert [call.args[0] for call in retriever.invoke.call_args_list] == [
+        "First question?",
+        "Second question?",
+    ]
+    assert [document.metadata["source"] for document in result.documents] == [
+        "First.md",
+        "Second.md",
+    ]
+    assert result.citations == ("First.md", "Second.md")
+
+
+def test_multipart_context_applies_relative_threshold_per_segment(tmp_path):
+    retriever = MagicMock()
+    retriever.invoke.side_effect = [
+        [
+            Document(
+                page_content="First",
+                metadata={"source": "First.md", "score": 10.0, "retrieval_type": "lexical"},
+            ),
+            Document(
+                page_content="Related first",
+                metadata={"source": "First-related.md", "score": 7.0, "retrieval_type": "lexical"},
+            ),
+        ],
+        [
+            Document(
+                page_content="Second",
+                metadata={"source": "Second.md", "score": 3.0, "retrieval_type": "lexical"},
+            ),
+            Document(
+                page_content="Related second",
+                metadata={"source": "Second-related.md", "score": 2.1, "retrieval_type": "lexical"},
+            ),
+        ],
+    ]
+    model = MagicMock()
+    model.invoke.return_value = AIMessage(content="Answer [1] [2] [3] [4].")
+
+    result = QueryPipeline(retriever, model, vault_path=tmp_path, k=4).ask("First?; Second?")
+
+    assert [document.metadata["source"] for document in result.documents] == [
+        "First.md",
+        "Second.md",
+        "First-related.md",
+        "Second-related.md",
+    ]
+
+
+def test_multipart_context_limits_each_segment_to_two_sources(tmp_path):
+    retriever = MagicMock()
+    retriever.invoke.side_effect = [
+        [
+            Document(
+                page_content=str(index),
+                metadata={
+                    "source": f"First-{index}.md",
+                    "score": 10.0 - index,
+                    "retrieval_type": "lexical",
+                },
+            )
+            for index in range(3)
+        ],
+        [
+            Document(
+                page_content=str(index),
+                metadata={
+                    "source": f"Second-{index}.md",
+                    "score": 10.0 - index,
+                    "retrieval_type": "lexical",
+                },
+            )
+            for index in range(3)
+        ],
+    ]
+    model = MagicMock()
+    model.invoke.return_value = AIMessage(content="Answer [1] [2] [3] [4].")
+
+    result = QueryPipeline(retriever, model, vault_path=tmp_path, k=5).ask("First?; Second?")
+
+    assert [document.metadata["source"] for document in result.documents] == [
+        "First-0.md",
+        "Second-0.md",
+        "First-1.md",
+        "Second-1.md",
+    ]
+
+
 def test_pipeline_retrieves_once_and_filters_invalid_citations(tmp_path):
     retriever = MagicMock()
     retriever.invoke.return_value = _documents(tmp_path)
     model = MagicMock()
-    model.invoke.return_value = AIMessage(content="One [1], repeated [1], invalid [3].")
+    model.invoke.return_value = AIMessage(
+        content="One [SOURCE 1], repeated [1], invalid [SOURCE 3]."
+    )
     pipeline = QueryPipeline(retriever, model, vault_path=tmp_path, k=2)
 
     result = pipeline.ask("Question")

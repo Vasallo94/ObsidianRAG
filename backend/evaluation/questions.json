@@ -23,6 +23,20 @@
     {
       "question": "Where is the Art project publishing checklist?",
       "expected_sources": ["Projects/Art.md"]
+    },
+    {
+      "question": "How do I roll back a failed deployment?; además, ¿cómo se deben rotar las credenciales de producción?",
+      "expected_sources": [
+        "Operations/Deployment Runbook.md",
+        "Operations/Secret Rotation.md"
+      ]
+    },
+    {
+      "question": "¿Cuándo se hacen las copias completas y cuánto se retienen?; además, ¿qué significa ORG-429 y cuándo debe reintentarse?",
+      "expected_sources": [
+        "Operations/Backup Policy.md",
+        "Reference/Error Codes.md"
+      ]
     }
   ]
 }
