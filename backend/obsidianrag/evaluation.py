@@ -1,5 +1,6 @@
 """Reproducible retrieval evaluation for ObsidianRAG."""
 
+import hashlib
 import json
 import math
 import random
@@ -33,6 +34,7 @@ class CaseResult:
     ndcg: float
     evidence_recall: float | None
     latency_seconds: float
+    annotation_fingerprint: str
 
 
 @dataclass(frozen=True)
@@ -176,6 +178,7 @@ def evaluate_retrieval(
                 ndcg=dcg / ideal_dcg if ideal_dcg else 0.0,
                 evidence_recall=evidence_recall,
                 latency_seconds=latency,
+                annotation_fingerprint=_annotation_fingerprint(case),
             )
         )
 
@@ -229,6 +232,34 @@ def compare_evaluation_results(baseline: dict, candidate: dict, *, samples: int 
     candidate_cases = _cases_by_question(candidate)
     if baseline_cases.keys() != candidate_cases.keys():
         raise ValueError("Evaluation results must contain the same questions")
+    baseline_k = baseline.get("k")
+    candidate_k = candidate.get("k")
+    if (
+        type(baseline_k) is not int
+        or type(candidate_k) is not int
+        or baseline_k < 1
+        or baseline_k != candidate_k
+    ):
+        raise ValueError("Evaluation results must use the same k")
+    for question, baseline_case in baseline_cases.items():
+        candidate_case = candidate_cases[question]
+        baseline_fingerprint = baseline_case.get("annotation_fingerprint")
+        candidate_fingerprint = candidate_case.get("annotation_fingerprint")
+        if (baseline_fingerprint is None) != (candidate_fingerprint is None) or (
+            baseline_fingerprint is not None and baseline_fingerprint != candidate_fingerprint
+        ):
+            raise ValueError("Evaluation results must use the same ground-truth annotations")
+        baseline_sources = baseline_case.get("expected_sources")
+        candidate_sources = candidate_case.get("expected_sources")
+        if (
+            not isinstance(baseline_sources, list)
+            or not all(isinstance(source, str) for source in baseline_sources)
+            or not isinstance(candidate_sources, list)
+            or not all(isinstance(source, str) for source in candidate_sources)
+            or sorted(map(_normalize_relative, baseline_sources))
+            != sorted(map(_normalize_relative, candidate_sources))
+        ):
+            raise ValueError("Evaluation results must use the same expected sources")
     if all(
         case.get("evidence_recall") is not None
         and candidate_cases[question].get("evidence_recall") is not None
@@ -256,6 +287,17 @@ def compare_evaluation_results(baseline: dict, candidate: dict, *, samples: int 
         "case_count": len(baseline_cases),
         "metrics": metrics,
     }
+
+
+def _annotation_fingerprint(case: EvaluationCase) -> str:
+    payload = {
+        "expected_sources": sorted(case.expected_sources),
+        "relevance_grades": sorted(case.relevance_grades),
+        "supporting_evidence": sorted(case.supporting_evidence),
+    }
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
 
 
 def _cases_by_question(payload: dict) -> dict[str, dict]:

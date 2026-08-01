@@ -115,7 +115,7 @@ uv run obsidianrag evaluate-agent private-ground-truth.json \
   --output agent-results.json
 ```
 
-`--allow-private-data` is mandatory because retrieved note chunks are passed to the external commands, which may call a remote provider. The bundled Pi adapter defaults to `openai-codex/gpt-5.6-luna`; override it with `OBSIDIANRAG_PI_MODEL`.
+`--allow-private-data` is mandatory because questions, retrieved note chunks, candidate answers, required facts, and supporting evidence are passed to the external commands, which may call a remote provider. The bundled Pi adapter defaults to `openai-codex/gpt-5.6-luna`; override it with `OBSIDIANRAG_PI_MODEL`.
 
 #### Experimental v4 Retrieval
 

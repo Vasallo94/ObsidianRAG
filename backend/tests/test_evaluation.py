@@ -157,6 +157,7 @@ def test_compare_evaluation_results_pairs_cases_by_question():
     def case(question, value):
         return {
             "question": question,
+            "expected_sources": [f"{question}.md"],
             "precision": value,
             "recall": value,
             "hit": value,
@@ -166,8 +167,8 @@ def test_compare_evaluation_results_pairs_cases_by_question():
         }
 
     result = compare_evaluation_results(
-        {"engine": "v3", "cases": [case("a", 0.2), case("b", 0.4)]},
-        {"engine": "v4", "cases": [case("b", 0.5), case("a", 0.4)]},
+        {"engine": "v3", "k": 5, "cases": [case("a", 0.2), case("b", 0.4)]},
+        {"engine": "v4", "k": 5, "cases": [case("b", 0.5), case("a", 0.4)]},
         samples=100,
     )
 
@@ -192,6 +193,42 @@ def test_compare_evaluation_results_rejects_different_questions():
             {"cases": [{"question": "a", **case}]},
             {"cases": [{"question": "b", **case}]},
         )
+
+
+def test_compare_evaluation_results_rejects_incompatible_runs():
+    case = {
+        "question": "a",
+        "expected_sources": ["Note.md"],
+        "annotation_fingerprint": "same",
+        "precision": 1,
+        "recall": 1,
+        "hit": 1,
+        "reciprocal_rank": 1,
+        "average_precision": 1,
+        "ndcg": 1,
+    }
+
+    with pytest.raises(ValueError, match="same k"):
+        compare_evaluation_results({"k": 1, "cases": [case]}, {"k": 5, "cases": [case]})
+    with pytest.raises(ValueError, match="same k"):
+        compare_evaluation_results({"k": True, "cases": [case]}, {"k": True, "cases": [case]})
+    with pytest.raises(ValueError, match="ground-truth annotations"):
+        compare_evaluation_results(
+            {"k": 5, "cases": [case]},
+            {"k": 5, "cases": [{**case, "annotation_fingerprint": "different"}]},
+        )
+    with pytest.raises(ValueError, match="expected sources"):
+        compare_evaluation_results(
+            {"k": 5, "cases": [case]},
+            {"k": 5, "cases": [{**case, "expected_sources": ["Other.md"]}]},
+        )
+
+    reordered = {**case, "expected_sources": ["Second.md", "Note.md"]}
+    compare_evaluation_results(
+        {"k": 5, "cases": [{**case, "expected_sources": ["Note.md", "Second.md"]}]},
+        {"k": 5, "cases": [reordered]},
+        samples=10,
+    )
 
 
 def test_bootstrap_interval_is_deterministic_and_handles_one_value():

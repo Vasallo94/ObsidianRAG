@@ -40,7 +40,7 @@ class Settings(BaseSettings):
         default=0.0,
         ge=0.0,
         le=2.0,
-        description="Generation temperature; zero is deterministic and recommended for RAG",
+        description="Generation temperature; zero reduces variance and is recommended for RAG",
     )
     ollama_base_url: str = Field(default="http://localhost:11434", description="Ollama API URL")
     compatible_base_url: str = Field(
