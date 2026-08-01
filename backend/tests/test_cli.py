@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from click import unstyle
 from typer.testing import CliRunner
 
 from obsidianrag.cli.main import app
@@ -208,7 +209,7 @@ class TestCLIHelp:
         result = runner.invoke(app, ["v4-search", "--help"])
 
         assert result.exit_code == 0
-        assert "--lexical-only" in result.stdout
+        assert "--lexical-only" in unstyle(result.stdout)
 
     def test_external_agent_evaluation_requires_private_data_confirmation(self, runner, tmp_path):
         dataset = tmp_path / "private.json"
