@@ -1,8 +1,10 @@
 """Centralized configuration for ObsidianRAG using Pydantic Settings"""
 
 import os
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
-from typing import List, Literal
+from typing import Iterator, List, Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -107,7 +109,7 @@ class Settings(BaseSettings):
     max_workers: int = Field(default=4, description="Thread pool max workers")
     request_timeout: int = Field(default=60, description="Request timeout in seconds")
 
-    def configure_paths(self, vault_path: str):
+    def configure_paths(self, vault_path: str, *, create_directories: bool = True):
         """Configure paths based on vault location.
 
         Sets up the database, logs, cache, and metadata paths relative to
@@ -122,10 +124,8 @@ class Settings(BaseSettings):
         self.cache_path = str(data_dir / "cache")
         self.metadata_file = str(data_dir / "metadata.json")
 
-        # Create directories
-        os.makedirs(self.db_path, exist_ok=True)
-        os.makedirs(self.log_path, exist_ok=True)
-        os.makedirs(self.cache_path, exist_ok=True)
+        if create_directories:
+            self.ensure_directories()
 
     def ensure_directories(self):
         """Create required directories if they don't exist."""
@@ -137,13 +137,26 @@ class Settings(BaseSettings):
             os.makedirs(self.cache_path, exist_ok=True)
 
 
-# Global settings instance - will be configured at runtime
+# Global settings remain the default for CLI and library callers.
 settings = Settings()
+_settings_override: ContextVar[Settings | None] = ContextVar(
+    "obsidianrag_settings_override", default=None
+)
 
 
 def get_settings() -> Settings:
-    """Get the global settings instance."""
-    return settings
+    """Get the current app-scoped settings, or the legacy global default."""
+    return _settings_override.get() or settings
+
+
+@contextmanager
+def settings_override(value: Settings) -> Iterator[None]:
+    """Use isolated settings for the current async/thread context."""
+    token = _settings_override.set(value)
+    try:
+        yield
+    finally:
+        _settings_override.reset(token)
 
 
 def configure_from_vault(vault_path: str) -> Settings:

@@ -1,44 +1,50 @@
-"""FastAPI server for ObsidianRAG"""
+"""FastAPI server for the v4 ObsidianRAG runtime."""
+
+from __future__ import annotations
 
 import asyncio
-import gc
 import json
 import time
 import uuid
 from collections import OrderedDict
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, List, Optional, Tuple
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any, AsyncGenerator, AsyncIterator, List, Optional, Tuple
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 
-from obsidianrag.config import configure_from_vault, get_settings
-from obsidianrag.core.db_service import load_or_create_db
+from obsidianrag.config import Settings, get_settings, settings_override
+from obsidianrag.core.db_service import get_embeddings
 from obsidianrag.core.llm_provider import list_llm_models
-from obsidianrag.core.qa_agent import (
-    ask_question_graph,
-    ask_question_graph_streaming,
-    create_qa_graph,
-)
-from obsidianrag.core.qa_service import (
-    ModelNotAvailableError,
-    NoDocumentsFoundError,
-    RAGError,
-    create_hybrid_retriever,
-)
+from obsidianrag.core.query_pipeline import QueryPipeline, await_thread, create_v4_query_pipeline
 from obsidianrag.utils.logger import setup_logger
+from obsidianrag.v4 import (
+    FullRebuildRequired,
+    IndexBuildLocked,
+    IndexCorruptionError,
+    IndexPathError,
+    RevisionInUse,
+    active_revision,
+    build_index,
+    index_status,
+    prune_revisions,
+)
 
 logger = setup_logger(__name__)
 
+API_VERSION = 4
 MAX_SESSIONS = 100
 MAX_HISTORY_PER_SESSION = 20
 
 
 class _LRUSessionStore:
-    """Bounded session store with LRU eviction."""
+    """Bounded application-scoped session store with LRU eviction."""
 
     def __init__(self, max_sessions: int = MAX_SESSIONS):
         self._store: OrderedDict[str, List[Tuple[str, str]]] = OrderedDict()
@@ -47,114 +53,187 @@ class _LRUSessionStore:
     def get(self, sid: str) -> List[Tuple[str, str]]:
         if sid in self._store:
             self._store.move_to_end(sid)
-            return self._store[sid]
+            return list(self._store[sid])
         return []
 
     def set(self, sid: str, history: List[Tuple[str, str]]) -> None:
-        history = history[-MAX_HISTORY_PER_SESSION:]
-        self._store[sid] = history
+        self._store[sid] = history[-MAX_HISTORY_PER_SESSION:]
         self._store.move_to_end(sid)
         if len(self._store) > self._max:
             self._store.popitem(last=False)
 
 
-# Global state
-_db = None
-_qa_app = None
-_retriever = None
-_db_lock: Optional[asyncio.Lock] = None
-_chat_histories = _LRUSessionStore()
-_vault_path: Optional[str] = None
+@dataclass(eq=False)
+class _PipelineSlot:
+    pipeline: QueryPipeline
+    revision: str
+    users: int = 0
+    retired: bool = False
+    closed: bool = False
 
 
-def _strip_vault_prefix(source: str) -> str:
-    """Strip the vault base path from a source path, returning a relative path."""
-    settings = get_settings()
-    vault = settings.obsidian_path
-    if vault and source.startswith(vault):
-        relative = source[len(vault) :]
-        return relative.lstrip("/")
-    return source
+class _IndexNotReady(RuntimeError):
+    pass
 
 
-def create_app(vault_path: Optional[str] = None) -> FastAPI:
-    """Create and configure the FastAPI application.
+class _Runtime:
+    """Own the serving pipeline and retire revisions after checked-out users finish."""
 
-    Args:
-        vault_path: Optional path to Obsidian vault
+    def __init__(self, vault_path: Path | None, settings: Settings | None = None):
+        self.vault_path = vault_path.resolve() if vault_path is not None else None
+        self.settings = settings or get_settings().model_copy(deep=True)
+        self.histories = _LRUSessionStore()
+        self._state_lock = asyncio.Lock()
+        self._index_lock = asyncio.Lock()
+        self._serving: _PipelineSlot | None = None
+        self._retired: list[_PipelineSlot] = []
 
-    Returns:
-        Configured FastAPI application
-    """
-    global _vault_path
-    _vault_path = vault_path
-
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        """Lifespan context manager for startup and shutdown events"""
-        global _db, _qa_app, _retriever, _db_lock
-
-        _db_lock = asyncio.Lock()
-
-        settings = get_settings()
-
-        logger.info("Starting ObsidianRAG application")
-        logger.info("Configuration: %s", settings.model_dump(exclude={"compatible_api_key"}))
-
+    async def startup(self) -> None:
+        if self.vault_path is None:
+            logger.warning("No vault is configured; query service is not ready")
+            return
         try:
-            logger.info("Loading vector database...")
-            vault = _vault_path or settings.obsidian_path
-            if vault:
-                configure_from_vault(vault)
+            status = await self._raw_status()
+            if status.state != "current" or status.active_revision is None:
+                logger.info("v4 index is %s; startup will not build it", status.state)
+                return
+            pipeline = await await_thread(
+                create_v4_query_pipeline, self.vault_path, settings=self.settings
+            )
+            await self._swap(_PipelineSlot(pipeline, status.active_revision))
+            logger.info("Serving v4 revision %s", status.active_revision)
+        except Exception as error:
+            logger.warning("v4 query pipeline is not ready at startup: %s", error)
 
-            _db = load_or_create_db()
+    async def shutdown(self) -> None:
+        to_close: list[_PipelineSlot] = []
+        async with self._state_lock:
+            slots = [*self._retired]
+            if self._serving is not None:
+                slots.append(self._serving)
+                self._serving = None
+            for slot in slots:
+                slot.retired = True
+                if slot.users == 0 and not slot.closed:
+                    slot.closed = True
+                    to_close.append(slot)
+            self._retired = [slot for slot in slots if not slot.closed]
+        for slot in to_close:
+            await self._close(slot)
 
-            if _db is None:
-                logger.error("Could not load database")
-            else:
-                logger.info("Creating LangGraph agent...")
-                _qa_app = create_qa_graph(_db)
-                _retriever = create_hybrid_retriever(_db)
-                logger.info("Application started successfully")
-        except Exception as e:
-            logger.error("Error during startup: %s", e, exc_info=True)
-            raise
+    async def acquire(self) -> _PipelineSlot:
+        async with self._state_lock:
+            slot = self._serving
+            if slot is None:
+                raise _IndexNotReady("No query pipeline is ready")
+            slot.users += 1
+            return slot
 
-        yield
+    async def release(self, slot: _PipelineSlot) -> None:
+        close = False
+        async with self._state_lock:
+            slot.users -= 1
+            if slot.users < 0:
+                raise RuntimeError("Pipeline slot released more than once")
+            if slot.retired and slot.users == 0 and not slot.closed:
+                slot.closed = True
+                close = True
+                if slot in self._retired:
+                    self._retired.remove(slot)
+        if close:
+            await self._close(slot)
 
-        logger.info("Shutting down ObsidianRAG application")
+    async def _close(self, slot: _PipelineSlot) -> None:
+        try:
+            await await_thread(slot.pipeline.close)
+        except Exception as error:
+            logger.warning("Could not close retired query pipeline: %s", error)
 
-    application = FastAPI(
-        title="ObsidianRAG API",
-        description="API for querying Obsidian notes using RAG",
-        version="3.0.0",
-        lifespan=lifespan,
-    )
+    async def _swap(self, candidate: _PipelineSlot) -> None:
+        close: _PipelineSlot | None = None
+        async with self._state_lock:
+            old = self._serving
+            self._serving = candidate
+            if old is not None:
+                old.retired = True
+                if old.users == 0 and not old.closed:
+                    old.closed = True
+                    close = old
+                else:
+                    self._retired.append(old)
+        if close is not None:
+            await self._close(close)
 
-    # Add CORS middleware
-    settings = get_settings()
-    application.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type"],
-    )
+    async def serving_revision(self) -> str | None:
+        async with self._state_lock:
+            return self._serving.revision if self._serving is not None else None
 
-    # Middleware to measure request processing time
-    @application.middleware("http")
-    async def add_process_time_header(request: Request, call_next):
-        start_time = time.time()
-        response = await call_next(request)
-        process_time = time.time() - start_time
-        response.headers["X-Process-Time"] = str(process_time)
-        logger.info("Processing time: %.4f seconds", process_time)
-        return response
+    async def _raw_status(self):
+        vault = self._require_vault()
+        embeddings = await await_thread(get_embeddings)
+        return await await_thread(index_status, vault, embeddings)
 
-    # Register routes
-    _register_routes(application)
+    async def status(self) -> dict[str, Any]:
+        serving = await self.serving_revision()
+        if self.vault_path is None:
+            return {
+                "state": "missing",
+                "active_revision": None,
+                "serving_revision": serving,
+                "query_ready": serving is not None,
+                "indexed_notes": 0,
+                "indexed_chunks": 0,
+                "changed_notes": 0,
+                "deleted_notes": 0,
+                "reason": "Vault is not configured",
+            }
+        status = await self._raw_status()
+        payload = asdict(status)
+        payload["serving_revision"] = serving
+        payload["query_ready"] = serving is not None
+        if status.active_revision != serving and (status.active_revision is not None or serving):
+            payload["state"] = "stale"
+            payload["reason"] = "Active and serving revisions differ"
+        elif status.state == "current" and serving is None:
+            payload["state"] = "stale"
+            payload["reason"] = "The active revision is not loaded for queries"
+        return payload
 
-    return application
+    async def active_revision_name(self) -> str | None:
+        if self.vault_path is None:
+            return None
+        try:
+            revision = await await_thread(active_revision, self.vault_path)
+            return revision.name
+        except RuntimeError:
+            return None
+
+    async def build(self, *, full_rebuild: bool):
+        vault = self._require_vault()
+        async with self._index_lock:
+            embeddings = await await_thread(get_embeddings)
+            result = await await_thread(build_index, vault, embeddings, full_rebuild=full_rebuild)
+            # Activation has completed, but the serving slot is unchanged until the
+            # candidate owns all query resources successfully.
+            candidate_pipeline = await await_thread(
+                create_v4_query_pipeline,
+                vault,
+                embeddings=embeddings,
+                settings=self.settings,
+                revision_path=result.path,
+            )
+            await self._swap(_PipelineSlot(candidate_pipeline, result.revision))
+            return result
+
+    async def prune(self):
+        vault = self._require_vault()
+        async with self._index_lock:
+            return await await_thread(prune_revisions, vault)
+
+    def _require_vault(self) -> Path:
+        if self.vault_path is None:
+            raise IndexPathError("Vault is not configured")
+        return self.vault_path
 
 
 # Pydantic models
@@ -165,10 +244,8 @@ class Question(BaseModel):
 
 class Source(BaseModel):
     source: str = Field(..., description="The source of the information")
-    score: float = Field(0.0, description="Reranker relevance score (higher is better)")
-    retrieval_type: str = Field(
-        "retrieved", description="Retrieval type: 'retrieved' or 'graphrag_link'"
-    )
+    score: float = Field(0.0, description="Retrieval relevance score (higher is better)")
+    retrieval_type: str = Field("retrieved", description="Retrieval method")
 
 
 class Answer(BaseModel):
@@ -180,150 +257,157 @@ class Answer(BaseModel):
     session_id: str = Field(..., description="Session ID used")
 
 
-def _register_routes(application: FastAPI):
-    """Register all API routes."""
+class IndexBuildRequest(BaseModel):
+    full_rebuild: bool = False
+
+
+def _error(status_code: int, code: str, message: str) -> HTTPException:
+    return HTTPException(status_code=status_code, detail={"code": code, "message": message})
+
+
+def _source_list(documents) -> list[Source]:
+    return [
+        Source(
+            source=str(document.metadata.get("source", "Unknown")),
+            score=float(document.metadata.get("score", 0.0)),
+            retrieval_type=str(document.metadata.get("retrieval_type", "retrieved")),
+        )
+        for document in documents
+    ]
+
+
+def create_app(vault_path: Optional[str] = None) -> FastAPI:
+    """Create the application without building an index during startup."""
+    runtime_settings = get_settings().model_copy(deep=True)
+    configured_vault = vault_path or runtime_settings.obsidian_path
+    if configured_vault:
+        runtime_settings.configure_paths(configured_vault, create_directories=False)
+    runtime = _Runtime(
+        Path(configured_vault) if configured_vault else None,
+        settings=runtime_settings,
+    )
+
+    @asynccontextmanager
+    async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+        logger.info("Starting ObsidianRAG API v4")
+        with settings_override(runtime.settings):
+            await runtime.startup()
+            try:
+                yield
+            finally:
+                logger.info("Shutting down ObsidianRAG application")
+                await runtime.shutdown()
+
+    from obsidianrag import __version__
+
+    application = FastAPI(
+        title="ObsidianRAG API",
+        description="API for querying Obsidian notes using RAG",
+        version=__version__,
+        lifespan=lifespan,
+    )
+    application.state.runtime = runtime
+
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=runtime.settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
+    )
+
+    @application.middleware("http")
+    async def add_process_time_header(request, call_next):
+        start_time = time.time()
+        with settings_override(runtime.settings):
+            response = await call_next(request)
+        response.headers["X-Process-Time"] = str(time.time() - start_time)
+        return response
+
+    _register_routes(application)
+    return application
+
+
+def _register_routes(application: FastAPI) -> None:
+    """Register the v4-only HTTP contract."""
+    runtime: _Runtime = application.state.runtime
 
     @application.get("/", summary="Root endpoint")
     async def root():
-        """Welcome endpoint for the API."""
-        return {"message": "Welcome to ObsidianRAG API", "version": "3.0.0"}
+        from obsidianrag import __version__
+
+        return {
+            "message": "Welcome to ObsidianRAG API",
+            "api_version": API_VERSION,
+            "version": __version__,
+        }
 
     @application.post("/ask", response_model=Answer, summary="Ask a question")
-    async def ask(question: Question, request: Request):
-        """Ask a question and get an answer with context."""
+    async def ask(question: Question):
+        start_time = time.time()
         try:
-            logger.info("Received question: %s", question.text)
-            start_time = time.time()
-
-            if _qa_app is None:
-                raise HTTPException(
-                    status_code=503, detail="System not initialized. Try again in a few moments."
-                )
-
-            session_id = question.session_id
-            if not session_id:
-                session_id = str(uuid.uuid4())
-                logger.info("New session created: %s", session_id)
-
-            history = _chat_histories.get(session_id)
-
-            # Snapshot refs under lock, run inference outside
-            if _db_lock is None:
-                raise HTTPException(status_code=503, detail="System not initialized")
-            async with _db_lock:
-                current_app = _qa_app
-
-            loop = asyncio.get_event_loop()
-            result, sources = await loop.run_in_executor(
-                None, lambda: ask_question_graph(current_app, question.text, history)
-            )
-
-            history.append((question.text, result))
-            _chat_histories.set(session_id, history)
-
-            process_time = time.time() - start_time
-            logger.info("Response generated in %.4f seconds", process_time)
-            text_blocks = [source.page_content for source in sources]
-
-            source_list = [
-                Source(
-                    source=_strip_vault_prefix(source.metadata.get("source", "Unknown")),
-                    score=source.metadata.get("score", 0.0),
-                    retrieval_type=source.metadata.get("retrieval_type", "retrieved"),
-                )
-                for source in sources
-            ]
-            source_list.sort(key=lambda x: x.score, reverse=True)
-
+            slot = await runtime.acquire()
+        except _IndexNotReady as error:
+            raise _error(503, "index_not_ready", "Build or load the v4 index first") from error
+        try:
+            session_id = question.session_id or str(uuid.uuid4())
+            history = runtime.histories.get(session_id)
+            result = await await_thread(slot.pipeline.ask, question.text, history)
+            history.append((question.text, result.answer))
+            runtime.histories.set(session_id, history)
+            sources = _source_list(result.documents)
             return Answer(
-                question=question.text,
-                result=result,
-                sources=source_list,
-                text_blocks=text_blocks,
-                process_time=process_time,
+                question=result.question,
+                result=result.answer,
+                sources=sources,
+                text_blocks=[document.page_content for document in result.documents],
+                process_time=time.time() - start_time,
                 session_id=session_id,
             )
-        except ModelNotAvailableError as e:
-            logger.error("LLM provider not available: %s", e)
-            raise HTTPException(status_code=503, detail="LLM provider is not available")
-        except NoDocumentsFoundError as e:
-            logger.error("No documents found: %s", e)
-            raise HTTPException(status_code=404, detail=str(e))
-        except RAGError as e:
-            logger.error("RAG error: %s", e)
-            raise HTTPException(status_code=500, detail=str(e))
+        except ValueError as error:
+            raise _error(400, "invalid_question", "Question is invalid") from error
         except HTTPException:
             raise
-        except Exception as e:
-            logger.error("Unexpected error: %s", e, exc_info=True)
-            raise HTTPException(status_code=500, detail="Internal server error")
+        except Exception as error:
+            logger.error("Query failed: %s", error, exc_info=True)
+            raise _error(500, "query_failed", "The query could not be completed") from error
+        finally:
+            await runtime.release(slot)
 
     @application.post("/ask/stream", summary="Ask a question with streaming")
-    async def ask_stream(question: Question, request: Request):
-        """Ask a question and stream the response with progress updates via SSE."""
-        import time as time_module
+    async def ask_stream(question: Question):
+        try:
+            slot = await runtime.acquire()
+        except _IndexNotReady as error:
+            raise _error(503, "index_not_ready", "Build or load the v4 index first") from error
+
+        session_id = question.session_id or str(uuid.uuid4())
+        history = runtime.histories.get(session_id)
 
         async def event_generator() -> AsyncGenerator[str, None]:
-            """Generate SSE events for the streaming response."""
-            event_count = 0
-            stream_start = time_module.time()
-
+            last_event: dict[str, Any] | None = None
             try:
-                if _db is None or _retriever is None:
-                    yield f"data: {json.dumps({'type': 'error', 'message': 'System not initialized'})}\n\n"
-                    return
-
-                session_id = question.session_id or str(uuid.uuid4())
-                history = _chat_histories.get(session_id)
-
-                retriever = _retriever
-
-                # Send start event
-                logger.info("[SSE] Sending start event")
                 yield f"data: {json.dumps({'type': 'start', 'session_id': session_id})}\n\n"
-
-                # Stream with direct retrieval and LLM streaming
-                last_event = None
-                async for event in ask_question_graph_streaming(
-                    _qa_app, question.text, history, retriever=retriever, db=_db
-                ):
-                    event_count += 1
-                    event_type = event.get("type", "unknown")
-                    elapsed = time_module.time() - stream_start
-
-                    if event_type == "token":
-                        if event_count % 10 == 0:
-                            logger.info("[SSE #%d] +%.2fs token batch", event_count, elapsed)
-                    else:
-                        logger.info("[SSE #%d] +%.2fs %s", event_count, elapsed, event_type)
-
-                    # Strip vault paths from source events
-                    if event_type == "sources" and "sources" in event:
-                        for src in event["sources"]:
-                            if "source" in src:
-                                src["source"] = _strip_vault_prefix(src["source"])
-
-                    yield f"data: {json.dumps(event)}\n\n"
+                async for event in slot.pipeline.stream(question.text, history):
                     last_event = event
-
-                # Update history
+                    yield f"data: {json.dumps(event)}\n\n"
                 if last_event and last_event.get("type") == "answer":
-                    history.append((question.text, last_event.get("answer", "")))
-                    _chat_histories.set(session_id, history)
-
-                total_time = time_module.time() - stream_start
-                logger.info("[SSE] Stream complete: %d events in %.2fs", event_count, total_time)
-
-            except Exception as e:
-                logger.error("Streaming error: %s", e, exc_info=True)
-                yield f"data: {json.dumps({'type': 'error', 'message': 'An error occurred while processing your request'})}\n\n"
-
-            # Send end event
+                    history.append((question.text, str(last_event.get("answer", ""))))
+                    runtime.histories.set(session_id, history)
+            except Exception as error:
+                logger.error("Streaming query failed: %s", error, exc_info=True)
+                event = {
+                    "type": "error",
+                    "code": "query_failed",
+                    "message": "The query could not be completed",
+                }
+                yield f"data: {json.dumps(event)}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
         return StreamingResponse(
             event_generator(),
             media_type="text/event-stream",
+            background=BackgroundTask(runtime.release, slot),
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
@@ -333,16 +417,15 @@ def _register_routes(application: FastAPI):
 
     @application.get("/capabilities", summary="Backend protocol capabilities")
     async def capabilities():
-        """Describe the stable features available to API clients."""
         from obsidianrag import __version__
 
         return {
-            "api_version": 3,
+            "api_version": API_VERSION,
             "backend_version": __version__,
             "features": [
                 "hybrid-retrieval",
                 "incremental-indexing",
-                "reranker",
+                "index-lifecycle",
                 "sse",
             ],
             "providers": ["ollama", "lmstudio", "custom"],
@@ -350,15 +433,18 @@ def _register_routes(application: FastAPI):
 
     @application.get("/health", summary="System status")
     async def health():
-        """Check system status and show current configuration."""
-        settings = get_settings()
-        is_ready = _db is not None and _qa_app is not None
-
         from obsidianrag import __version__
 
-        info = {
-            "status": "ok" if is_ready else "unavailable",
+        settings = runtime.settings
+        serving = await runtime.serving_revision()
+        active = await runtime.active_revision_name()
+        return {
+            "status": "ok",
+            "api_version": API_VERSION,
             "version": __version__,
+            "query_ready": serving is not None,
+            "active_revision": active,
+            "serving_revision": serving,
             "llm_provider": settings.llm_provider,
             "llm_api_format": settings.llm_api_format,
             "model": settings.llm_model,
@@ -366,132 +452,79 @@ def _register_routes(application: FastAPI):
             "embedding_model": settings.embedding_model
             if settings.embedding_provider == "huggingface"
             else settings.ollama_embedding_model,
-            "db_ready": _db is not None,
         }
-
-        if not is_ready:
-            raise HTTPException(status_code=503, detail=info)
-
-        return info
 
     @application.get("/models", summary="Available LLM models")
     async def models():
-        """List available models for the configured LLM provider."""
         try:
-            loop = asyncio.get_event_loop()
-            available = await loop.run_in_executor(None, list_llm_models)
-            return {"models": available}
-        except Exception as e:
-            logger.warning("Could not list LLM models: %s", e)
-            raise HTTPException(
-                status_code=502, detail="Could not list available models from provider"
-            )
+            return {"models": await await_thread(list_llm_models)}
+        except Exception as error:
+            logger.warning("Could not list LLM models: %s", error)
+            raise _error(502, "models_unavailable", "Could not list available models") from error
 
-    @application.get("/stats", summary="Vault statistics")
-    async def get_stats():
-        """Get statistics about the indexed Obsidian vault."""
-        settings = get_settings()
-        if _db is None:
-            raise HTTPException(status_code=503, detail="Database not ready")
-
+    @application.get("/index/status", summary="v4 index status")
+    async def get_index_status():
         try:
-            db_data = _db.get()
-            documents = db_data.get("documents", [])
-            metadatas = db_data.get("metadatas", [])
+            return await runtime.status()
+        except IndexPathError as error:
+            raise _error(400, "unsafe_index_path", "Index paths are unsafe") from error
+        except Exception as error:
+            logger.error("Could not inspect v4 index: %s", error, exc_info=True)
+            raise _error(500, "index_status_failed", "Could not inspect the v4 index") from error
 
-            total_chunks = len(documents)
-            total_chars = sum(len(doc) for doc in documents)
-            total_words = sum(len(doc.split()) for doc in documents)
-
-            sources = set()
-            folders = set()
-            links = set()
-
-            for meta in metadatas:
-                source = meta.get("source", "")
-                if source:
-                    sources.add(source)
-                    parts = source.split("/")
-                    if len(parts) > 1:
-                        folders.add(parts[-2])
-
-                links_str = meta.get("links", "")
-                if links_str:
-                    for link in links_str.split(","):
-                        if link.strip():
-                            links.add(link.strip())
-
-            vault_name = "Unknown"
-            if settings.obsidian_path:
-                vault_name = settings.obsidian_path.rstrip("/").split("/")[-1]
-
-            return {
-                "total_notes": len(sources),
-                "total_chunks": total_chunks,
-                "total_words": total_words,
-                "total_chars": total_chars,
-                "avg_words_per_chunk": total_words // total_chunks if total_chunks > 0 else 0,
-                "folders": len(folders),
-                "internal_links": len(links),
-                "vault_path": vault_name,
-            }
-        except Exception as e:
-            logger.error("Error getting stats: %s", e, exc_info=True)
-            raise HTTPException(status_code=500, detail="Failed to retrieve vault statistics")
-
-    @application.post("/rebuild_db", summary="Rebuild database")
-    async def rebuild_db():
-        """Force rebuild of the vector database to index new files."""
+    @application.post("/index/build", summary="Build or refresh the v4 index")
+    async def build(request: IndexBuildRequest):
         try:
-            logger.info("Database rebuild request received")
-            global _db, _qa_app, _retriever
-
-            if _db_lock is None:
-                raise HTTPException(status_code=503, detail="System not initialized")
-            async with _db_lock:
-                _db = None
-                _qa_app = None
-                _retriever = None
-                gc.collect()
-
-                _db = load_or_create_db(force_rebuild=True)
-
-                if _db is None:
-                    raise HTTPException(status_code=500, detail="Error rebuilding database")
-
-                _qa_app = create_qa_graph(_db)
-                _retriever = create_hybrid_retriever(_db)
-
-                # Get statistics to return
-                db_data = _db.get()
-                total_chunks = len(db_data.get("documents", []))
-
+            result = await runtime.build(full_rebuild=request.full_rebuild)
             return {
                 "status": "success",
-                "message": "Database rebuilt and graph updated",
-                "total_chunks": total_chunks,
+                "revision": result.revision,
+                "notes": result.notes,
+                "chunks": result.chunks,
+                "reused_chunks": result.reused_chunks,
+                "reindexed_notes": result.reindexed_notes,
+                "deleted_notes": result.deleted_notes,
+                "query_ready": True,
             }
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error("Error rebuilding DB: %s", e, exc_info=True)
-            raise HTTPException(status_code=500, detail="Failed to rebuild database")
+        except FullRebuildRequired as error:
+            raise _error(409, "full_rebuild_required", "A full rebuild is required") from error
+        except IndexBuildLocked as error:
+            raise _error(409, "index_build_locked", "Another index operation is running") from error
+        except IndexPathError as error:
+            raise _error(400, "unsafe_index_path", "Index paths are unsafe") from error
+        except Exception as error:
+            logger.error("v4 index build failed: %s", error, exc_info=True)
+            raise _error(500, "index_build_failed", "The v4 index could not be built") from error
+
+    @application.post("/index/prune", summary="Prune inactive v4 revisions")
+    async def prune():
+        try:
+            result = await runtime.prune()
+            return {
+                "status": "success",
+                "active_revision": result.active_revision,
+                "deleted_revisions": list(result.deleted_revisions),
+            }
+        except RevisionInUse as error:
+            raise _error(409, "revision_in_use", "An inactive revision is still in use") from error
+        except (IndexCorruptionError, IndexBuildLocked) as error:
+            raise _error(409, "index_not_ready", "No prunable v4 index is ready") from error
+        except IndexPathError as error:
+            raise _error(400, "unsafe_index_path", "Index paths are unsafe") from error
+        except Exception as error:
+            logger.error("v4 index prune failed: %s", error, exc_info=True)
+            raise _error(
+                500, "index_prune_failed", "Inactive revisions could not be pruned"
+            ) from error
 
 
 # Default app for direct uvicorn usage
 app = create_app()
 
 
-def run_server(vault_path: str, host: str = "127.0.0.1", port: int = 8000):
-    """Run the server programmatically.
-
-    Args:
-        vault_path: Path to Obsidian vault
-        host: Host to bind to
-        port: Port to bind to
-    """
-    server_app = create_app(vault_path)
-    uvicorn.run(server_app, host=host, port=port)
+def run_server(vault_path: str, host: str = "127.0.0.1", port: int = 8000) -> None:
+    """Run the v4 server programmatically."""
+    uvicorn.run(create_app(vault_path), host=host, port=port)
 
 
 if __name__ == "__main__":

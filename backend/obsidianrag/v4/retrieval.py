@@ -21,9 +21,9 @@ RRF_CONSTANT = 60
 class LexicalRetriever:
     """Retrieve chunks from the authoritative SQLite FTS5 catalog without embeddings."""
 
-    def __init__(self, vault_path: Path):
+    def __init__(self, vault_path: Path, *, revision_path: Path | None = None):
         self.vault_path = vault_path.resolve()
-        self.revision_path = active_revision(self.vault_path)
+        self.revision_path = revision_path or active_revision(self.vault_path)
         self.lease = acquire_revision_lease(self.vault_path, self.revision_path)
         try:
             self.connection = sqlite3.connect(
@@ -74,10 +74,16 @@ class LexicalRetriever:
 class Retriever:
     """Retrieve chunks from the active experimental index revision."""
 
-    def __init__(self, vault_path: Path, embeddings: Embeddings):
+    def __init__(
+        self,
+        vault_path: Path,
+        embeddings: Embeddings,
+        *,
+        revision_path: Path | None = None,
+    ):
         self.vault_path = vault_path.resolve()
         self.embeddings = embeddings
-        self.revision_path = active_revision(self.vault_path)
+        self.revision_path = revision_path or active_revision(self.vault_path)
         self.lease = acquire_revision_lease(self.vault_path, self.revision_path)
         try:
             self.connection = sqlite3.connect(

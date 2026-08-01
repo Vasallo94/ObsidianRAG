@@ -7,9 +7,10 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
-from typing import Any, AsyncIterator, Literal
+from typing import Any, AsyncIterator, Callable, Literal, TypeVar
 
 from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
@@ -23,6 +24,26 @@ CONTEXT_LEXICAL_SCORE_RATIO = 0.70
 MAX_MULTIPART_SOURCES_PER_SEGMENT = 2
 MAX_PASSAGES_PER_SOURCE = 2
 MAX_MULTIPART_PASSAGES_PER_SOURCE = 4
+_T = TypeVar("_T")
+
+
+async def await_thread(function: Callable[..., _T], *args: Any, **kwargs: Any) -> _T:
+    """Wait for thread work to finish before propagating caller cancellation."""
+    task = asyncio.create_task(asyncio.to_thread(function, *args, **kwargs))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                continue
+        try:
+            task.result()
+        except BaseException:
+            pass
+        raise
+
 
 _SYSTEM_PROMPT = """You answer questions using only the supplied Obsidian note context.
 
@@ -104,7 +125,7 @@ class QueryPipeline:
         """Stream an answer using the same retrieval and messages as ``ask``."""
         _validate_question(question)
         yield {"type": "status", "message": "Searching your notes..."}
-        prepared = await asyncio.to_thread(self._prepare, question, history or [])
+        prepared = await await_thread(self._prepare, question, history or [])
         yield {
             "type": "retrieve_complete",
             "docs_count": len(prepared.documents),
@@ -335,6 +356,8 @@ def create_v4_query_pipeline(
     engine: Literal["v4", "v4-fts"] = "v4",
     k: int = 5,
     settings: Settings | None = None,
+    embeddings: Embeddings | None = None,
+    revision_path: Path | None = None,
 ) -> QueryPipeline:
     """Create a v4 query pipeline and transfer retriever ownership to it."""
     from obsidianrag.v4 import LexicalRetriever, Retriever
@@ -343,11 +366,15 @@ def create_v4_query_pipeline(
         raise ValueError("k must be at least 1")
     resolved_vault = vault_path.resolve()
     if engine == "v4-fts":
-        retriever: LexicalRetriever | Retriever = LexicalRetriever(resolved_vault)
+        retriever: LexicalRetriever | Retriever = LexicalRetriever(
+            resolved_vault, revision_path=revision_path
+        )
     elif engine == "v4":
-        from obsidianrag.core.db_service import get_embeddings
+        if embeddings is None:
+            from obsidianrag.core.db_service import get_embeddings
 
-        retriever = Retriever(resolved_vault, get_embeddings())
+            embeddings = get_embeddings()
+        retriever = Retriever(resolved_vault, embeddings, revision_path=revision_path)
     else:
         raise ValueError("engine must be 'v4' or 'v4-fts'")
 
