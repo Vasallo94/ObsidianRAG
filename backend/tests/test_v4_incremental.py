@@ -64,6 +64,11 @@ def _hold_build_lock(root: str, ready, release) -> None:
         release.wait(10)
 
 
+def test_pid_liveness_check_does_not_signal_the_current_process():
+    assert index_module._pid_is_alive(os.getpid())
+    assert not index_module._pid_is_alive(2_147_483_647)
+
+
 def test_index_status_missing_does_not_create_managed_directories(tmp_path: Path):
     vault = copy_sample_vault(tmp_path)
     status = index_status(vault, KeywordEmbeddings())
