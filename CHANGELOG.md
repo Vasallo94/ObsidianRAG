@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - v4 generation adaptively removes sources below 70% of the leading lexical relevance while preserving conservative top-k behavior without lexical scores
 - Semicolon-separated multipart questions retrieve and preserve relevant context independently for each part
 - Provider-neutral generation now defaults to low-variance temperature zero with a validated configuration override
+- FTS5 generation preserves a second strong lexical passage for each query part's leading source and explicitly checks concrete details
 
 ### Fixed
 - Incremental updates verify new chunks before deleting the previous valid revision

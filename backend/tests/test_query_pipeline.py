@@ -75,6 +75,7 @@ def test_sync_and_stream_share_prompt_history_and_source_semantics(tmp_path):
     assert "[SOURCE 2]\nPath: Notes/Second.md" in sync_messages[0].content
     assert "untrusted data" in sync_messages[0].content
     assert "does not support an answer" in sync_messages[0].content
+    assert "every relevant concrete name, command, number" in sync_messages[0].content
     assert sync_result.citations == ("Notes/First.md", "Notes/Second.md")
     assert final["answer"] == sync_result.answer
     assert final["citations"] == list(sync_result.citations)
@@ -90,6 +91,91 @@ def test_sync_and_stream_share_prompt_history_and_source_semantics(tmp_path):
         "token",
         "answer",
     ]
+
+
+def test_pipeline_merges_two_strong_lexical_passages_from_the_same_source(tmp_path):
+    retriever = MagicMock()
+    retriever.invoke.return_value = [
+        Document(
+            page_content="First passage",
+            metadata={
+                "source": "Note.md",
+                "chunk_id": "one",
+                "score": 10.0,
+                "retrieval_type": "lexical",
+            },
+        ),
+        Document(
+            page_content="Second passage",
+            metadata={
+                "source": "Note.md",
+                "chunk_id": "two",
+                "score": 8.0,
+                "retrieval_type": "lexical",
+            },
+        ),
+        Document(
+            page_content="Other source",
+            metadata={
+                "source": "Other.md",
+                "chunk_id": "three",
+                "score": 7.5,
+                "retrieval_type": "lexical",
+            },
+        ),
+        Document(
+            page_content="Other source detail",
+            metadata={
+                "source": "Other.md",
+                "chunk_id": "four",
+                "score": 7.2,
+                "retrieval_type": "lexical",
+            },
+        ),
+    ]
+    model = MagicMock()
+    model.invoke.return_value = AIMessage(content="Both passages [1].")
+
+    result = QueryPipeline(retriever, model, vault_path=tmp_path, k=2).ask("Question")
+
+    assert len(result.documents) == 2
+    assert result.documents[0].page_content == "First passage\n\nSecond passage"
+    assert result.documents[0].metadata["passage_chunk_ids"] == ["one", "two"]
+    assert result.documents[1].page_content == "Other source"
+    assert result.citations == ("Note.md",)
+
+
+@pytest.mark.parametrize("second_score, expected_passages", [(7.0, 2), (6.9, 1)])
+def test_passage_merge_applies_inclusive_relative_threshold(
+    tmp_path, second_score, expected_passages
+):
+    retriever = MagicMock()
+    retriever.invoke.return_value = [
+        Document(
+            page_content="Primary",
+            metadata={
+                "source": "Note.md",
+                "chunk_id": "one",
+                "score": 10.0,
+                "retrieval_type": "lexical",
+            },
+        ),
+        Document(
+            page_content="Detail",
+            metadata={
+                "source": "Note.md",
+                "chunk_id": "two",
+                "score": second_score,
+                "retrieval_type": "lexical",
+            },
+        ),
+    ]
+    model = MagicMock()
+    model.invoke.return_value = AIMessage(content="Answer [1].")
+
+    result = QueryPipeline(retriever, model, vault_path=tmp_path).ask("Question")
+
+    assert len(result.documents[0].metadata["passage_chunk_ids"]) == expected_passages
 
 
 def test_context_selection_drops_low_relative_lexical_source(tmp_path):
@@ -276,6 +362,136 @@ def test_multipart_context_applies_relative_threshold_per_segment(tmp_path):
         "First-related.md",
         "Second-related.md",
     ]
+
+
+def test_multipart_merges_passages_when_the_same_source_leads_both_parts(tmp_path):
+    retriever = MagicMock()
+    retriever.invoke.side_effect = [
+        [
+            Document(
+                page_content="First part primary",
+                metadata={
+                    "source": "Same.md",
+                    "chunk_id": "a1",
+                    "score": 10.0,
+                    "retrieval_type": "lexical",
+                },
+            ),
+            Document(
+                page_content="First part detail",
+                metadata={
+                    "source": "Same.md",
+                    "chunk_id": "a2",
+                    "score": 8.0,
+                    "retrieval_type": "lexical",
+                },
+            ),
+        ],
+        [
+            Document(
+                page_content="Second part primary",
+                metadata={
+                    "source": "Same.md",
+                    "chunk_id": "b1",
+                    "score": 9.0,
+                    "retrieval_type": "lexical",
+                },
+            ),
+            Document(
+                page_content="Second part detail",
+                metadata={
+                    "source": "Same.md",
+                    "chunk_id": "b2",
+                    "score": 7.5,
+                    "retrieval_type": "lexical",
+                },
+            ),
+        ],
+        [
+            Document(
+                page_content="Third part primary",
+                metadata={
+                    "source": "Same.md",
+                    "chunk_id": "c1",
+                    "score": 8.0,
+                    "retrieval_type": "lexical",
+                },
+            ),
+            Document(
+                page_content="Third part detail",
+                metadata={
+                    "source": "Same.md",
+                    "chunk_id": "c2",
+                    "score": 6.0,
+                    "retrieval_type": "lexical",
+                },
+            ),
+        ],
+    ]
+    model = MagicMock()
+    model.invoke.return_value = AIMessage(content="All parts [1].")
+
+    result = QueryPipeline(retriever, model, vault_path=tmp_path, k=5).ask(
+        "First?; Second?; Third?"
+    )
+
+    assert len(result.documents) == 1
+    assert result.documents[0].metadata["passage_chunk_ids"] == ["a1", "b1", "c1", "a2"]
+    assert result.documents[0].metadata["context_segments"] == [0, 1, 2]
+    assert "First part detail" in result.documents[0].page_content
+    assert "Second part primary" in result.documents[0].page_content
+    assert "Third part primary" in result.documents[0].page_content
+
+
+def test_multipart_filters_each_segment_before_merging_shared_sources(tmp_path):
+    retriever = MagicMock()
+    retriever.invoke.side_effect = [
+        [
+            Document(
+                page_content="First",
+                metadata={
+                    "source": "Same.md",
+                    "chunk_id": "a",
+                    "score": 10.0,
+                    "retrieval_type": "lexical",
+                },
+            )
+        ],
+        [
+            Document(
+                page_content="Second",
+                metadata={
+                    "source": "Same.md",
+                    "chunk_id": "b",
+                    "score": 10.0,
+                    "retrieval_type": "lexical",
+                },
+            ),
+            Document(
+                page_content="Noise",
+                metadata={
+                    "source": "Noise.md",
+                    "chunk_id": "noise",
+                    "score": 6.0,
+                    "retrieval_type": "lexical",
+                },
+            ),
+        ],
+    ]
+    model = MagicMock()
+    model.invoke.return_value = AIMessage(content="Answer [1].")
+
+    result = QueryPipeline(retriever, model, vault_path=tmp_path, k=5).ask("First?; Second?")
+
+    assert [document.metadata["source"] for document in result.documents] == ["Same.md"]
+    assert result.documents[0].metadata["context_segments"] == [0, 1]
+
+
+def test_multipart_rejects_more_parts_than_the_bounded_merge_can_preserve(tmp_path):
+    pipeline = QueryPipeline(MagicMock(), MagicMock(), vault_path=tmp_path)
+
+    with pytest.raises(ValueError, match="at most 4"):
+        pipeline.ask("one; two; three; four; five")
 
 
 def test_multipart_context_limits_each_segment_to_two_sources(tmp_path):
