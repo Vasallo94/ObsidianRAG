@@ -24,10 +24,10 @@ ObsidianRAG 4 uses SQLite FTS5 and embedded LanceDB as its only retrieval engine
 Install the backend:
 
 ```bash
-uv tool install obsidianrag==4.0.0
+uv tool install obsidianrag==4.0.1
 ```
 
-Install the plugin assets from the `plugin-v4.0.0` GitHub release:
+Install the plugin assets from the `plugin-v4.0.1` GitHub release:
 
 - `main.js`
 - `manifest.json`
@@ -130,16 +130,16 @@ Readers lease their current revision. A new revision may activate while old requ
 | `POST /index/build` | Incremental build or explicit full rebuild |
 | `POST /index/prune` | Remove unleased inactive revisions |
 
-API 3 clients and backends are intentionally incompatible with 4.0.0.
+API 3 clients and backends are intentionally incompatible with 4.0.1.
 
 ## Migration from 3.x
 
-- Install backend and plugin 4.0.0 together.
+- Install backend and plugin 4.0.1 together.
 - Existing `.obsidianrag/v4` revisions are reused when compatible.
 - Legacy `.obsidianrag/db` Chroma data is ignored and never deleted automatically.
 - Replace compound backend commands such as `uv run obsidianrag` with an executable path or name.
 - Build the v4 index explicitly if no compatible revision exists.
-- Remove legacy index data manually only after validating 4.0.0.
+- Remove legacy index data manually only after validating 4.0.1.
 
 ## Development
 
@@ -164,10 +164,10 @@ Tests use temporary fixture vaults. Integration tests requiring a real provider 
 
 ## Release
 
-Backend and plugin share version `4.0.0` but publish independently:
+Backend and plugin share version `4.0.1` but publish independently:
 
-1. Tag `backend-v4.0.0` and verify PyPI.
-2. Tag `plugin-v4.0.0` and verify GitHub release assets.
+1. Tag `backend-v4.0.1` and verify PyPI.
+2. Tag `plugin-v4.0.1` and verify GitHub release assets.
 
 ## License
 

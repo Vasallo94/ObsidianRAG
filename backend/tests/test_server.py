@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Event
 from unittest.mock import MagicMock
@@ -170,6 +171,55 @@ def test_missing_pipeline_queries_return_structured_503(
         }
 
 
+def test_same_session_turns_serialize_without_blocking_other_sessions(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    pipeline = _pipeline()
+    started = Event()
+    release = Event()
+    observed: list[tuple[str, list[tuple[str, str]]]] = []
+    template = pipeline.ask.return_value
+
+    def controlled_ask(question: str, history: list[tuple[str, str]]) -> QueryResult:
+        observed.append((question, list(history)))
+        if question == "first":
+            started.set()
+            assert release.wait(5)
+        return QueryResult(
+            question=question,
+            answer=f"{question} answer",
+            documents=template.documents,
+            citations=template.citations,
+        )
+
+    pipeline.ask.side_effect = controlled_ask
+    app, _, _ = _configure(
+        monkeypatch, tmp_path, statuses=_status("current", "revision-1"), pipelines=[pipeline]
+    )
+
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=3) as executor:
+        first = executor.submit(client.post, "/ask", json={"text": "first", "session_id": "shared"})
+        assert started.wait(2)
+        second = executor.submit(
+            client.post, "/ask", json={"text": "second", "session_id": "shared"}
+        )
+        other = executor.submit(
+            client.post, "/ask", json={"text": "other", "session_id": "independent"}
+        )
+        try:
+            assert other.result(timeout=2).status_code == 200
+            assert not second.done()
+        finally:
+            release.set()
+        assert first.result(timeout=2).status_code == 200
+        assert second.result(timeout=2).status_code == 200
+
+    histories = {question: history for question, history in observed}
+    assert histories["first"] == []
+    assert histories["other"] == []
+    assert histories["second"] == [("first", "first answer")]
+
+
 def test_ask_uses_v4_pipeline_and_preserves_response_shape(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
@@ -187,6 +237,31 @@ def test_ask_uses_v4_pipeline_and_preserves_response_shape(
     assert response.json()["text_blocks"] == ["Evidence"]
     pipeline.ask.assert_called_once()
     pipeline.close.assert_called_once_with()
+
+
+def test_stream_history_propagates_to_the_next_session_turn(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    pipeline = _pipeline("Stream answer [1]")
+    observed: list[tuple[str, list[tuple[str, str]]]] = []
+    template: QueryResult = pipeline.ask.return_value
+
+    def record_history(question: str, history: list[tuple[str, str]]) -> QueryResult:
+        observed.append((question, list(history)))
+        return template
+
+    pipeline.ask.side_effect = record_history
+    app, _, _ = _configure(
+        monkeypatch, tmp_path, statuses=_status("current", "revision-1"), pipelines=[pipeline]
+    )
+
+    with TestClient(app) as client:
+        streamed = client.post("/ask/stream", json={"text": "First", "session_id": "shared"})
+        answer = client.post("/ask", json={"text": "Second", "session_id": "shared"})
+
+    assert streamed.status_code == 200
+    assert answer.status_code == 200
+    assert observed == [("Second", [("First", "Stream answer [1]")])]
 
 
 def test_successful_build_swaps_and_closes_unused_old_slot(

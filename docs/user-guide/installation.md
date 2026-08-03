@@ -1,63 +1,71 @@
 # Installation Guide
 
-## Prerequisites
+ObsidianRAG 4 requires matching backend and plugin releases. It does not index a vault automatically.
 
-Before installing ObsidianRAG, ensure you have the following components ready:
+## Requirements
 
-1.  **Obsidian**: Version 1.5.0 or higher.
-2.  **Python**: Version 3.11 or higher.
-    -   Verify with `python --version` in your terminal.
-    -   If not installed, download from [python.org](https://www.python.org/downloads/).
-3.  **Ollama**: For running the local LLM.
-    -   Download from [ollama.ai](https://ollama.ai).
-    -   Start the Ollama server (usually runs in the background).
-4.  **LLM Model**: Pull a model to use (e.g., `gemma3`).
-    -   Run `ollama pull gemma3` in your terminal.
+- Obsidian 1.5 or newer
+- Python 3.11 or newer
+- An Ollama, LM Studio, or compatible generation server with an available model
 
-## Step 1: Install the Backend
+## Install the backend
 
-The backend is a Python package that handles the heavy lifting (RAG, embeddings, LLM communication).
+Install the isolated command with uv:
 
-1.  Open your terminal.
-2.  Install the package using pip:
-    ```bash
-    pip install obsidianrag
-    ```
-    *Note: We recommend using `pipx` for isolated installation: `pipx install obsidianrag`*
+```bash
+uv tool install obsidianrag==4.0.1
+```
 
-3.  Verify the installation:
-    ```bash
-    obsidianrag --version
-    ```
+Alternatively, use pipx:
 
-## Step 2: Install the Plugin
+```bash
+pipx install obsidianrag==4.0.1
+```
 
-1.  Open Obsidian.
-2.  Go to **Settings** > **Community Plugins**.
-3.  Ensure **Restricted mode** is **OFF**.
-4.  Click **Browse** and search for `Vault RAG`.
-5.  Click **Install**.
-6.  Once installed, click **Enable**.
+Verify the installed command and version:
 
-> **Note**: The plugin is currently pending approval for Community Plugins. For now, you can install manually by downloading from [GitHub Releases](https://github.com/Vasallo94/ObsidianRAG/releases) and placing the files in your `.obsidian/plugins/vault-rag/` folder.
+```bash
+obsidianrag version
+```
 
-## Step 3: Initial Configuration
+## Install the plugin
 
-Upon enabling the plugin, a **Setup Wizard** should appear. If not, you can access settings via **Settings** > **ObsidianRAG**.
+Download these files from the `plugin-v4.0.1` GitHub release:
 
-1.  **Backend Command**: The plugin tries to detect your `obsidianrag` executable.
-    -   If it fails, find the path with `which obsidianrag` (macOS/Linux) or `where obsidianrag` (Windows) and paste it here.
-2.  **Server Port**: Default is `8000`. Change only if this port is occupied.
-3.  **LLM Model**: Select the model you pulled earlier (e.g., `gemma3`).
-    -   *Note: If the dropdown is empty, ensure Ollama is running.*
+- `main.js`
+- `manifest.json`
+- `styles.css`
 
-## Step 4: Verify Installation
+Place them in `<vault>/.obsidian/plugins/vault-rag/`, reload Obsidian, and enable **Vault RAG** under **Settings > Community plugins**.
 
-1.  Check the status bar at the bottom right of Obsidian. It should show **🤖 RAG ●** (Online).
-2.  Click the icon to open the chat view.
-3.  Ask a simple question like "What is in my vault?".
-4.  The first request will trigger an index of your vault. This might take a moment.
+## Configure the plugin
 
-## Troubleshooting
+Open **Settings > Vault RAG** and configure:
 
-If you encounter issues, please refer to the [Troubleshooting Guide](TROUBLESHOOTING.md).
+1. **Backend executable**: `obsidianrag`, `obsidianrag.exe` on Windows, or its absolute path. Do not enter a compound shell command.
+2. **Server port**: `8000` unless another process uses it.
+3. **Model provider**: Ollama, LM Studio, or a compatible custom endpoint.
+4. **Model** and provider URL.
+5. **Auto-start server**, if desired.
+
+Backend and plugin 4.0.1 use API 4 exclusively and reject API 3 counterparts.
+
+## Build the first index
+
+1. Start the backend from the plugin.
+2. Confirm the server is online. It is normal for chat to remain unavailable before indexing.
+3. Select **Build index**.
+4. Wait until index status is current and query-ready.
+5. Open chat and ask a question.
+
+Indexing is always explicit. The first question does not trigger a build.
+
+## Maintain the index
+
+- Select **Refresh index** after adding, editing, or deleting notes. Compatible revisions update incrementally.
+- Select **Full rebuild** when embedding, chunk, or schema settings are incompatible.
+- Select **Prune** to remove inactive revisions after their readers finish.
+
+Legacy `.obsidianrag/db` data from 3.x is ignored and never deleted automatically.
+
+See the [troubleshooting guide](../TROUBLESHOOTING.md) for startup, provider, status, and recovery help.

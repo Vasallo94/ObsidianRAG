@@ -30,7 +30,7 @@ Automated tests must use temporary/sample vaults and mocked providers.
 
 Exercise macOS, Linux, and Windows before release.
 
-1. Install backend 4.0.0 and plugin 4.0.0.
+1. Install backend 4.0.1 and plugin 4.0.1.
 2. Configure the backend executable (`obsidianrag.exe` on Windows).
 3. Verify process startup uses no shell and accepts vault paths containing spaces.
 4. Start with a test vault that has no index.
@@ -50,12 +50,12 @@ Never use a personal vault for release validation.
 
 Backend:
 
-- wheel and source distribution report version 4.0.0;
+- wheel and source distribution report version 4.0.1;
 - normal installation includes LanceDB;
-- `obsidianrag.__version__` reports 4.0.0.
+- `obsidianrag.__version__` reports 4.0.1.
 
 Plugin:
 
-- `package.json` and `manifest.json` report 4.0.0;
+- `package.json` and `manifest.json` report 4.0.1;
 - `main.js`, `manifest.json`, and `styles.css` are present;
 - API 3 backends are rejected.

@@ -4,7 +4,10 @@ import json
 import multiprocessing
 import os
 import sqlite3
+import stat
+import subprocess
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from langchain_core.embeddings import Embeddings
@@ -62,6 +65,15 @@ def _hold_build_lock(root: str, ready, release) -> None:
     with _build_lock(Path(root)):
         ready.set()
         release.wait(10)
+
+
+def test_reparse_file_attribute_is_treated_as_a_link(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    metadata = MagicMock(st_mode=stat.S_IFDIR, st_file_attributes=0x400)
+    monkeypatch.setattr(index_module.os, "lstat", MagicMock(return_value=metadata))
+
+    assert index_module._is_link(tmp_path / "junction")
 
 
 def test_pid_liveness_check_does_not_signal_the_current_process():
@@ -350,6 +362,54 @@ def test_managed_paths_and_markdown_notes_reject_links(tmp_path: Path):
     (vault / "linked.md").symlink_to(secret)
     with pytest.raises(IndexPathError, match="cannot contain links"):
         build_index(vault, KeywordEmbeddings())
+
+
+def _windows_junction(link: Path, target: Path) -> None:
+    if os.name != "nt":
+        pytest.skip("Windows junction coverage runs only on Windows")
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        if os.environ.get("CI"):
+            pytest.fail(f"Windows CI could not create a junction: {detail}")
+        pytest.skip(f"Windows junction creation is unavailable: {detail}")
+
+
+def test_windows_reparse_points_cannot_enter_index_or_cleanup(tmp_path: Path):
+    vault = copy_sample_vault(tmp_path)
+    configure_from_vault(str(vault))
+    managed_target = tmp_path / "managed-target"
+    managed_target.mkdir()
+    managed_root = vault / ".obsidianrag"
+    _windows_junction(managed_root, managed_target)
+    with pytest.raises(IndexPathError, match="links"):
+        build_index(vault, KeywordEmbeddings())
+    managed_root.rmdir()
+
+    note_target = tmp_path / "external-notes"
+    note_target.mkdir()
+    (note_target / "Secret.md").write_text("external secret")
+    note_link = vault / "linked-notes"
+    _windows_junction(note_link, note_target)
+    with pytest.raises(IndexPathError, match="links"):
+        build_index(vault, KeywordEmbeddings())
+    note_link.rmdir()
+
+    build_index(vault, KeywordEmbeddings())
+    external_revision = tmp_path / "external-revision"
+    external_revision.mkdir()
+    marker = external_revision / "keep.txt"
+    marker.write_text("keep")
+    linked_revision = vault / ".obsidianrag" / "v4" / "indexes" / "linked-revision"
+    _windows_junction(linked_revision, external_revision)
+    with pytest.raises(IndexPathError, match="links"):
+        prune_revisions(vault)
+    assert marker.read_text() == "keep"
 
 
 def test_managed_v4_directory_rejects_link(tmp_path: Path):

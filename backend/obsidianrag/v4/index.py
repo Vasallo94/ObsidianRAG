@@ -125,18 +125,19 @@ def require_lancedb():
 
 def _is_link(path: Path) -> bool:
     try:
-        if path.is_symlink():
-            return True
-        is_junction = getattr(path, "is_junction", None)
-        return bool(is_junction and is_junction())
+        metadata = os.lstat(path)
+    except FileNotFoundError:
+        return False
     except OSError as error:
         raise IndexPathError(f"Could not inspect managed path {path}: {error}") from error
+    reparse_point = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    attributes = getattr(metadata, "st_file_attributes", 0)
+    return stat.S_ISLNK(metadata.st_mode) or bool(attributes & reparse_point)
 
 
 def _reject_link(path: Path) -> None:
-    if path.exists() or path.is_symlink():
-        if _is_link(path):
-            raise IndexPathError(f"Managed v4 paths cannot be links: {path}")
+    if _is_link(path):
+        raise IndexPathError(f"Managed v4 paths cannot be links: {path}")
 
 
 def _ensure_directory(path: Path) -> Path:
@@ -825,7 +826,7 @@ def _scan_vault(vault: Path) -> dict[str, _NoteSnapshot]:
             if directory in EXCLUDED_DIRECTORIES:
                 continue
             if _is_link(candidate):
-                continue
+                raise IndexPathError(f"Markdown note paths cannot contain links: {candidate}")
             safe_directories.append(directory)
         directories[:] = safe_directories
         for filename in sorted(files):

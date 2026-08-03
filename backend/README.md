@@ -5,12 +5,12 @@ Python 3.11+ backend for the ObsidianRAG API, CLI, revisioned SQLite FTS5 catalo
 ## Install
 
 ```bash
-pip install obsidianrag==4.0.0
+pip install obsidianrag==4.0.1
 # or
-uv tool install obsidianrag==4.0.0
+uv tool install obsidianrag==4.0.1
 ```
 
-LanceDB is a standard dependency in 4.0.0; no extra is required.
+LanceDB is a standard dependency in 4.0.1; no extra is required.
 
 ## Commands
 

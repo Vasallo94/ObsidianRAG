@@ -28,6 +28,8 @@ jobs:
           - os: macos-latest
             python-version: '3.12'
           - os: windows-latest
+            python-version: '3.11'
+          - os: windows-latest
             python-version: '3.12'
 
     runs-on: ${{ matrix.os }}
@@ -48,7 +50,10 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --locked --dev
+        run: uv sync --locked --dev --python ${{ matrix.python-version }}
+
+      - name: Verify Python version
+        run: uv run python -c "import sys; assert sys.version_info[:2] == tuple(map(int, '${{ matrix.python-version }}'.split('.')))"
 
       - name: Run linting
         run: |
@@ -66,6 +71,12 @@ jobs:
       #       --cov=obsidianrag \
       #       --cov-append \
       #       --cov-report=xml
+
+      - name: Verify package artifacts
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        run: |
+          uv build
+          uv run python scripts/verify_dist.py
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -94,8 +105,10 @@ jobs:
         run: uv python install 3.11
 
       - name: Install dependencies
-        run: |
-          uv sync --locked --dev
+        run: uv sync --locked --dev --python 3.11
+
+      - name: Verify Python version
+        run: uv run python -c "import sys; assert sys.version_info[:2] == (3, 11)"
 
       - name: Run type checking
         run: uv run mypy .

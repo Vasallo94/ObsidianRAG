@@ -6,14 +6,14 @@ Requirements:
 
 - Obsidian 1.5 or newer
 - Python 3.11 or newer
-- ObsidianRAG backend 4.0.0
-- Vault RAG plugin 4.0.0
+- ObsidianRAG backend 4.0.1
+- Vault RAG plugin 4.0.1
 - An Ollama, LM Studio, or compatible generation server
 
 Install the backend:
 
 ```bash
-uv tool install obsidianrag==4.0.0
+uv tool install obsidianrag==4.0.1
 ```
 
 Install `main.js`, `manifest.json`, and `styles.css` from the plugin GitHub release into `<vault>/.obsidian/plugins/vault-rag/`, then enable the plugin.
@@ -61,4 +61,4 @@ The command palette includes:
 - Check status
 - Refresh index
 
-API 3 backends are intentionally rejected by plugin 4.0.0.
+API 3 backends are intentionally rejected by plugin 4.0.1.

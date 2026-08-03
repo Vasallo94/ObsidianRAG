@@ -14,7 +14,7 @@ Check that port 8000 is free or configure another port.
 
 ## Plugin reports an incompatible backend
 
-Plugin 4.0.0 accepts only `api_version: 4`.
+Plugin 4.0.1 accepts only `api_version: 4`.
 
 ```bash
 curl http://127.0.0.1:8000/capabilities

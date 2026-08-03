@@ -1,7 +1,7 @@
 {
   "id": "vault-rag",
   "name": "Vault RAG",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "minAppVersion": "1.5.0",
   "description": "Ask questions about your notes using local AI and a revisioned hybrid index",
   "author": "Enrique Vasallo",
