@@ -7,15 +7,12 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
 
-# Install CPU-only PyTorch (no CUDA) — GPU inference is handled by Ollama.
-# --frozen ensures the lockfile is used exactly as-is.
-RUN uv sync --frozen --no-dev --no-install-project \
-    --extra-index-url https://download.pytorch.org/whl/cpu
+# The lockfile pins non-macOS Torch to the explicit CPU-only index.
+RUN uv sync --frozen --no-dev --no-install-project
 
 COPY . .
 
-RUN uv sync --frozen --no-dev \
-    --extra-index-url https://download.pytorch.org/whl/cpu
+RUN uv sync --frozen --no-dev
 
 # ---- Stage 2: Runtime ----
 FROM python:3.12-slim

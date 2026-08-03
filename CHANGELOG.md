@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Removed redundant direct `python-dotenv` and unused Black development dependencies
+- Refreshed backend and plugin lockfiles to patched transitive dependency versions
+- Pinned non-macOS Torch installations to the explicit CPU-only package index
+- Docker image builds now validate backend pull requests without publishing images
+
+### Security
+- Pinned vulnerable plugin build/test transitive packages to patched releases with scoped pnpm overrides
+- Raised the backend `pydantic-settings` floor and refreshed patched runtime dependency selections
+
 ## [4.0.1] - 2026-08-03
 
 ### Added
