@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.1] - 2026-08-03
+
+### Added
+- MIT license files are included in both backend wheel and source distributions
+- Windows Python 3.11 is part of the backend CI matrix
+
+### Fixed
+- Windows reparse points, including junctions, are rejected on Python 3.11 during indexing and cleanup
+- Plugin chat views preserve backend session IDs across turns; clearing a chat also invalidates in-flight turns
+- Backend requests for the same session are serialized without blocking independent sessions
+- Installation documentation now reflects the explicit v4 index lifecycle and `obsidianrag version`
+
 ## [4.0.0] - 2026-08-01
 
 ### Added

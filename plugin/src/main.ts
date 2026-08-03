@@ -644,13 +644,13 @@ export default class ObsidianRAGPlugin extends Plugin {
   // API Methods
   // ==========================================================================
 
-  async askQuestion(question: string): Promise<AskResponse> {
+  async askQuestion(question: string, sessionId?: string): Promise<AskResponse> {
     try {
       const response = await requestUrl({
         url: `${this.apiBaseUrl}/ask`,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: question }),
+        body: JSON.stringify({ text: question, ...(sessionId ? { session_id: sessionId } : {}) }),
       });
 
       if (response.status < 200 || response.status >= 300) {
@@ -675,18 +675,17 @@ export default class ObsidianRAGPlugin extends Plugin {
    * Note: True streaming is not supported by requestUrl, so we simulate events
    */
   async *askQuestionStreaming(
-    question: string
+    question: string,
+    sessionId?: string
   ): AsyncGenerator<StreamEvent, void, unknown> {
     try {
-      // Emit start event
-      yield { type: "start", session_id: "" };
       yield { type: "status", message: "Sending question..." };
 
       const response = await requestUrl({
         url: `${this.apiBaseUrl}/ask`,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: question }),
+        body: JSON.stringify({ text: question, ...(sessionId ? { session_id: sessionId } : {}) }),
       });
 
       if (response.status < 200 || response.status >= 300) {
@@ -700,6 +699,8 @@ export default class ObsidianRAGPlugin extends Plugin {
         yield { type: "error", message: data.error };
         return;
       }
+
+      yield { type: "start", session_id: data.session_id };
 
       // Emit retrieve complete event
       yield {
@@ -948,7 +949,7 @@ class SetupModal extends Modal {
     const li2 = requirements.createEl("li");
     li2.createEl("strong", { text: "obsidianrag" });
     li2.appendText(" package - ");
-    li2.createEl("code", { text: "uv tool install obsidianrag==4.0.0" });
+    li2.createEl("code", { text: "uv tool install obsidianrag==4.0.1" });
 
     const li3 = requirements.createEl("li");
 
@@ -1229,9 +1230,10 @@ class AskQuestionModal extends Modal {
 // Chat View
 // ============================================================================
 
-class ChatView extends ItemView {
+export class ChatView extends ItemView {
   plugin: ObsidianRAGPlugin;
   messages: ChatMessage[] = [];
+  private sessionId: string | null = null;
   private containerEl_messages!: HTMLElement;
   private inputEl!: HTMLTextAreaElement;
 
@@ -1338,6 +1340,7 @@ class ChatView extends ItemView {
   }
 
   clearHistory() {
+    this.sessionId = null;
     this.messages = [];
     this.containerEl_messages.empty();
     this.addMessage({
@@ -1367,6 +1370,10 @@ class ChatView extends ItemView {
     const question = this.inputEl.value.trim();
     if (!question) return;
 
+    const sessionId = this.sessionId ?? globalThis.crypto.randomUUID();
+    this.sessionId = sessionId;
+    const sessionIsCurrent = () => this.sessionId === sessionId;
+
     // Add user message
     this.addMessage({
       role: "user",
@@ -1378,6 +1385,7 @@ class ChatView extends ItemView {
 
     // Check if server is running
     if (!(await this.plugin.isServerRunning())) {
+      if (!sessionIsCurrent()) return;
       this.addMessage({
         role: "assistant",
         content:
@@ -1386,7 +1394,9 @@ class ChatView extends ItemView {
       });
       return;
     }
+    if (!sessionIsCurrent()) return;
     const indexStatus = await this.plugin.getIndexStatus();
+    if (!sessionIsCurrent()) return;
     if (!indexStatus?.query_ready) {
       this.addMessage({
         role: "assistant",
@@ -1423,9 +1433,15 @@ class ChatView extends ItemView {
       let finalAnswer: StreamEventAnswer | null = null;
 
       // Use streaming API
-      for await (const event of this.plugin.askQuestionStreaming(question)) {
+      for await (const event of this.plugin.askQuestionStreaming(question, sessionId)) {
+        if (!sessionIsCurrent()) {
+          progressEl.remove();
+          if (streamingEl) streamingEl.remove();
+          return;
+        }
         switch (event.type) {
           case "start":
+            if (this.sessionId === sessionId) this.sessionId = event.session_id;
             updateProgress("Connecting...");
             break;
 
@@ -1503,6 +1519,12 @@ class ChatView extends ItemView {
           case "done":
             break;
         }
+      }
+
+      if (!sessionIsCurrent()) {
+        progressEl.remove();
+        if (streamingEl) streamingEl.remove();
+        return;
       }
 
       // Remove progress if still showing
@@ -1647,6 +1669,7 @@ class ChatView extends ItemView {
       }
     } catch (error) {
       progressEl.remove();
+      if (!sessionIsCurrent()) return;
       this.addMessage({
         role: "assistant",
         content: `Error: ${error}`,
@@ -2025,7 +2048,7 @@ class ObsidianRAGSettingTab extends PluginSettingTab {
     const hLi2 = ul.createEl("li");
     hLi2.createEl("strong", { text: "obsidianrag" });
     hLi2.appendText(" package: ");
-    hLi2.createEl("code", { text: "uv tool install obsidianrag==4.0.0" });
+    hLi2.createEl("code", { text: "uv tool install obsidianrag==4.0.1" });
 
     const hLi3 = ul.createEl("li");
     hLi3.createEl("strong", { text: "Generation provider" });

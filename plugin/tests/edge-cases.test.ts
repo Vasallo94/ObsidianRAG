@@ -1,7 +1,7 @@
 
 import * as child_process from 'child_process';
 import { requestUrl } from 'obsidian';
-import ObsidianRAGPlugin from '../src/main';
+import ObsidianRAGPlugin, { ChatView } from '../src/main';
 
 // Mock child_process
 jest.mock('child_process', () => ({
@@ -228,7 +228,7 @@ describe('Edge Cases', () => {
       (requestUrl as jest.Mock)
         .mockResolvedValueOnce({
           status: 200,
-          json: { api_version: 4, backend_version: '4.0.0' }
+          json: { api_version: 4, backend_version: '4.0.1' }
         })
         .mockResolvedValueOnce({ status: 200, json: { status: 'ok' } });
 
@@ -252,6 +252,85 @@ describe('Edge Cases', () => {
       await plugin.checkServerStatus();
 
       // If no error thrown, it passed the try-catch block
+    });
+  });
+
+  describe('Chat sessions', () => {
+    it('propagates the backend session across two turns', async () => {
+      (requestUrl as jest.Mock)
+        .mockResolvedValueOnce({
+          status: 200,
+          json: {
+            result: 'First answer', sources: [], question: 'First', process_time: 0.1,
+            session_id: 'session-1'
+          }
+        })
+        .mockResolvedValueOnce({
+          status: 200,
+          json: {
+            result: 'Second answer', sources: [], question: 'Second', process_time: 0.1,
+            session_id: 'session-1'
+          }
+        });
+
+      const firstEvents = [];
+      for await (const event of plugin.askQuestionStreaming('First')) firstEvents.push(event);
+      const sessionId = firstEvents.find((event: any) => event.type === 'start').session_id;
+      for await (const _event of plugin.askQuestionStreaming('Second', sessionId)) {
+        // consume the simulated stream
+      }
+
+      expect(requestUrl).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        body: JSON.stringify({ text: 'First' })
+      }));
+      expect(requestUrl).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        body: JSON.stringify({ text: 'Second', session_id: 'session-1' })
+      }));
+    });
+
+    it('clearing a chat resets its session ID', () => {
+      const view = new ChatView({} as any, plugin);
+      (view as any).sessionId = 'session-1';
+      (view as any).containerEl_messages = { empty: jest.fn() };
+      view.addMessage = jest.fn();
+
+      view.clearHistory();
+
+      expect((view as any).sessionId).toBeNull();
+    });
+
+    it('clear invalidates a turn waiting for readiness checks', async () => {
+      let resolveRunning!: (running: boolean) => void;
+      plugin.isServerRunning = jest.fn(() => new Promise<boolean>((resolve) => {
+        resolveRunning = resolve;
+      }));
+      plugin.getIndexStatus = jest.fn().mockResolvedValue({ query_ready: true });
+      plugin.askQuestionStreaming = jest.fn(async function* () { return; });
+
+      const progressContent = {
+        empty: jest.fn(), createEl: jest.fn(), createSpan: jest.fn()
+      };
+      const progressEl = {
+        createDiv: jest.fn().mockReturnValue(progressContent),
+        remove: jest.fn(), parentElement: null
+      };
+      const view = new ChatView({} as any, plugin);
+      (view as any).inputEl = { value: 'First question' };
+      (view as any).containerEl_messages = {
+        empty: jest.fn(), createDiv: jest.fn().mockReturnValue(progressEl),
+        scrollTop: 0, scrollHeight: 0
+      };
+      view.addMessage = jest.fn();
+
+      const pending = view.sendMessage();
+      await Promise.resolve();
+      view.clearHistory();
+      resolveRunning(true);
+      await pending;
+
+      expect((view as any).sessionId).toBeNull();
+      expect(plugin.getIndexStatus).not.toHaveBeenCalled();
+      expect(plugin.askQuestionStreaming).not.toHaveBeenCalled();
     });
   });
 

@@ -63,6 +63,12 @@ class _LRUSessionStore:
             self._store.popitem(last=False)
 
 
+@dataclass
+class _SessionLock:
+    lock: asyncio.Lock
+    users: int = 0
+
+
 @dataclass(eq=False)
 class _PipelineSlot:
     pipeline: QueryPipeline
@@ -83,10 +89,44 @@ class _Runtime:
         self.vault_path = vault_path.resolve() if vault_path is not None else None
         self.settings = settings or get_settings().model_copy(deep=True)
         self.histories = _LRUSessionStore()
+        self._session_locks: OrderedDict[str, _SessionLock] = OrderedDict()
+        self._session_locks_guard = asyncio.Lock()
         self._state_lock = asyncio.Lock()
         self._index_lock = asyncio.Lock()
         self._serving: _PipelineSlot | None = None
         self._retired: list[_PipelineSlot] = []
+
+    @asynccontextmanager
+    async def session_turn(self, session_id: str) -> AsyncIterator[None]:
+        async with self._session_locks_guard:
+            entry = self._session_locks.get(session_id)
+            if entry is None:
+                entry = _SessionLock(asyncio.Lock())
+                self._session_locks[session_id] = entry
+            entry.users += 1
+            self._session_locks.move_to_end(session_id)
+            self._trim_session_locks()
+        try:
+            async with entry.lock:
+                yield
+        finally:
+            async with self._session_locks_guard:
+                entry.users -= 1
+                self._trim_session_locks()
+
+    def _trim_session_locks(self) -> None:
+        while len(self._session_locks) > MAX_SESSIONS:
+            idle = next(
+                (
+                    session_id
+                    for session_id, entry in self._session_locks.items()
+                    if entry.users == 0
+                ),
+                None,
+            )
+            if idle is None:
+                return
+            del self._session_locks[idle]
 
     async def startup(self) -> None:
         if self.vault_path is None:
@@ -348,34 +388,35 @@ def _register_routes(application: FastAPI) -> None:
     @application.post("/ask", response_model=Answer, summary="Ask a question")
     async def ask(question: Question):
         start_time = time.time()
-        try:
-            slot = await runtime.acquire()
-        except _IndexNotReady as error:
-            raise _error(503, "index_not_ready", "Build or load the v4 index first") from error
-        try:
-            session_id = question.session_id or str(uuid.uuid4())
-            history = runtime.histories.get(session_id)
-            result = await await_thread(slot.pipeline.ask, question.text, history)
-            history.append((question.text, result.answer))
-            runtime.histories.set(session_id, history)
-            sources = _source_list(result.documents)
-            return Answer(
-                question=result.question,
-                result=result.answer,
-                sources=sources,
-                text_blocks=[document.page_content for document in result.documents],
-                process_time=time.time() - start_time,
-                session_id=session_id,
-            )
-        except ValueError as error:
-            raise _error(400, "invalid_question", "Question is invalid") from error
-        except HTTPException:
-            raise
-        except Exception as error:
-            logger.error("Query failed: %s", error, exc_info=True)
-            raise _error(500, "query_failed", "The query could not be completed") from error
-        finally:
-            await runtime.release(slot)
+        session_id = question.session_id or str(uuid.uuid4())
+        async with runtime.session_turn(session_id):
+            try:
+                slot = await runtime.acquire()
+            except _IndexNotReady as error:
+                raise _error(503, "index_not_ready", "Build or load the v4 index first") from error
+            try:
+                history = runtime.histories.get(session_id)
+                result = await await_thread(slot.pipeline.ask, question.text, history)
+                history.append((question.text, result.answer))
+                runtime.histories.set(session_id, history)
+                sources = _source_list(result.documents)
+                return Answer(
+                    question=result.question,
+                    result=result.answer,
+                    sources=sources,
+                    text_blocks=[document.page_content for document in result.documents],
+                    process_time=time.time() - start_time,
+                    session_id=session_id,
+                )
+            except ValueError as error:
+                raise _error(400, "invalid_question", "Question is invalid") from error
+            except HTTPException:
+                raise
+            except Exception as error:
+                logger.error("Query failed: %s", error, exc_info=True)
+                raise _error(500, "query_failed", "The query could not be completed") from error
+            finally:
+                await runtime.release(slot)
 
     @application.post("/ask/stream", summary="Ask a question with streaming")
     async def ask_stream(question: Question):
@@ -385,27 +426,28 @@ def _register_routes(application: FastAPI) -> None:
             raise _error(503, "index_not_ready", "Build or load the v4 index first") from error
 
         session_id = question.session_id or str(uuid.uuid4())
-        history = runtime.histories.get(session_id)
 
         async def event_generator() -> AsyncGenerator[str, None]:
-            last_event: dict[str, Any] | None = None
-            try:
-                yield f"data: {json.dumps({'type': 'start', 'session_id': session_id})}\n\n"
-                async for event in slot.pipeline.stream(question.text, history):
-                    last_event = event
+            async with runtime.session_turn(session_id):
+                history = runtime.histories.get(session_id)
+                last_event: dict[str, Any] | None = None
+                try:
+                    yield f"data: {json.dumps({'type': 'start', 'session_id': session_id})}\n\n"
+                    async for event in slot.pipeline.stream(question.text, history):
+                        last_event = event
+                        yield f"data: {json.dumps(event)}\n\n"
+                    if last_event and last_event.get("type") == "answer":
+                        history.append((question.text, str(last_event.get("answer", ""))))
+                        runtime.histories.set(session_id, history)
+                except Exception as error:
+                    logger.error("Streaming query failed: %s", error, exc_info=True)
+                    event = {
+                        "type": "error",
+                        "code": "query_failed",
+                        "message": "The query could not be completed",
+                    }
                     yield f"data: {json.dumps(event)}\n\n"
-                if last_event and last_event.get("type") == "answer":
-                    history.append((question.text, str(last_event.get("answer", ""))))
-                    runtime.histories.set(session_id, history)
-            except Exception as error:
-                logger.error("Streaming query failed: %s", error, exc_info=True)
-                event = {
-                    "type": "error",
-                    "code": "query_failed",
-                    "message": "The query could not be completed",
-                }
-                yield f"data: {json.dumps(event)}\n\n"
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
         return StreamingResponse(
             event_generator(),

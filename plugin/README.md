@@ -4,7 +4,7 @@ Desktop Obsidian plugin for ObsidianRAG API 4.
 
 ## Install
 
-1. Install backend 4.0.0: `uv tool install obsidianrag==4.0.0`.
+1. Install backend 4.0.1: `uv tool install obsidianrag==4.0.1`.
 2. Download `main.js`, `manifest.json`, and `styles.css` from the plugin GitHub release.
 3. Place them in `<vault>/.obsidian/plugins/vault-rag/`.
 4. Reload Obsidian and enable **Vault RAG**.

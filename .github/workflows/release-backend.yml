@@ -33,6 +33,10 @@ jobs:
         working-directory: ./backend
         run: uv build
 
+      - name: Verify license artifacts
+        working-directory: ./backend
+        run: python scripts/verify_dist.py
+
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:

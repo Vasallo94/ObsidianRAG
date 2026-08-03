@@ -1,10 +1,10 @@
 [project]
 name = "obsidianrag"
-version = "4.0.0"
+version = "4.0.1"
 description = "RAG system for querying Obsidian notes with SQLite FTS5 and LanceDB"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = {file = "LICENSE"}
 authors = [
     {name = "Enrique Vasallo"}
 ]
