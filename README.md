@@ -87,6 +87,17 @@ obsidianrag serve --vault /path/to/vault \
   --base-url http://localhost:1234/v1
 ```
 
+For a hosted OpenAI-compatible chat endpoint, select the custom provider and set the chat-completions format explicitly. Put the API key in the environment instead of a command argument:
+
+```bash
+export OBSIDIANRAG_COMPATIBLE_API_KEY="<your API key>"
+obsidianrag serve --vault /path/to/vault \
+  --provider custom --api-format chat-completions \
+  --model your-model-id --base-url https://provider.example/v1
+```
+
+The base URL is the `/v1` root, not the full `/v1/chat/completions` path. Use a model ID returned by that provider's `/v1/models` endpoint. This example changes generation only; indexing and embeddings remain configured separately.
+
 API keys configured in the plugin are session-only and are passed through the backend process environment, not command arguments.
 
 ## Index architecture
