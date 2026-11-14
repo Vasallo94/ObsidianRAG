@@ -30,7 +30,7 @@ dependencies = [
     "langchain-huggingface>=0.1.0",
     "langchain-text-splitters>=0.3.0",
     # Vector store and retrieval
-    "lancedb>=0.36.0,<0.37.0",
+    "lancedb>=0.41.0,<0.42.0",
     "sentence-transformers>=3.0.0",
     "torch>=2.13.0",
 
