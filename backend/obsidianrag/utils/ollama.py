@@ -7,7 +7,7 @@ from typing import List
 logger = logging.getLogger(__name__)
 
 
-def get_available_ollama_models(base_url: str = "http://localhost:11434") -> List[str]:
+def get_available_ollama_models(base_url: str = "http://localhost:11434", tags=False) -> List[str]:
     """Get list of available models in Ollama.
 
     Args:
@@ -21,7 +21,7 @@ def get_available_ollama_models(base_url: str = "http://localhost:11434") -> Lis
 
         response = httpx.get(f"{base_url}/api/tags", timeout=5.0)
         if response.status_code == 200:
-            return [m["name"].split(":")[0] for m in response.json().get("models", [])]
+            return [m["name"] if tags else m["name"].split(":")[0] for m in response.json().get("models", [])]
     except Exception as e:
         logger.warning(f"Could not get Ollama models: {e}")
     return []

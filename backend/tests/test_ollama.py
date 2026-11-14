@@ -87,6 +87,19 @@ def test_get_available_ollama_models_success(monkeypatch, ollama_module):
     assert "gemma" in models
     assert len(models) == 2
 
+def test_get_available_ollama_models_with_tags_success(monkeypatch, ollama_module):
+    """Test successfully retrieving available models with tag metadata."""
+    mock_response = mock.Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"models": [{"name": "llama3:latest"}, {"name": "gemma:2b"}]}
+
+    monkeypatch.setattr(httpx, "get", mock.Mock(return_value=mock_response))
+
+    models = ollama_module.get_available_ollama_models(tags=True)
+    assert "llama3:latest" in models
+    assert "gemma:2b" in models
+    assert len(models) == 2
+
 
 def test_get_available_ollama_models_api_failure(monkeypatch, ollama_module):
     """Test API failure (non-200 status code)."""
