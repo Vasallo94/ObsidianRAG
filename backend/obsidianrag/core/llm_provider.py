@@ -163,7 +163,7 @@ def single_human_message(prompt: str) -> list[BaseMessage]:
 
 def _verify_ollama_model(model: str, settings: Settings) -> str:
     verify_ollama_available(settings)
-    available_models = get_available_ollama_models(settings.ollama_base_url)
+    available_models = get_available_ollama_models(settings.ollama_base_url, tags=':' in model)
 
     if not available_models:
         raise ModelNotAvailableError(
