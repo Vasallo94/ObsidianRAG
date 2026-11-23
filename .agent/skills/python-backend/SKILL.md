@@ -49,8 +49,8 @@ La inicialización de recursos (DB, Agentes) ocurre en el `lifespan` en `api/ser
 Usa `uv` para gestionar paquetes.
 ```bash
 cd backend
-uv add package-name
-uv add --dev pytest-something
+uv add <paquete>
+uv add --dev <paquete-de-desarrollo>
 ```
 
 ### 4. Antes de hacer Commit
