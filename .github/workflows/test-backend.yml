@@ -6,11 +6,10 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/test-backend.yml'
+  # No paths filter on PRs: these jobs are required checks on main, and a
+  # filtered-out workflow never reports, which leaves the PR blocked.
   pull_request:
     branches: [main]
-    paths:
-      - 'backend/**'
-      - '.github/workflows/test-backend.yml'
 
 permissions:
   contents: read
